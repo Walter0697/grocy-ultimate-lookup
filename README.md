@@ -12,6 +12,7 @@ plugin wrapper in `plugin/grocy/` so the lookup logic stays outside Grocy.
 - Open Beauty Facts
 - Open Pet Food Facts
 - UPCItemDB trial endpoint
+- Web search fallback with structured page extraction
 
 ## Run
 
@@ -104,3 +105,49 @@ The returned lookup result uses:
 source=local_confirmed
 confidence=1.0
 ```
+
+## Web Search Fallback
+
+Web search runs after local confirmed products, cache, Open Facts, and
+UPCItemDB miss. It searches the exact barcode and tries to extract product data
+from candidate product pages using:
+
+- `schema.org` JSON-LD product data
+- embedded page JSON
+- Open Graph product metadata
+
+Web-derived results use low confidence, currently `0.55`, and are returned as
+review candidates instead of trusted auto-fill results. This means Grocy will
+not auto-fill a product from web search by default.
+
+Example response shape for a web-only match:
+
+```json
+{
+  "barcode": "067489302124",
+  "found": false,
+  "result": null,
+  "candidates": [
+    {
+      "barcode": "067489302124",
+      "name": "Possible Retailer Product",
+      "source": "web_json_ld",
+      "confidence": 0.55,
+      "raw_url": "https://retailer.example/product"
+    }
+  ]
+}
+```
+
+Important settings:
+
+```text
+AUTO_FILL_MIN_CONFIDENCE=0.7
+ENABLE_WEB_SEARCH=true
+WEB_SEARCH_MAX_RESULTS=5
+WEB_SEARCH_FETCH_LIMIT=3
+```
+
+Raise or lower `AUTO_FILL_MIN_CONFIDENCE` to control what the service treats as
+trusted enough for `found=true`. Keep it above web fallback confidence if Grocy
+should not auto-fill scraped/search-derived results.

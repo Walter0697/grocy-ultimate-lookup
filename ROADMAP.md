@@ -41,14 +41,14 @@
 
 ## Phase 4: Web Search Fallback
 
-- [ ] Add web search provider abstraction.
-- [ ] Search exact barcode when database sources miss.
-- [ ] Filter candidate URLs for likely product pages.
-- [ ] Extract `schema.org` JSON-LD product data when available.
-- [ ] Extract Open Graph product metadata when available.
-- [ ] Extract embedded product JSON when available.
-- [ ] Return low-confidence web candidates without auto-trusting them.
-- [ ] Add tests with saved page fixtures.
+- [v] Add web search provider abstraction.
+- [v] Search exact barcode when database sources miss.
+- [v] Filter candidate URLs for likely product pages.
+- [v] Extract `schema.org` JSON-LD product data when available.
+- [v] Extract Open Graph product metadata when available.
+- [v] Extract embedded product JSON when available.
+- [v] Return low-confidence web candidates without auto-trusting them.
+- [v] Add tests with saved page fixtures.
 
 ## Phase 5: LLM Extraction Fallback
 

@@ -1,6 +1,7 @@
 from app.adapters.base import LookupAdapter
 from app.adapters.open_facts import OpenFactsAdapter
 from app.adapters.upcitemdb import UpcItemDbAdapter
+from app.adapters.web_search import WebSearchAdapter
 from app.cache import LookupCache
 from app.config import settings
 from app.local_store import LocalProductStore
@@ -20,6 +21,8 @@ def default_adapters() -> list[LookupAdapter]:
         )
     if settings.enable_upcitemdb:
         adapters.append(UpcItemDbAdapter())
+    if settings.enable_web_search:
+        adapters.append(WebSearchAdapter())
     return adapters
 
 
@@ -54,6 +57,9 @@ class LookupOrchestrator:
 
         ranked_candidates = sorted(candidates, key=lambda item: item.confidence, reverse=True)
         best = ranked_candidates[0]
+        if best.confidence < settings.auto_fill_min_confidence:
+            return LookupResponse(barcode=barcode, found=False, candidates=ranked_candidates)
+
         self.cache.set(best)
         return LookupResponse(barcode=barcode, found=True, result=best, candidates=ranked_candidates[1:])
 

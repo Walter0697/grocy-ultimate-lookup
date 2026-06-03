@@ -2,6 +2,7 @@ import asyncio
 import pytest
 
 from app.cache import LookupCache
+from app.local_store import LocalProductStore
 from app.models import LookupResult
 from app.orchestrator import LookupOrchestrator
 
@@ -81,6 +82,7 @@ def test_sample_barcode_outcomes(barcode, expected, tmp_path) -> None:
         ]
     )
     orchestrator.cache = LookupCache(str(tmp_path / "cache.sqlite3"))
+    orchestrator.local_store = LocalProductStore(str(tmp_path / "local.sqlite3"))
 
     response = run(orchestrator.lookup(barcode, use_cache=False))
 
