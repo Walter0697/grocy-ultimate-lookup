@@ -1,0 +1,11 @@
+services:
+  lookup:
+    build: .
+    container_name: grocy-ultimate-lookup
+    restart: unless-stopped
+    ports:
+      - "9290:9290"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
