@@ -24,11 +24,11 @@
 - [v] Verify Grocy can resolve an Open Food Facts hit through the custom plugin.
 - [v] Verify Grocy can resolve a UPCItemDB fallback hit through the custom plugin.
 - [v] Verify Grocy returns `null` for not-found lookups.
-- [ ] Improve Grocy plugin installation docs.
-- [ ] Add plugin troubleshooting docs for host networking and service health.
-- [ ] Decide where lookup metadata should live in Grocy.
-- [ ] Add optional source marker handling.
-- [ ] Confirm Grocy UI behavior for manual edits after auto-fill.
+- [v] Improve Grocy plugin installation docs.
+- [v] Add plugin troubleshooting docs for host networking and service health.
+- [v] Decide where lookup metadata should live in Grocy.
+- [v] Add optional source marker handling.
+- [v] Confirm Grocy UI behavior for manual edits after auto-fill.
 
 ## Phase 3: Local Knowledge Base
 

@@ -35,12 +35,18 @@ http://localhost:9290/lookup/057000013165
   "result": {
     "barcode": "057000013165",
     "name": "Heinz Tomato Ketchup",
+    "raw_name": "Heinz Tomato Ketchup",
+    "normalized_name": "Heinz Tomato Ketchup",
     "brand": "Heinz",
     "quantity": null,
+    "size": null,
+    "count": null,
+    "variant": null,
     "image_url": null,
     "source": "open_food_facts",
     "confidence": 0.95,
-    "raw_url": "https://world.openfoodfacts.org/api/v0/product/057000013165.json"
+    "raw_url": "https://world.openfoodfacts.org/api/v0/product/057000013165.json",
+    "raw_payload": {}
   },
   "candidates": []
 }
@@ -52,3 +58,10 @@ The Grocy plugin folder is intentionally small. It should only call this
 service and translate the response into Grocy's expected barcode lookup format.
 
 See `plugin/grocy/README.md`.
+
+Default Grocy behavior:
+
+- Product names use `normalized_name`.
+- Source markers are not appended to product names.
+- Lookup metadata stays in the lookup service and internal debug fields.
+- Grocy's UI can still edit auto-filled fields before saving.

@@ -25,13 +25,21 @@ class UltimateBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
 
         $result = $data['result'];
         $name = $result['normalized_name'] ?? $result['name'];
+        if ($this->shouldAppendSourceMarker() && !empty($result['source'])) {
+            $name .= ' [' . $result['source'] . ']';
+        }
+
         $product = [
             'name' => $name,
             'location_id' => $locationId,
             'qu_id_purchase' => $quId,
             'qu_id_stock' => $quId,
             '__qu_factor_purchase_to_stock' => 1,
-            '__barcode' => $barcode
+            '__barcode' => $barcode,
+            '__ultimate_lookup_source' => $result['source'] ?? null,
+            '__ultimate_lookup_confidence' => $result['confidence'] ?? null,
+            '__ultimate_lookup_raw_name' => $result['raw_name'] ?? null,
+            '__ultimate_lookup_normalized_name' => $result['normalized_name'] ?? $result['name']
         ];
 
         if (!empty($result['image_url'])) {
@@ -39,6 +47,12 @@ class UltimateBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
         }
 
         return $product;
+    }
+
+    private function shouldAppendSourceMarker()
+    {
+        $value = getenv('ULTIMATE_LOOKUP_APPEND_SOURCE_MARKER') ?: '';
+        return in_array(strtolower($value), ['1', 'true', 'yes'], true);
     }
 
     private function requestLookup($barcode)
