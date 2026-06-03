@@ -7,13 +7,19 @@ from app.models import LookupResponse, LookupResult
 
 
 def default_adapters() -> list[LookupAdapter]:
-    return [
-        OpenFactsAdapter("open_food_facts", "world.openfoodfacts.org"),
-        OpenFactsAdapter("open_products_facts", "world.openproductsfacts.org"),
-        OpenFactsAdapter("open_beauty_facts", "world.openbeautyfacts.org"),
-        OpenFactsAdapter("open_pet_food_facts", "world.openpetfoodfacts.org"),
-        UpcItemDbAdapter(),
-    ]
+    adapters: list[LookupAdapter] = []
+    if settings.enable_open_facts:
+        adapters.extend(
+            [
+                OpenFactsAdapter("open_food_facts", "world.openfoodfacts.org"),
+                OpenFactsAdapter("open_products_facts", "world.openproductsfacts.org"),
+                OpenFactsAdapter("open_beauty_facts", "world.openbeautyfacts.org"),
+                OpenFactsAdapter("open_pet_food_facts", "world.openpetfoodfacts.org"),
+            ]
+        )
+    if settings.enable_upcitemdb:
+        adapters.append(UpcItemDbAdapter())
+    return adapters
 
 
 class LookupOrchestrator:
@@ -36,6 +42,7 @@ class LookupOrchestrator:
         if not candidates:
             return LookupResponse(barcode=barcode, found=False)
 
-        best = sorted(candidates, key=lambda item: item.confidence, reverse=True)[0]
+        ranked_candidates = sorted(candidates, key=lambda item: item.confidence, reverse=True)
+        best = ranked_candidates[0]
         self.cache.set(best)
-        return LookupResponse(barcode=barcode, found=True, result=best, candidates=candidates[1:])
+        return LookupResponse(barcode=barcode, found=True, result=best, candidates=ranked_candidates[1:])
