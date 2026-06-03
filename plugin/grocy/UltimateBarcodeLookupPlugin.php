@@ -24,8 +24,9 @@ class UltimateBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
         }
 
         $result = $data['result'];
+        $name = $result['normalized_name'] ?? $result['name'];
         $product = [
-            'name' => $result['name'],
+            'name' => $name,
             'location_id' => $locationId,
             'qu_id_purchase' => $quId,
             'qu_id_stock' => $quId,

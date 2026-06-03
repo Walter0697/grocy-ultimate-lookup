@@ -3,6 +3,7 @@ import httpx
 from app.adapters.base import LookupAdapter
 from app.config import settings
 from app.models import LookupResult
+from app.normalization import normalize_product_name
 
 
 class OpenFactsAdapter(LookupAdapter):
@@ -26,14 +27,23 @@ class OpenFactsAdapter(LookupAdapter):
         if not name:
             return None
 
+        brand = product.get("brands")
+        quantity = product.get("quantity")
+        normalized = normalize_product_name(name, brand=brand, quantity=quantity)
         image_url = product.get("image_front_url") or product.get("image_url")
         return LookupResult(
             barcode=barcode,
-            name=name,
-            brand=product.get("brands"),
-            quantity=product.get("quantity"),
+            name=normalized.normalized_name,
+            raw_name=name,
+            normalized_name=normalized.normalized_name,
+            brand=normalized.brand,
+            quantity=quantity,
+            size=normalized.size,
+            count=normalized.count,
+            variant=normalized.variant,
             image_url=image_url,
             source=self.name,
             confidence=0.95,
             raw_url=url,
+            raw_payload=product,
         )

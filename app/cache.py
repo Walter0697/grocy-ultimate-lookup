@@ -31,7 +31,11 @@ class LookupCache:
             row = db.execute("SELECT payload FROM lookup_cache WHERE barcode = ?", (barcode,)).fetchone()
         if row is None:
             return None
-        return LookupResult.model_validate_json(row[0])
+        result = LookupResult.model_validate_json(row[0])
+        if result.normalized_name is None:
+            self.delete(barcode)
+            return None
+        return result
 
     def set(self, result: LookupResult) -> None:
         with self._connect() as db:
@@ -43,3 +47,7 @@ class LookupCache:
                 """,
                 (result.barcode, json.dumps(result.model_dump(mode="json"))),
             )
+
+    def delete(self, barcode: str) -> None:
+        with self._connect() as db:
+            db.execute("DELETE FROM lookup_cache WHERE barcode = ?", (barcode,))

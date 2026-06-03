@@ -3,6 +3,7 @@ import httpx
 from app.adapters.base import LookupAdapter
 from app.config import settings
 from app.models import LookupResult
+from app.normalization import normalize_product_name
 
 
 class UpcItemDbAdapter(LookupAdapter):
@@ -24,13 +25,20 @@ class UpcItemDbAdapter(LookupAdapter):
         if not name:
             return None
 
+        normalized = normalize_product_name(name, brand=item.get("brand"))
         return LookupResult(
             barcode=barcode,
-            name=name,
-            brand=item.get("brand"),
+            name=normalized.normalized_name,
+            raw_name=name,
+            normalized_name=normalized.normalized_name,
+            brand=normalized.brand,
             quantity=None,
+            size=normalized.size,
+            count=normalized.count,
+            variant=normalized.variant,
             image_url=(item.get("images") or [None])[0],
             source=self.name,
             confidence=0.9,
             raw_url=url,
+            raw_payload=item,
         )

@@ -23,6 +23,7 @@ def make_result(source: str, confidence: float) -> LookupResult:
     return LookupResult(
         barcode="123",
         name=f"{source} product",
+        normalized_name=f"{source} product",
         source=source,
         confidence=confidence,
     )
@@ -56,6 +57,27 @@ def test_lookup_uses_cache_without_calling_adapters(tmp_path) -> None:
     assert response.result is not None
     assert response.result.source == "cached"
     assert adapter.calls == []
+
+
+def test_lookup_ignores_stale_cache_without_normalized_name(tmp_path) -> None:
+    adapter = FakeAdapter(make_result("network", 0.9))
+    orchestrator = LookupOrchestrator(adapters=[adapter])
+    orchestrator.cache = LookupCache(str(tmp_path / "cache.sqlite3"))
+    orchestrator.cache.set(
+        LookupResult(
+            barcode="123",
+            name="stale product",
+            source="stale",
+            confidence=0.95,
+        )
+    )
+
+    response = run(orchestrator.lookup("123", use_cache=True))
+
+    assert response.found is True
+    assert response.result is not None
+    assert response.result.source == "network"
+    assert adapter.calls == ["123"]
 
 
 def test_lookup_returns_not_found_when_all_adapters_miss(tmp_path) -> None:
