@@ -3,7 +3,8 @@ from app.adapters.open_facts import OpenFactsAdapter
 from app.adapters.upcitemdb import UpcItemDbAdapter
 from app.cache import LookupCache
 from app.config import settings
-from app.models import LookupResponse, LookupResult
+from app.local_store import LocalProductStore
+from app.models import ConfirmedProduct, ConfirmedProductRequest, LookupResponse, LookupResult
 
 
 def default_adapters() -> list[LookupAdapter]:
@@ -26,8 +27,17 @@ class LookupOrchestrator:
     def __init__(self, adapters: list[LookupAdapter] | None = None) -> None:
         self.adapters = adapters or default_adapters()
         self.cache = LookupCache(settings.lookup_cache_path)
+        self.local_store = LocalProductStore(settings.local_products_path)
 
     async def lookup(self, barcode: str, use_cache: bool = True) -> LookupResponse:
+        local_product = self.local_store.get(barcode)
+        if local_product is not None:
+            return LookupResponse(
+                barcode=barcode,
+                found=True,
+                result=self.local_store.to_lookup_result(local_product),
+            )
+
         if use_cache:
             cached = self.cache.get(barcode)
             if cached:
@@ -46,3 +56,14 @@ class LookupOrchestrator:
         best = ranked_candidates[0]
         self.cache.set(best)
         return LookupResponse(barcode=barcode, found=True, result=best, candidates=ranked_candidates[1:])
+
+    def get_confirmed_product(self, barcode: str) -> ConfirmedProduct | None:
+        return self.local_store.get(barcode)
+
+    def confirm_product(self, barcode: str, product: ConfirmedProductRequest) -> ConfirmedProduct:
+        confirmed = self.local_store.upsert(barcode, product)
+        self.cache.delete(barcode)
+        return confirmed
+
+    def delete_confirmed_product(self, barcode: str) -> bool:
+        return self.local_store.delete(barcode)

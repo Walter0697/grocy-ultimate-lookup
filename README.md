@@ -65,3 +65,42 @@ Default Grocy behavior:
 - Source markers are not appended to product names.
 - Lookup metadata stays in the lookup service and internal debug fields.
 - Grocy's UI can still edit auto-filled fields before saving.
+
+## Local Confirmed Products
+
+Local confirmed products are user-corrected barcode mappings. They are stored
+separately from external lookup cache and always win over cached or external
+source results.
+
+Create or correct a confirmed product:
+
+```bash
+curl -sS -X PUT 'http://localhost:9290/local-products/810669032478' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"My Confirmed Product","brand":"My Brand","quantity":"1 box"}'
+```
+
+Fetch a confirmed product:
+
+```bash
+curl -sS 'http://localhost:9290/local-products/810669032478'
+```
+
+Delete a confirmed product:
+
+```bash
+curl -sS -X DELETE 'http://localhost:9290/local-products/810669032478'
+```
+
+After a confirmed product is saved, normal lookup returns it:
+
+```bash
+curl -sS 'http://localhost:9290/lookup/810669032478'
+```
+
+The returned lookup result uses:
+
+```text
+source=local_confirmed
+confidence=1.0
+```

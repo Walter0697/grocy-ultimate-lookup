@@ -23,3 +23,28 @@ class LookupResponse(BaseModel):
     found: bool
     result: LookupResult | None = None
     candidates: list[LookupResult] = Field(default_factory=list)
+
+
+class ConfirmedProductRequest(BaseModel):
+    name: str = Field(min_length=1)
+    brand: str | None = None
+    quantity: str | None = None
+    size: str | None = None
+    count: int | None = Field(default=None, ge=1)
+    variant: str | None = None
+    image_url: HttpUrl | None = None
+    notes: str | None = None
+
+
+class ConfirmedProduct(BaseModel):
+    barcode: str
+    user_product_name: str
+    brand: str | None = None
+    quantity: str | None = None
+    size: str | None = None
+    count: int | None = None
+    variant: str | None = None
+    image_url: HttpUrl | None = None
+    notes: str | None = None
+    created_at: str
+    updated_at: str

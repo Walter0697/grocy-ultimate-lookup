@@ -32,12 +32,12 @@
 
 ## Phase 3: Local Knowledge Base
 
-- [ ] Add local confirmed-match table.
-- [ ] Prefer confirmed local matches before external sources.
-- [ ] Add manual override endpoint.
-- [ ] Store user-confirmed product name separately from source result.
-- [ ] Add correction flow for previously confirmed barcode mappings.
-- [ ] Add tests for local confirmed-match priority.
+- [v] Add local confirmed-match table.
+- [v] Prefer confirmed local matches before external sources.
+- [v] Add manual override endpoint.
+- [v] Store user-confirmed product name separately from source result.
+- [v] Add correction flow for previously confirmed barcode mappings.
+- [v] Add tests for local confirmed-match priority.
 
 ## Phase 4: Web Search Fallback
 
