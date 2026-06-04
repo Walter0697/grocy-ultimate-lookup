@@ -35,11 +35,7 @@ class UltimateBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
             'qu_id_purchase' => $quId,
             'qu_id_stock' => $quId,
             '__qu_factor_purchase_to_stock' => 1,
-            '__barcode' => $barcode,
-            '__ultimate_lookup_source' => $result['source'] ?? null,
-            '__ultimate_lookup_confidence' => $result['confidence'] ?? null,
-            '__ultimate_lookup_raw_name' => $result['raw_name'] ?? null,
-            '__ultimate_lookup_normalized_name' => $result['normalized_name'] ?? $result['name']
+            '__barcode' => $barcode
         ];
 
         if (!empty($result['image_url'])) {

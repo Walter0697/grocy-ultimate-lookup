@@ -62,8 +62,8 @@ ULTIMATE_LOOKUP_APPEND_SOURCE_MARKER=false
 Tomato Ketchup [open_food_facts]
 ```
 
-Keep this disabled for normal use. Source metadata is returned separately in
-internal `__ultimate_lookup_*` fields so product names stay clean.
+Keep this disabled for normal use. Source metadata is available from the
+external lookup API response when you need to inspect provenance.
 
 ## Metadata Handling
 
@@ -77,14 +77,16 @@ The plugin sends Grocy only the fields Grocy needs to prefill the product form:
 - `__barcode`
 - `__image_url`
 
-Lookup metadata is not persisted into Grocy product names by default. The
-external lookup service keeps the full raw source payload in its own cache, and
-the plugin returns these internal debug fields with the lookup response:
+Lookup metadata is not sent to Grocy product fields. Grocy's product save path
+can try to persist unknown keys as product columns, so the plugin response must
+stay limited to Grocy-supported fields.
 
-- `__ultimate_lookup_source`
-- `__ultimate_lookup_confidence`
-- `__ultimate_lookup_raw_name`
-- `__ultimate_lookup_normalized_name`
+The external lookup service keeps the full raw source payload in its own cache.
+Use the service API directly when you need provenance:
+
+```bash
+curl -sS 'http://localhost:9290/lookup/067489302124?use_cache=false'
+```
 
 This keeps Grocy as the inventory system and keeps lookup provenance in the
 lookup service.
