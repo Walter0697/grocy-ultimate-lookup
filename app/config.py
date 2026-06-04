@@ -1,4 +1,4 @@
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,7 +9,10 @@ class Settings(BaseSettings):
     local_products_path: str = Field(default="/data/local-products.sqlite3", alias="LOCAL_PRODUCTS_PATH")
     lookup_request_timeout_seconds: float = Field(default=12, alias="LOOKUP_REQUEST_TIMEOUT_SECONDS")
     lookup_user_agent: str = Field(default="GrocyUltimateLookup/0.1", alias="LOOKUP_USER_AGENT")
-    auto_fill_min_confidence: float = Field(default=0.7, alias="AUTO_FILL_MIN_CONFIDENCE")
+    cache_min_confidence: float = Field(
+        default=0.7,
+        validation_alias=AliasChoices("CACHE_MIN_CONFIDENCE", "AUTO_FILL_MIN_CONFIDENCE"),
+    )
     enable_open_facts: bool = Field(default=True, alias="ENABLE_OPEN_FACTS")
     enable_upcitemdb: bool = Field(default=True, alias="ENABLE_UPCITEMDB")
     enable_web_search: bool = Field(default=True, alias="ENABLE_WEB_SEARCH")

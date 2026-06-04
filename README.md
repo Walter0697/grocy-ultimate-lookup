@@ -116,38 +116,40 @@ from candidate product pages using:
 - embedded page JSON
 - Open Graph product metadata
 
-Web-derived results use low confidence, currently `0.55`, and are returned as
-review candidates instead of trusted auto-fill results. This means Grocy will
-not auto-fill a product from web search by default.
+Web-derived results use low confidence, currently `0.55`, but can still be
+returned as the best lookup result. This lets Grocy prefill the editable product
+form. If the web result is wrong, edit it before saving in Grocy.
+
+Low-confidence web results are not cached by default. That keeps them as
+best-effort suggestions until you either save the product in Grocy or confirm it
+through the local confirmed-products API.
 
 Example response shape for a web-only match:
 
 ```json
 {
   "barcode": "067489302124",
-  "found": false,
-  "result": null,
-  "candidates": [
-    {
-      "barcode": "067489302124",
-      "name": "Possible Retailer Product",
-      "source": "web_json_ld",
-      "confidence": 0.55,
-      "raw_url": "https://retailer.example/product"
-    }
-  ]
+  "found": true,
+  "result": {
+    "barcode": "067489302124",
+    "name": "Possible Retailer Product",
+    "source": "web_json_ld",
+    "confidence": 0.55,
+    "raw_url": "https://retailer.example/product"
+  },
+  "candidates": []
 }
 ```
 
 Important settings:
 
 ```text
-AUTO_FILL_MIN_CONFIDENCE=0.7
+CACHE_MIN_CONFIDENCE=0.7
 ENABLE_WEB_SEARCH=true
 WEB_SEARCH_MAX_RESULTS=5
 WEB_SEARCH_FETCH_LIMIT=3
 ```
 
-Raise or lower `AUTO_FILL_MIN_CONFIDENCE` to control what the service treats as
-trusted enough for `found=true`. Keep it above web fallback confidence if Grocy
-should not auto-fill scraped/search-derived results.
+Raise or lower `CACHE_MIN_CONFIDENCE` to control which lookup results are cached.
+Keep it above web fallback confidence if web results should remain fresh
+best-effort suggestions.

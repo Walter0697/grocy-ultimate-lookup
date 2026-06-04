@@ -57,10 +57,8 @@ class LookupOrchestrator:
 
         ranked_candidates = sorted(candidates, key=lambda item: item.confidence, reverse=True)
         best = ranked_candidates[0]
-        if best.confidence < settings.auto_fill_min_confidence:
-            return LookupResponse(barcode=barcode, found=False, candidates=ranked_candidates)
-
-        self.cache.set(best)
+        if best.confidence >= settings.cache_min_confidence:
+            self.cache.set(best)
         return LookupResponse(barcode=barcode, found=True, result=best, candidates=ranked_candidates[1:])
 
     def get_confirmed_product(self, barcode: str) -> ConfirmedProduct | None:

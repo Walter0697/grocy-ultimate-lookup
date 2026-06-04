@@ -47,7 +47,7 @@
 - [v] Extract `schema.org` JSON-LD product data when available.
 - [v] Extract Open Graph product metadata when available.
 - [v] Extract embedded product JSON when available.
-- [v] Return low-confidence web candidates without auto-trusting them.
+- [v] Return low-confidence web results without caching them as trusted results.
 - [v] Add tests with saved page fixtures.
 
 ## Phase 5: LLM Extraction Fallback

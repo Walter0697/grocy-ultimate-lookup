@@ -106,7 +106,7 @@ def test_extracts_open_graph_product_metadata() -> None:
     assert product.extraction_method == "open_graph"
 
 
-def test_low_confidence_web_result_is_returned_as_candidate_not_autofill(tmp_path) -> None:
+def test_low_confidence_web_result_can_autofill_but_is_not_cached(tmp_path) -> None:
     class FakeWebAdapter:
         name = "fake_web"
 
@@ -125,7 +125,7 @@ def test_low_confidence_web_result_is_returned_as_candidate_not_autofill(tmp_pat
 
     response = run(orchestrator.lookup("123", use_cache=False))
 
-    assert response.found is False
-    assert response.result is None
-    assert len(response.candidates) == 1
-    assert response.candidates[0].name == "Web Product"
+    assert response.found is True
+    assert response.result is not None
+    assert response.result.name == "Web Product"
+    assert orchestrator.cache.get("123") is None
