@@ -63,13 +63,13 @@
 
 ## Phase 5: LLM Extraction Fallback
 
-- [ ] Add LLM provider abstraction.
-- [ ] Feed limited page content to LLM only after structured extraction fails.
-- [ ] Require JSON output matching the normalized product schema.
-- [ ] Mark LLM results as `llm_fallback`.
-- [ ] Add stricter confidence handling for LLM-derived results.
-- [ ] Prevent LLM fallback from overwriting confirmed local cache.
-- [ ] Add tests for malformed or low-confidence LLM output.
+- [v] Add LLM provider abstraction.
+- [v] Feed limited page content to LLM only after structured extraction fails.
+- [v] Require JSON output matching the normalized product schema.
+- [v] Mark LLM results as `llm_fallback`.
+- [v] Add stricter confidence handling for LLM-derived results.
+- [v] Prevent LLM fallback from overwriting confirmed local cache.
+- [v] Add tests for malformed or low-confidence LLM output.
 
 ## Phase 6: Optional External App
 

@@ -1,16 +1,23 @@
 import asyncio
 
+import httpx
+
 from app.adapters.web_search import (
     DuckDuckGoResultParser,
     ProductMetadataExtractor,
+    SearchResult,
+    VisibleTextExtractor,
+    WebSearchAdapter,
     contains_barcode,
     decode_duckduckgo_url,
     extract_structured_barcodes,
     is_candidate_product_url,
+    llm_confidence,
     titles_conflict,
     web_confidence,
 )
 from app.cache import LookupCache
+from app.llm import LlmProductExtraction, LlmProvider
 from app.local_store import LocalProductStore
 from app.models import LookupResult
 from app.orchestrator import LookupOrchestrator
@@ -154,6 +161,97 @@ def test_barcode_and_title_confidence_helpers() -> None:
     assert web_confidence("barcode_in_page_content", []) == 0.55
     assert web_confidence("search_result_only", []) == 0.45
     assert web_confidence("barcode_in_structured_data", ["search_title_product_name_mismatch"]) == 0.4
+    assert llm_confidence(True, []) == 0.35
+    assert llm_confidence(False, []) == 0.25
+    assert llm_confidence(True, ["search_title_product_name_mismatch"]) == 0.2
+
+
+def test_visible_text_extractor_omits_scripts_and_limits_content() -> None:
+    html = "<h1>Product Name</h1><script>secret data</script><p>Useful description</p>"
+
+    text = VisibleTextExtractor.extract(html, limit=20)
+
+    assert text == "Product Name Useful "
+    assert "secret" not in text
+
+
+def test_llm_fallback_runs_only_when_structured_extraction_fails() -> None:
+    class FakeLlmProvider(LlmProvider):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def extract_product(self, barcode: str, page_url: str, page_text: str) -> LlmProductExtraction:
+            self.calls += 1
+            return LlmProductExtraction(
+                found=True,
+                name="LLM Extracted Product 12 oz",
+                brand="LLM Brand",
+                barcode_seen=True,
+            )
+
+    async def scenario():
+        provider = FakeLlmProvider()
+        adapter = WebSearchAdapter(llm_provider=provider)
+        candidate = SearchResult("LLM Extracted Product", "https://example.com/product")
+        response = httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            text="<html><body>UPC 067489302124 LLM Extracted Product 12 oz by LLM Brand</body></html>",
+        )
+        client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: response))
+        async with client:
+            result = await adapter._fetch_product(client, "067489302124", candidate)
+        return result, provider.calls
+
+    result, calls = run(scenario())
+
+    assert calls == 1
+    assert result is not None
+    assert result.source == "llm_fallback"
+    assert result.name == "LLM Extracted Product"
+    assert result.size == "12 oz"
+    assert result.confidence == 0.35
+    assert result.match_reason == "llm_barcode_in_page"
+
+
+def test_structured_product_prevents_llm_fallback_call() -> None:
+    class FailingLlmProvider(LlmProvider):
+        async def extract_product(self, barcode: str, page_url: str, page_text: str) -> LlmProductExtraction:
+            raise AssertionError("LLM should not run when structured extraction succeeds")
+
+    async def scenario():
+        adapter = WebSearchAdapter(llm_provider=FailingLlmProvider())
+        candidate = SearchResult("Structured Product", "https://example.com/product")
+        html = """
+        <script type="application/ld+json">
+        {"@type":"Product","name":"Structured Product","gtin12":"067489302124"}
+        </script>
+        """
+        response = httpx.Response(200, headers={"content-type": "text/html"}, text=html)
+        client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: response))
+        async with client:
+            return await adapter._fetch_product(client, "067489302124", candidate)
+
+    result = run(scenario())
+
+    assert result is not None
+    assert result.source == "web_json_ld"
+
+
+def test_malformed_llm_fallback_returns_no_product() -> None:
+    class EmptyLlmProvider(LlmProvider):
+        async def extract_product(self, barcode: str, page_url: str, page_text: str) -> None:
+            return None
+
+    async def scenario():
+        adapter = WebSearchAdapter(llm_provider=EmptyLlmProvider())
+        candidate = SearchResult("Unknown Page", "https://example.com/product")
+        response = httpx.Response(200, headers={"content-type": "text/html"}, text="<p>Unknown page</p>")
+        client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: response))
+        async with client:
+            return await adapter._fetch_product(client, "067489302124", candidate)
+
+    assert run(scenario()) is None
 
 
 def test_low_confidence_web_result_can_autofill_but_is_not_cached(tmp_path) -> None:

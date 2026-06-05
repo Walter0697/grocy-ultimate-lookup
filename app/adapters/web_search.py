@@ -9,6 +9,7 @@ import httpx
 
 from app.adapters.base import LookupAdapter
 from app.config import settings
+from app.llm import LlmProvider, create_llm_provider
 from app.models import LookupResult
 from app.normalization import normalize_product_name
 
@@ -249,11 +250,43 @@ class ProductMetadataExtractor(HTMLParser):
         return "search_result_only"
 
 
+class VisibleTextExtractor(HTMLParser):
+    ignored_tags = {"script", "style", "svg", "noscript"}
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._ignored_depth = 0
+        self._text: list[str] = []
+
+    @classmethod
+    def extract(cls, html: str, limit: int) -> str:
+        parser = cls()
+        parser.feed(html)
+        return normalize_text(" ".join(parser._text))[:limit]
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in self.ignored_tags:
+            self._ignored_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self.ignored_tags and self._ignored_depth > 0:
+            self._ignored_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._ignored_depth == 0 and data.strip():
+            self._text.append(data)
+
+
 class WebSearchAdapter(LookupAdapter):
     name = "web_search"
 
-    def __init__(self, search_provider: DuckDuckGoSearchProvider | None = None) -> None:
+    def __init__(
+        self,
+        search_provider: DuckDuckGoSearchProvider | None = None,
+        llm_provider: LlmProvider | None = None,
+    ) -> None:
         self.search_provider = search_provider or DuckDuckGoSearchProvider()
+        self.llm_provider = llm_provider if llm_provider is not None else create_llm_provider()
 
     async def lookup(self, barcode: str) -> LookupResult | None:
         results = await self.search_provider.search(f'"{barcode}" product', limit=settings.web_search_max_results)
@@ -282,38 +315,84 @@ class WebSearchAdapter(LookupAdapter):
             return None
 
         product = ProductMetadataExtractor.extract(response.text, barcode)
-        if product is None:
+        if product is not None:
+            return build_structured_lookup_result(barcode, candidate, product)
+        if self.llm_provider is None:
             return None
 
-        normalized = normalize_product_name(product.name, brand=product.brand)
+        page_text = VisibleTextExtractor.extract(response.text, limit=settings.llm_max_page_chars)
+        if not page_text:
+            return None
+        extracted = await self.llm_provider.extract_product(barcode, candidate.url, page_text)
+        if extracted is None:
+            return None
+
+        normalized = normalize_product_name(extracted.name or "", brand=extracted.brand, quantity=extracted.quantity)
+        match_reason = "llm_barcode_in_page" if extracted.barcode_seen else "llm_page_extraction"
         match_warnings: list[str] = []
-        if titles_conflict(candidate.title, product.name):
+        if not extracted.barcode_seen:
+            match_warnings.append("llm_did_not_see_exact_barcode")
+        if titles_conflict(candidate.title, extracted.name or ""):
             match_warnings.append("search_title_product_name_mismatch")
-        confidence = web_confidence(product.match_reason, match_warnings)
         return LookupResult(
             barcode=barcode,
             name=normalized.normalized_name,
-            raw_name=product.name,
+            raw_name=extracted.name,
             normalized_name=normalized.normalized_name,
             brand=normalized.brand,
-            quantity=None,
-            size=normalized.size,
-            count=normalized.count,
-            variant=normalized.variant,
-            image_url=product.image_url,
-            source=f"web_{product.extraction_method}",
-            confidence=confidence,
-            match_reason=product.match_reason,
+            quantity=extracted.quantity,
+            size=extracted.size or normalized.size,
+            count=extracted.count or normalized.count,
+            variant=extracted.variant or normalized.variant,
+            image_url=extracted.image_url,
+            source="llm_fallback",
+            confidence=llm_confidence(extracted.barcode_seen, match_warnings),
+            match_reason=match_reason,
             match_warnings=match_warnings,
             raw_url=candidate.url,
             raw_payload={
                 "search_title": candidate.title,
-                "extraction_method": product.extraction_method,
-                "match_reason": product.match_reason,
+                "extraction_method": "llm_fallback",
+                "match_reason": match_reason,
                 "match_warnings": match_warnings,
-                "product": product.raw_payload,
+                "product": extracted.model_dump(mode="json"),
             },
         )
+
+
+def build_structured_lookup_result(
+    barcode: str,
+    candidate: SearchResult,
+    product: StructuredProduct,
+) -> LookupResult:
+    normalized = normalize_product_name(product.name, brand=product.brand)
+    match_warnings: list[str] = []
+    if titles_conflict(candidate.title, product.name):
+        match_warnings.append("search_title_product_name_mismatch")
+    return LookupResult(
+        barcode=barcode,
+        name=normalized.normalized_name,
+        raw_name=product.name,
+        normalized_name=normalized.normalized_name,
+        brand=normalized.brand,
+        quantity=None,
+        size=normalized.size,
+        count=normalized.count,
+        variant=normalized.variant,
+        image_url=product.image_url,
+        source=f"web_{product.extraction_method}",
+        confidence=web_confidence(product.match_reason, match_warnings),
+        match_reason=product.match_reason,
+        match_warnings=match_warnings,
+        raw_url=candidate.url,
+        raw_payload={
+            "search_title": candidate.title,
+            "extraction_method": product.extraction_method,
+            "match_reason": product.match_reason,
+            "match_warnings": match_warnings,
+            "product": product.raw_payload,
+        },
+    )
 
 
 def decode_duckduckgo_url(url: str) -> str:
@@ -398,6 +477,13 @@ def web_confidence(match_reason: str, match_warnings: list[str]) -> float:
     confidence = confidence_by_reason.get(match_reason, 0.4)
     if "search_title_product_name_mismatch" in match_warnings:
         confidence = min(confidence, 0.4)
+    return confidence
+
+
+def llm_confidence(barcode_seen: bool, match_warnings: list[str]) -> float:
+    confidence = 0.35 if barcode_seen else 0.25
+    if "search_title_product_name_mismatch" in match_warnings:
+        confidence = min(confidence, 0.2)
     return confidence
 
 

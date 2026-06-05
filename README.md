@@ -180,3 +180,40 @@ suggestions but include:
   "match_warnings": ["search_title_product_name_mismatch"]
 }
 ```
+
+## LLM Extraction Fallback
+
+LLM extraction is optional and disabled by default. It runs only when:
+
+1. Local confirmed products, cache, Open Facts, and UPCItemDB miss.
+2. Web search finds a candidate page.
+3. JSON-LD, embedded JSON, and Open Graph extraction all fail.
+4. `ENABLE_LLM_FALLBACK=true` and provider configuration is present.
+
+The service strips scripts/styles and limits visible page text before sending it
+to an OpenAI-compatible chat-completions endpoint. The provider must return
+strict JSON matching the normalized product schema. Invalid JSON, missing names,
+or `found=false` responses are ignored.
+
+Configuration:
+
+```text
+ENABLE_LLM_FALLBACK=false
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_API_KEY=
+LLM_MODEL=
+LLM_MAX_PAGE_CHARS=12000
+```
+
+LLM results:
+
+- use `source=llm_fallback`
+- use confidence `0.35` when the model saw the exact barcode
+- use confidence `0.25` when the model did not see the exact barcode
+- are capped at `0.20` for search-title/product-name conflicts
+- are not cached with the default `CACHE_MIN_CONFIDENCE=0.7`
+- cannot override confirmed local products because local products are checked first
+- can still prefill Grocy's editable product form
+
+Only enable this after selecting a provider and accepting that limited retailer
+page text will be sent to that provider.

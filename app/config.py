@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     enable_web_search: bool = Field(default=True, alias="ENABLE_WEB_SEARCH")
     web_search_max_results: int = Field(default=5, alias="WEB_SEARCH_MAX_RESULTS")
     web_search_fetch_limit: int = Field(default=3, alias="WEB_SEARCH_FETCH_LIMIT")
+    enable_llm_fallback: bool = Field(default=False, alias="ENABLE_LLM_FALLBACK")
+    llm_base_url: str = Field(default="https://api.openai.com/v1", alias="LLM_BASE_URL")
+    llm_api_key: str | None = Field(default=None, alias="LLM_API_KEY")
+    llm_model: str | None = Field(default=None, alias="LLM_MODEL")
+    llm_max_page_chars: int = Field(default=12000, alias="LLM_MAX_PAGE_CHARS")
 
 
 settings = Settings()
