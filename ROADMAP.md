@@ -50,6 +50,17 @@
 - [v] Return low-confidence web results without caching them as trusted results.
 - [v] Add tests with saved page fixtures.
 
+## Phase 4.5: Web Match Hardening
+
+- [v] Detect exact barcode matches in structured product fields.
+- [v] Detect barcode evidence in page content.
+- [v] Reject structured products with conflicting barcode fields.
+- [v] Detect search-title and product-name mismatches.
+- [v] Add explainable `match_reason` and `match_warnings` fields.
+- [v] Calculate dynamic confidence from barcode evidence and mismatch warnings.
+- [v] Keep hardened web results editable through Grocy autofill.
+- [v] Add tests for exact matches, conflicts, and suspicious mismatches.
+
 ## Phase 5: LLM Extraction Fallback
 
 - [ ] Add LLM provider abstraction.

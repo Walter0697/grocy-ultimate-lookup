@@ -3,8 +3,12 @@ import asyncio
 from app.adapters.web_search import (
     DuckDuckGoResultParser,
     ProductMetadataExtractor,
+    contains_barcode,
     decode_duckduckgo_url,
+    extract_structured_barcodes,
     is_candidate_product_url,
+    titles_conflict,
+    web_confidence,
 )
 from app.cache import LookupCache
 from app.local_store import LocalProductStore
@@ -48,6 +52,7 @@ def test_extracts_json_ld_product_metadata() -> None:
       "@context": "https://schema.org",
       "@type": "Product",
       "name": "Retailer Product 12 oz",
+      "gtin12": "067489302124",
       "brand": {"@type": "Brand", "name": "Retailer Brand"},
       "image": [
         {
@@ -59,13 +64,14 @@ def test_extracts_json_ld_product_metadata() -> None:
     </script>
     """
 
-    product = ProductMetadataExtractor.extract(html, barcode="123")
+    product = ProductMetadataExtractor.extract(html, barcode="067489302124")
 
     assert product is not None
     assert product.name == "Retailer Product 12 oz"
     assert product.brand == "Retailer Brand"
     assert product.image_url == "https://example.com/image.jpg"
     assert product.extraction_method == "json_ld"
+    assert product.match_reason == "barcode_in_structured_data"
 
 
 def test_extracts_embedded_json_product_metadata_when_barcode_is_present() -> None:
@@ -89,6 +95,7 @@ def test_extracts_embedded_json_product_metadata_when_barcode_is_present() -> No
     assert product.brand == "Embedded Brand"
     assert product.image_url == "https://example.com/embedded.jpg"
     assert product.extraction_method == "embedded_json"
+    assert product.match_reason == "barcode_in_structured_data"
 
 
 def test_extracts_open_graph_product_metadata() -> None:
@@ -104,6 +111,49 @@ def test_extracts_open_graph_product_metadata() -> None:
     assert product.name == "Open Graph Product"
     assert product.image_url == "https://example.com/og.jpg"
     assert product.extraction_method == "open_graph"
+    assert product.match_reason == "search_result_only"
+
+
+def test_rejects_product_with_conflicting_structured_barcode() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@type": "Product",
+      "name": "Wrong Product",
+      "gtin12": "111111111111"
+    }
+    </script>
+    """
+
+    assert ProductMetadataExtractor.extract(html, barcode="067489302124") is None
+
+
+def test_uses_page_content_evidence_when_structured_barcode_is_missing() -> None:
+    html = """
+    <div>UPC: 067 489 302 124</div>
+    <script type="application/ld+json">
+    {
+      "@type": "Product",
+      "name": "Page Evidence Product"
+    }
+    </script>
+    """
+
+    product = ProductMetadataExtractor.extract(html, barcode="067489302124")
+
+    assert product is not None
+    assert product.match_reason == "barcode_in_page_content"
+
+
+def test_barcode_and_title_confidence_helpers() -> None:
+    assert contains_barcode("UPC: 067-489-302-124", "067489302124") is True
+    assert extract_structured_barcodes({"gtin12": "067489302124"}) == {"067489302124"}
+    assert titles_conflict("Oral-B Replacement Brush Heads", "GLAD CLINGWRAP 50M") is True
+    assert titles_conflict("GLAD Cling Wrap Online Store", "GLAD CLINGWRAP 50M") is False
+    assert web_confidence("barcode_in_structured_data", []) == 0.65
+    assert web_confidence("barcode_in_page_content", []) == 0.55
+    assert web_confidence("search_result_only", []) == 0.45
+    assert web_confidence("barcode_in_structured_data", ["search_title_product_name_mismatch"]) == 0.4
 
 
 def test_low_confidence_web_result_can_autofill_but_is_not_cached(tmp_path) -> None:

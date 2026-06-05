@@ -14,6 +14,8 @@ class LookupResult(BaseModel):
     image_url: HttpUrl | None = None
     source: str
     confidence: float = Field(ge=0, le=1)
+    match_reason: str | None = None
+    match_warnings: list[str] = Field(default_factory=list)
     raw_url: HttpUrl | None = None
     raw_payload: dict | None = None
 

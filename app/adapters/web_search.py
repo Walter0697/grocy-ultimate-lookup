@@ -25,6 +25,32 @@ BLOCKED_HOST_PARTS = (
     "youtube.",
 )
 
+BARCODE_FIELD_NAMES = {
+    "barcode",
+    "ean",
+    "ean8",
+    "ean13",
+    "gtin",
+    "gtin8",
+    "gtin12",
+    "gtin13",
+    "gtin14",
+    "sku",
+    "upc",
+}
+
+TITLE_STOP_WORDS = {
+    "and",
+    "for",
+    "from",
+    "online",
+    "product",
+    "shop",
+    "store",
+    "the",
+    "with",
+}
+
 
 class SearchResult:
     def __init__(self, title: str, url: str) -> None:
@@ -40,12 +66,14 @@ class StructuredProduct:
         image_url: str | None = None,
         raw_payload: dict[str, Any] | None = None,
         extraction_method: str = "structured",
+        match_reason: str = "search_result_only",
     ) -> None:
         self.name = name
         self.brand = brand
         self.image_url = image_url
         self.raw_payload = raw_payload or {}
         self.extraction_method = extraction_method
+        self.match_reason = match_reason
 
 
 class DuckDuckGoSearchProvider:
@@ -105,12 +133,14 @@ class ProductMetadataExtractor(HTMLParser):
         self.json_ld_blocks: list[str] = []
         self.meta: dict[str, str] = {}
         self.script_blocks: list[str] = []
+        self.page_contains_barcode = False
         self._script_type: str | None = None
         self._script_content: list[str] = []
 
     @classmethod
     def extract(cls, html: str, barcode: str) -> StructuredProduct | None:
         parser = cls(barcode)
+        parser.page_contains_barcode = contains_barcode(html, barcode)
         parser.feed(html)
         return parser.extract_product()
 
@@ -159,12 +189,16 @@ class ProductMetadataExtractor(HTMLParser):
                 name = first_string(item.get("name"))
                 if not name:
                     continue
+                match_reason = self._match_reason(item)
+                if match_reason is None:
+                    continue
                 return StructuredProduct(
                     name=name,
                     brand=extract_brand(item.get("brand")),
                     image_url=extract_image_url(item.get("image")),
                     raw_payload=item,
                     extraction_method="json_ld",
+                    match_reason=match_reason,
                 )
         return None
 
@@ -178,12 +212,16 @@ class ProductMetadataExtractor(HTMLParser):
                 name = first_string(item.get("name") or item.get("productName") or item.get("title"))
                 if not name:
                     continue
+                match_reason = self._match_reason(item)
+                if match_reason is None:
+                    continue
                 return StructuredProduct(
                     name=name,
                     brand=extract_brand(item.get("brand")),
                     image_url=extract_image_url(item.get("image") or item.get("imageUrl")),
                     raw_payload=item,
                     extraction_method="embedded_json",
+                    match_reason=match_reason,
                 )
         return None
 
@@ -197,7 +235,18 @@ class ProductMetadataExtractor(HTMLParser):
             image_url=self.meta.get("og:image") or self.meta.get("twitter:image"),
             raw_payload={"meta": self.meta},
             extraction_method="open_graph",
+            match_reason="barcode_in_page_content" if self.page_contains_barcode else "search_result_only",
         )
+
+    def _match_reason(self, item: dict[str, Any]) -> str | None:
+        structured_barcodes = extract_structured_barcodes(item)
+        if structured_barcodes:
+            if normalize_barcode(self.barcode) not in structured_barcodes:
+                return None
+            return "barcode_in_structured_data"
+        if self.page_contains_barcode:
+            return "barcode_in_page_content"
+        return "search_result_only"
 
 
 class WebSearchAdapter(LookupAdapter):
@@ -237,6 +286,10 @@ class WebSearchAdapter(LookupAdapter):
             return None
 
         normalized = normalize_product_name(product.name, brand=product.brand)
+        match_warnings: list[str] = []
+        if titles_conflict(candidate.title, product.name):
+            match_warnings.append("search_title_product_name_mismatch")
+        confidence = web_confidence(product.match_reason, match_warnings)
         return LookupResult(
             barcode=barcode,
             name=normalized.normalized_name,
@@ -249,11 +302,15 @@ class WebSearchAdapter(LookupAdapter):
             variant=normalized.variant,
             image_url=product.image_url,
             source=f"web_{product.extraction_method}",
-            confidence=0.55,
+            confidence=confidence,
+            match_reason=product.match_reason,
+            match_warnings=match_warnings,
             raw_url=candidate.url,
             raw_payload={
                 "search_title": candidate.title,
                 "extraction_method": product.extraction_method,
+                "match_reason": product.match_reason,
+                "match_warnings": match_warnings,
                 "product": product.raw_payload,
             },
         )
@@ -277,6 +334,71 @@ def is_candidate_product_url(url: str) -> bool:
 
 def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", unescape(value)).strip()
+
+
+def normalize_barcode(value: str) -> str:
+    return re.sub(r"\D", "", value)
+
+
+def contains_barcode(value: str, barcode: str) -> bool:
+    expected = normalize_barcode(barcode)
+    if not expected:
+        return False
+    if expected in value:
+        return True
+    return any(normalize_barcode(candidate) == expected for candidate in re.findall(r"\d[\d\s-]{6,}\d", value))
+
+
+def extract_structured_barcodes(value: Any) -> set[str]:
+    barcodes: set[str] = set()
+    if isinstance(value, dict):
+        for key, child in value.items():
+            normalized_key = re.sub(r"[^a-z0-9]", "", key.lower())
+            if normalized_key in BARCODE_FIELD_NAMES:
+                for candidate in iter_scalar_strings(child):
+                    normalized = normalize_barcode(candidate)
+                    if len(normalized) >= 8:
+                        barcodes.add(normalized)
+            elif isinstance(child, (dict, list)):
+                barcodes.update(extract_structured_barcodes(child))
+    elif isinstance(value, list):
+        for child in value:
+            barcodes.update(extract_structured_barcodes(child))
+    return barcodes
+
+
+def iter_scalar_strings(value: Any):
+    if isinstance(value, (str, int)):
+        yield str(value)
+    elif isinstance(value, list):
+        for item in value:
+            yield from iter_scalar_strings(item)
+
+
+def title_tokens(value: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", value.lower())
+        if len(token) > 2 and token not in TITLE_STOP_WORDS and not token.isdigit()
+    }
+
+
+def titles_conflict(search_title: str, product_name: str) -> bool:
+    search_tokens = title_tokens(search_title)
+    product_tokens = title_tokens(product_name)
+    return bool(search_tokens and product_tokens and search_tokens.isdisjoint(product_tokens))
+
+
+def web_confidence(match_reason: str, match_warnings: list[str]) -> float:
+    confidence_by_reason = {
+        "barcode_in_structured_data": 0.65,
+        "barcode_in_page_content": 0.55,
+        "search_result_only": 0.45,
+    }
+    confidence = confidence_by_reason.get(match_reason, 0.4)
+    if "search_title_product_name_mismatch" in match_warnings:
+        confidence = min(confidence, 0.4)
+    return confidence
 
 
 def parse_json(value: str) -> Any:
