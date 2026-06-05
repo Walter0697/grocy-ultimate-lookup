@@ -17,20 +17,25 @@ class FakeAdapter:
 
 
 class FakeAgentStore:
-    def __init__(self, result: LookupResult | None = None) -> None:
+    def __init__(self, result: LookupResult | None = None, status: str | None = None) -> None:
         self.result = result
+        self.status = status
 
     def get_result(self, barcode: str):
         return self.result
+
+    def get_status(self, barcode: str):
+        return {"status": self.status} if self.status else None
 
 
 class FakeAgentSearch:
     def __init__(self, result: LookupResult | None = None) -> None:
         self.store = FakeAgentStore(result)
-        self.submitted: list[str] = []
+        self.submitted: list[tuple[str, LookupResult | None]] = []
 
-    def submit(self, barcode: str) -> bool:
-        self.submitted.append(barcode)
+    def submit(self, barcode: str, fallback_result: LookupResult | None = None) -> bool:
+        self.submitted.append((barcode, fallback_result))
+        self.store.status = "queued"
         return True
 
 
@@ -68,6 +73,86 @@ def test_lookup_returns_highest_confidence_candidate(tmp_path) -> None:
     assert [candidate.source for candidate in response.candidates] == ["low"]
     assert low.calls == ["123"]
     assert high.calls == ["123"]
+
+
+def test_lookup_prefers_english_candidate_over_higher_confidence_non_english_candidate(tmp_path) -> None:
+    french = make_result("open_products_facts", 0.95)
+    french.name = "Sacs à ordures"
+    french.raw_name = "Sacs à ordures"
+    french.name_language = "fr"
+    english = make_result("upcitemdb", 0.9)
+    english.name = "Garbage Bags"
+    english.raw_name = "Garbage Bags"
+    english.name_language = "en"
+    orchestrator = LookupOrchestrator(adapters=[FakeAdapter(french), FakeAdapter(english)])
+    isolate_storage(orchestrator, tmp_path)
+
+    response = run(orchestrator.lookup("123", use_cache=False))
+
+    assert response.result is not None
+    assert response.result.name == "Garbage Bags"
+    assert response.result.alternate_names == {"fr": "Sacs à ordures"}
+
+
+def test_lookup_triggers_agent_search_for_non_english_only_result(tmp_path) -> None:
+    french = make_result("open_products_facts", 0.95)
+    french.name_language = "fr"
+    orchestrator = LookupOrchestrator(adapters=[FakeAdapter(french)])
+    isolate_storage(orchestrator, tmp_path)
+
+    response = run(orchestrator.lookup("123", use_cache=False))
+
+    assert response.result is not None
+    assert response.result.name_language == "fr"
+    assert orchestrator.agent_search.submitted == [("123", french)]
+    assert response.research_status == "queued"
+
+
+def test_lookup_prefers_sourced_english_over_translation_regardless_of_confidence(tmp_path) -> None:
+    sourced = make_result("web_search", 0.4)
+    sourced.name = "Sourced English Name"
+    sourced.name_language = "en"
+    sourced.name_origin = "sourced"
+    translated = make_result("agent_translation", 0.55)
+    translated.name = "Translated English Name"
+    translated.name_language = "en"
+    translated.name_origin = "translated"
+    orchestrator = LookupOrchestrator(
+        adapters=[FakeAdapter(sourced)],
+        agent_search=FakeAgentSearch(translated),
+    )
+    orchestrator.cache = LookupCache(str(tmp_path / "cache.sqlite3"))
+    orchestrator.local_store = LocalProductStore(str(tmp_path / "local.sqlite3"))
+
+    response = run(orchestrator.lookup("123", use_cache=False))
+
+    assert response.result is not None
+    assert response.result.name == "Sourced English Name"
+
+
+def test_lookup_prefers_translation_over_non_english_original(tmp_path) -> None:
+    french = make_result("open_products_facts", 0.95)
+    french.name = "Sacs à ordures"
+    french.raw_name = "Sacs à ordures"
+    french.name_language = "fr"
+    translated = make_result("agent_translation", 0.55)
+    translated.name = "Garbage Bags"
+    translated.name_language = "en"
+    translated.name_origin = "translated"
+    translated.alternate_names = {"fr": "Sacs à ordures"}
+    orchestrator = LookupOrchestrator(
+        adapters=[FakeAdapter(french)],
+        agent_search=FakeAgentSearch(translated),
+    )
+    orchestrator.cache = LookupCache(str(tmp_path / "cache.sqlite3"))
+    orchestrator.local_store = LocalProductStore(str(tmp_path / "local.sqlite3"))
+
+    response = run(orchestrator.lookup("123", use_cache=False))
+
+    assert response.result is not None
+    assert response.result.name == "Garbage Bags"
+    assert response.result.name_origin == "translated"
+    assert response.result.alternate_names == {"fr": "Sacs à ordures"}
 
 
 def test_lookup_prefers_local_confirmed_product_over_external_sources(tmp_path) -> None:
@@ -199,4 +284,4 @@ def test_lookup_returns_not_found_when_all_adapters_miss(tmp_path) -> None:
     assert response.found is False
     assert response.result is None
     assert response.candidates == []
-    assert orchestrator.agent_search.submitted == ["123"]
+    assert orchestrator.agent_search.submitted == [("123", None)]

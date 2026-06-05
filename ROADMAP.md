@@ -82,6 +82,18 @@
 - [v] Prefer stronger database results over researched agent results.
 - [v] Add tests for agent job persistence and lookup priority.
 
+## Phase 5.6: Multilingual Product Names
+
+- [v] Detect language-specific names from Open Facts sources.
+- [v] Prefer sourced English names over explicitly non-English names.
+- [v] Preserve original-language names as lookup metadata.
+- [v] Persist trusted non-English fallback context with agent jobs.
+- [v] Translate the trusted original only after sourced English research fails.
+- [v] Rank sourced English above translated English and translated English above non-English.
+- [v] Expose agent research status in lookup responses.
+- [v] Add lookup provenance and original names to Grocy descriptions.
+- [v] Add tests for multilingual ranking and fallback behavior.
+
 ## Phase 6: Optional External App
 
 - [ ] Add external barcode scan API endpoint.

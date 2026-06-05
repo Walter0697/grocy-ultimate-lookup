@@ -37,6 +37,9 @@ http://localhost:9290/lookup/057000013165
   "result": {
     "barcode": "057000013165",
     "name": "Heinz Tomato Ketchup",
+    "name_language": "en",
+    "name_origin": "sourced",
+    "alternate_names": {},
     "raw_name": "Heinz Tomato Ketchup",
     "normalized_name": "Heinz Tomato Ketchup",
     "brand": "Heinz",
@@ -50,7 +53,8 @@ http://localhost:9290/lookup/057000013165
     "raw_url": "https://world.openfoodfacts.org/api/v0/product/057000013165.json",
     "raw_payload": {}
   },
-  "candidates": []
+  "candidates": [],
+  "research_status": null
 }
 ```
 
@@ -65,8 +69,40 @@ Default Grocy behavior:
 
 - Product names use `normalized_name`.
 - Source markers are not appended to product names.
-- Lookup metadata stays in the lookup service and internal debug fields.
+- Lookup provenance and original-language names are added to the product description.
 - Grocy's UI can still edit auto-filled fields before saving.
+
+## Multilingual Names
+
+Lookup names follow this priority:
+
+1. User-confirmed local name.
+2. Sourced English name from databases, retailer pages, LLM extraction, or agent research.
+3. Agent-translated English name when no sourced English name exists.
+4. Trusted original-language name while research is pending or translation is unavailable.
+
+Open Facts language fields such as `product_name_en`, `product_name_fr`, and
+`lang` are preserved as `name_language` and `alternate_names`. A trusted
+non-English-only result starts background agent research. The agent must first
+search for a sourced English name; only after that fails may it translate the
+trusted original name.
+
+Translated results use:
+
+```json
+{
+  "name": "White Drawstring Kitchen Garbage Bags",
+  "name_language": "en",
+  "name_origin": "translated",
+  "alternate_names": {
+    "fr": "Sac à ordures blancs à cordons pour la cuisine"
+  },
+  "source": "agent_translation"
+}
+```
+
+The top-level `research_status` field reports `queued`, `running`, `completed`,
+`not_found`, or `failed` when a background agent job exists.
 
 ## Local Confirmed Products
 
@@ -229,11 +265,13 @@ Pochita.
 Workflow:
 
 1. Local confirmed products, trusted cache, databases, and structured web lookup run normally.
-2. If no result exists, or the best result confidence is `0.45` or lower, a background agent search is queued.
+2. If no result exists, the best result confidence is `0.45` or lower, or only
+   a non-English name exists, a background agent search is queued.
 3. The current Grocy request returns immediately instead of waiting for Codex.
-4. Codex searches multiple sources and returns strict product JSON.
-5. The researched result is persisted in `/data/agent-search.sqlite3`.
-6. A later scan uses the agent result unless a stronger database result is available.
+4. Codex searches multiple sources for sourced English and returns strict product JSON.
+5. If no sourced English exists, Codex may translate the persisted trusted original name.
+6. The researched result is persisted in `/data/agent-search.sqlite3`.
+7. A later scan uses the agent result unless a stronger sourced result is available.
 
 Configuration:
 

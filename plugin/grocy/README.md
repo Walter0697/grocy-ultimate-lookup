@@ -76,10 +76,17 @@ The plugin sends Grocy only the fields Grocy needs to prefill the product form:
 - `__qu_factor_purchase_to_stock`
 - `__barcode`
 - `__image_url`
+- `description`
 
-Lookup metadata is not sent to Grocy product fields. Grocy's product save path
-can try to persist unknown keys as product columns, so the plugin response must
-stay limited to Grocy-supported fields.
+The description contains a concise provenance summary when available:
+
+- original and alternate-language names
+- brand and quantity
+- lookup source, name origin, confidence, and English-name research status
+- barcode and source URL
+
+Grocy's product save path can try to persist unknown keys as product columns,
+so the plugin response must stay limited to Grocy-supported fields.
 
 The external lookup service keeps the full raw source payload in its own cache.
 Use the service API directly when you need provenance:

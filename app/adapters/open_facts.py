@@ -23,9 +23,17 @@ class OpenFactsAdapter(LookupAdapter):
             return None
 
         product = payload.get("product") or {}
-        name = product.get("product_name") or product.get("product_name_en")
+        product_language = product.get("lang") or product.get("lc")
+        english_name = product.get("product_name_en")
+        name = english_name or product.get("product_name")
         if not name:
             return None
+        name_language = "en" if english_name else product_language
+        alternate_names = {
+            key.removeprefix("product_name_"): value
+            for key, value in product.items()
+            if key.startswith("product_name_") and isinstance(value, str) and value.strip() and value != name
+        }
 
         brand = product.get("brands")
         quantity = product.get("quantity")
@@ -34,6 +42,9 @@ class OpenFactsAdapter(LookupAdapter):
         return LookupResult(
             barcode=barcode,
             name=normalized.normalized_name,
+            name_language=name_language,
+            name_origin="sourced",
+            alternate_names=alternate_names,
             raw_name=name,
             normalized_name=normalized.normalized_name,
             brand=normalized.brand,

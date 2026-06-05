@@ -45,12 +45,18 @@ class LookupOrchestrator:
                 barcode=barcode,
                 found=True,
                 result=self.local_store.to_lookup_result(local_product),
+                research_status=self.agent_research_status(barcode),
             )
 
         if use_cache:
             cached = self.cache.get(barcode)
             if cached:
-                return LookupResponse(barcode=barcode, found=True, result=cached)
+                return LookupResponse(
+                    barcode=barcode,
+                    found=True,
+                    result=cached,
+                    research_status=self.agent_research_status(barcode),
+                )
 
         candidates: list[LookupResult] = []
         agent_result = self.agent_search.store.get_result(barcode)
@@ -63,15 +69,26 @@ class LookupOrchestrator:
 
         if not candidates:
             self.agent_search.submit(barcode)
-            return LookupResponse(barcode=barcode, found=False)
+            return LookupResponse(
+                barcode=barcode,
+                found=False,
+                research_status=self.agent_research_status(barcode),
+            )
 
-        ranked_candidates = sorted(candidates, key=lambda item: item.confidence, reverse=True)
+        ranked_candidates = sorted(candidates, key=candidate_rank, reverse=True)
         best = ranked_candidates[0]
-        if best.confidence >= settings.cache_min_confidence:
+        best.alternate_names = merge_alternate_names(ranked_candidates, best)
+        if best.confidence >= settings.cache_min_confidence and not is_known_non_english(best):
             self.cache.set(best)
-        if best.confidence <= settings.agent_search_trigger_confidence:
-            self.agent_search.submit(barcode)
-        return LookupResponse(barcode=barcode, found=True, result=best, candidates=ranked_candidates[1:])
+        if best.confidence <= settings.agent_search_trigger_confidence or is_known_non_english(best):
+            self.agent_search.submit(barcode, fallback_result=best if is_known_non_english(best) else None)
+        return LookupResponse(
+            barcode=barcode,
+            found=True,
+            result=best,
+            candidates=ranked_candidates[1:],
+            research_status=self.agent_research_status(barcode),
+        )
 
     def get_confirmed_product(self, barcode: str) -> ConfirmedProduct | None:
         return self.local_store.get(barcode)
@@ -88,9 +105,47 @@ class LookupOrchestrator:
         return self.agent_search.store.get_status(barcode)
 
     def retry_agent_search(self, barcode: str) -> dict | None:
+        existing = self.agent_search.store.get_status(barcode)
+        fallback = (
+            LookupResult.model_validate(existing["fallback"])
+            if existing and existing.get("fallback")
+            else None
+        )
         self.agent_search.store.delete(barcode)
-        self.agent_search.submit(barcode)
+        self.agent_search.submit(barcode, fallback_result=fallback)
         return self.agent_search.store.get_status(barcode)
 
     def delete_agent_search(self, barcode: str) -> bool:
         return self.agent_search.store.delete(barcode)
+
+    def agent_research_status(self, barcode: str) -> str | None:
+        get_status = getattr(self.agent_search.store, "get_status", None)
+        if get_status is None:
+            return None
+        status = get_status(barcode)
+        return status["status"] if status else None
+
+
+def is_known_non_english(result: LookupResult) -> bool:
+    return result.name_language not in {None, "", "en"}
+
+
+def candidate_rank(result: LookupResult) -> tuple[int, float]:
+    # Unknown-language sources remain eligible because most retailer APIs omit
+    # language metadata. Sourced English names outrank translated English names,
+    # and translated names outrank explicitly non-English names.
+    if is_known_non_english(result):
+        return (0, result.confidence)
+    if result.name_origin == "translated":
+        return (1, result.confidence)
+    return (2, result.confidence)
+
+
+def merge_alternate_names(candidates: list[LookupResult], selected: LookupResult) -> dict[str, str]:
+    alternate_names = dict(selected.alternate_names)
+    for candidate in candidates:
+        alternate_names.update(candidate.alternate_names)
+        if is_known_non_english(candidate) and candidate.name_language:
+            alternate_names.setdefault(candidate.name_language, candidate.raw_name or candidate.name)
+    alternate_names.pop(selected.name_language or "", None)
+    return alternate_names

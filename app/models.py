@@ -4,6 +4,9 @@ from pydantic import BaseModel, Field, HttpUrl
 class LookupResult(BaseModel):
     barcode: str
     name: str
+    name_language: str | None = None
+    name_origin: str | None = None
+    alternate_names: dict[str, str] = Field(default_factory=dict)
     raw_name: str | None = None
     normalized_name: str | None = None
     brand: str | None = None
@@ -25,6 +28,7 @@ class LookupResponse(BaseModel):
     found: bool
     result: LookupResult | None = None
     candidates: list[LookupResult] = Field(default_factory=list)
+    research_status: str | None = None
 
 
 class ConfirmedProductRequest(BaseModel):

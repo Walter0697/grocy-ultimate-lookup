@@ -41,8 +41,50 @@ class UltimateBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
         if (!empty($result['image_url'])) {
             $product['__image_url'] = $result['image_url'];
         }
+        $product['description'] = $this->buildDescription($barcode, $result, $data['research_status'] ?? null);
 
         return $product;
+    }
+
+    private function buildDescription($barcode, $result, $researchStatus)
+    {
+        $lines = [];
+        $language = $result['name_language'] ?? null;
+        $rawName = $result['raw_name'] ?? null;
+
+        if (!empty($rawName) && ($rawName !== ($result['name'] ?? null) || (!empty($language) && $language !== 'en'))) {
+            $label = empty($language) ? 'Original name' : 'Original name (' . strtoupper($language) . ')';
+            $lines[] = $label . ': ' . $rawName;
+        }
+        if (!empty($result['alternate_names']) && is_array($result['alternate_names'])) {
+            foreach ($result['alternate_names'] as $alternateLanguage => $alternateName) {
+                $lines[] = 'Alternate name (' . strtoupper($alternateLanguage) . '): ' . $alternateName;
+            }
+        }
+        if (!empty($result['brand'])) {
+            $lines[] = 'Brand: ' . $result['brand'];
+        }
+        if (!empty($result['quantity'])) {
+            $lines[] = 'Quantity: ' . $result['quantity'];
+        }
+        if (!empty($result['source'])) {
+            $lines[] = 'Lookup source: ' . $result['source'];
+        }
+        if (!empty($result['name_origin'])) {
+            $lines[] = 'Name origin: ' . $result['name_origin'];
+        }
+        if (isset($result['confidence'])) {
+            $lines[] = 'Lookup confidence: ' . number_format((float)$result['confidence'], 2);
+        }
+        if (!empty($researchStatus)) {
+            $lines[] = 'English-name research: ' . $researchStatus;
+        }
+        $lines[] = 'Barcode: ' . $barcode;
+        if (!empty($result['raw_url'])) {
+            $lines[] = 'Source URL: ' . $result['raw_url'];
+        }
+
+        return implode("\n", $lines);
     }
 
     private function shouldAppendSourceMarker()

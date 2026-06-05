@@ -31,12 +31,16 @@ class AgentSearchStore:
                     barcode TEXT PRIMARY KEY,
                     status TEXT NOT NULL,
                     result_payload TEXT,
+                    fallback_payload TEXT,
                     error TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(agent_search_jobs)")}
+            if "fallback_payload" not in columns:
+                db.execute("ALTER TABLE agent_search_jobs ADD COLUMN fallback_payload TEXT")
             db.execute(
                 """
                 UPDATE agent_search_jobs
@@ -54,6 +58,7 @@ class AgentSearchStore:
             "barcode": row["barcode"],
             "status": row["status"],
             "result": json.loads(row["result_payload"]) if row["result_payload"] else None,
+            "fallback": json.loads(row["fallback_payload"]) if row["fallback_payload"] else None,
             "error": row["error"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
@@ -65,25 +70,38 @@ class AgentSearchStore:
             return None
         return LookupResult.model_validate(status["result"])
 
-    def queue(self, barcode: str) -> bool:
+    def queue(self, barcode: str, fallback_result: LookupResult | None = None) -> bool:
+        fallback_payload = (
+            json.dumps(fallback_result.model_dump(mode="json")) if fallback_result is not None else None
+        )
         with self._connect() as db:
             existing = db.execute(
                 "SELECT status FROM agent_search_jobs WHERE barcode = ?",
                 (barcode,),
             ).fetchone()
             if existing is not None and existing["status"] in {"queued", "running", "completed"}:
+                if fallback_payload is not None:
+                    db.execute(
+                        """
+                        UPDATE agent_search_jobs
+                        SET fallback_payload = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE barcode = ?
+                        """,
+                        (fallback_payload, barcode),
+                    )
                 return False
             db.execute(
                 """
-                INSERT INTO agent_search_jobs (barcode, status, result_payload, error)
-                VALUES (?, 'queued', NULL, NULL)
+                INSERT INTO agent_search_jobs (barcode, status, result_payload, fallback_payload, error)
+                VALUES (?, 'queued', NULL, ?, NULL)
                 ON CONFLICT(barcode) DO UPDATE SET
                     status = 'queued',
                     result_payload = NULL,
+                    fallback_payload = excluded.fallback_payload,
                     error = NULL,
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                (barcode,),
+                (barcode, fallback_payload),
             )
         return True
 
@@ -137,14 +155,14 @@ class AgentSearchManager:
         self.store = store or AgentSearchStore(settings.agent_search_path)
         self._tasks: dict[str, asyncio.Task] = {}
 
-    def submit(self, barcode: str) -> bool:
+    def submit(self, barcode: str, fallback_result: LookupResult | None = None) -> bool:
         if not settings.enable_agent_search:
             return False
         auth_path = Path(settings.agent_search_auth_path)
         if not auth_path.exists() or shutil.which("codex") is None:
             return False
         existing = self.store.get_status(barcode)
-        queued = self.store.queue(barcode)
+        queued = self.store.queue(barcode, fallback_result=fallback_result)
         recovering_queued_job = existing is not None and existing["status"] == "queued"
         if queued or (recovering_queued_job and barcode not in self._tasks):
             self._tasks[barcode] = asyncio.create_task(self._run(barcode))
@@ -153,7 +171,9 @@ class AgentSearchManager:
     async def _run(self, barcode: str) -> None:
         self.store.mark_running(barcode)
         try:
-            result = await run_codex_product_search(barcode)
+            status = self.store.get_status(barcode)
+            fallback = LookupResult.model_validate(status["fallback"]) if status and status["fallback"] else None
+            result = await run_codex_product_search(barcode, fallback_result=fallback)
             if result is None:
                 self.store.mark_not_found(barcode)
             else:
@@ -164,14 +184,17 @@ class AgentSearchManager:
             self._tasks.pop(barcode, None)
 
 
-async def run_codex_product_search(barcode: str) -> LookupResult | None:
+async def run_codex_product_search(
+    barcode: str,
+    fallback_result: LookupResult | None = None,
+) -> LookupResult | None:
     auth_path = Path(settings.agent_search_auth_path)
     with tempfile.TemporaryDirectory(prefix="grocy-agent-", dir="/data") as temp_dir:
         home = Path(temp_dir)
         codex_dir = home / ".codex"
         codex_dir.mkdir(parents=True)
         shutil.copyfile(auth_path, codex_dir / "auth.json")
-        prompt = build_agent_prompt(barcode)
+        prompt = build_agent_prompt(barcode, fallback_result=fallback_result)
         process_env = os.environ.copy()
         process_env.update(
             {
@@ -207,6 +230,10 @@ async def run_codex_product_search(barcode: str) -> LookupResult | None:
             raise RuntimeError(f"Codex search failed: {stderr.decode(errors='replace')[-1000:]}")
 
     payload = parse_last_json_object(stdout.decode(errors="replace"))
+    return build_agent_lookup_result(barcode, payload)
+
+
+def build_agent_lookup_result(barcode: str, payload: dict[str, Any] | None) -> LookupResult | None:
     if payload is None or not payload.get("found") or not payload.get("name"):
         return None
     normalized = normalize_product_name(
@@ -215,6 +242,11 @@ async def run_codex_product_search(barcode: str) -> LookupResult | None:
         quantity=payload.get("quantity"),
     )
     confidence = min(float(payload.get("confidence") or 0.5), 0.65)
+    name_origin = payload.get("name_origin")
+    if name_origin not in {"sourced_english", "translated"}:
+        return None
+    if name_origin == "translated":
+        confidence = min(confidence, 0.55)
     sources = [
         source
         for source in payload.get("sources", [])
@@ -223,9 +255,17 @@ async def run_codex_product_search(barcode: str) -> LookupResult | None:
     image_url = payload.get("image_url")
     if not isinstance(image_url, str) or not image_url.startswith(("http://", "https://")):
         image_url = None
+    original_name = payload.get("original_name")
+    original_language = payload.get("original_language")
+    alternate_names = {}
+    if name_origin == "translated" and isinstance(original_name, str) and isinstance(original_language, str):
+        alternate_names[original_language] = original_name
     return LookupResult(
         barcode=barcode,
         name=normalized.normalized_name,
+        name_language="en",
+        name_origin="translated" if name_origin == "translated" else "sourced",
+        alternate_names=alternate_names,
         raw_name=payload["name"],
         normalized_name=normalized.normalized_name,
         brand=normalized.brand,
@@ -234,7 +274,7 @@ async def run_codex_product_search(barcode: str) -> LookupResult | None:
         count=payload.get("count") or normalized.count,
         variant=payload.get("variant") or normalized.variant,
         image_url=image_url,
-        source="agent_search",
+        source="agent_translation" if name_origin == "translated" else "agent_search",
         confidence=confidence,
         match_reason="coding_agent_research",
         match_warnings=[] if payload.get("barcode_verified") else ["agent_did_not_verify_exact_barcode"],
@@ -244,22 +284,49 @@ async def run_codex_product_search(barcode: str) -> LookupResult | None:
             "barcode_verified": bool(payload.get("barcode_verified")),
             "reasoning_summary": payload.get("reasoning_summary"),
             "agent_model": settings.agent_search_model,
+            "name_origin": name_origin,
+            "original_name": original_name,
+            "original_language": original_language,
         },
     )
 
 
-def build_agent_prompt(barcode: str) -> str:
+def build_agent_prompt(barcode: str, fallback_result: LookupResult | None = None) -> str:
+    fallback_context = "No trusted non-English fallback name was provided."
+    if fallback_result is not None:
+        fallback_context = (
+            "Trusted non-English fallback product JSON:\n"
+            + json.dumps(
+                {
+                    "name": fallback_result.raw_name or fallback_result.name,
+                    "language": fallback_result.name_language,
+                    "brand": fallback_result.brand,
+                    "quantity": fallback_result.quantity,
+                    "source": fallback_result.source,
+                    "source_url": str(fallback_result.raw_url) if fallback_result.raw_url else None,
+                },
+                ensure_ascii=False,
+            )
+        )
     return f"""
 Research the consumer product with barcode {barcode}.
 
 Use web search and inspect multiple sources when possible. This is not a coding task.
 Prefer exact barcode evidence from retailer pages, manufacturer pages, product databases,
 search snippets, JSON-LD, or embedded product data. Compare conflicting results.
+First try to find an English product name supported by a source. Only if exhaustive research
+finds no sourced English name, translate the trusted non-English fallback name below into
+natural English. Never translate an unverified name or invent missing product details.
+
+{fallback_context}
 
 Return ONLY one JSON object with exactly these fields:
 {{
   "found": true or false,
   "name": string or null,
+  "name_origin": "sourced_english", "translated", or null,
+  "original_name": string or null,
+  "original_language": string or null,
   "brand": string or null,
   "quantity": string or null,
   "size": string or null,
@@ -273,6 +340,8 @@ Return ONLY one JSON object with exactly these fields:
 }}
 
 Set found=false when you cannot identify a plausible product. Do not invent product details.
+For translated results, preserve the exact original name and language in original_name and
+original_language. For sourced English results, set those fields to null.
 Do not include markdown fences or any text outside the JSON object.
 """.strip()
 
