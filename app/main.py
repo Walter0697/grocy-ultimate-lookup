@@ -35,3 +35,29 @@ async def delete_local_product(barcode: str) -> None:
     deleted = orchestrator.delete_confirmed_product(barcode)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Local product not found")
+
+
+@app.get("/agent-search/{barcode}")
+async def get_agent_search(barcode: str) -> dict:
+    agent_status = orchestrator.get_agent_search_status(barcode)
+    if agent_status is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent search not found")
+    return agent_status
+
+
+@app.post("/agent-search/{barcode}")
+async def retry_agent_search(barcode: str) -> dict:
+    agent_status = orchestrator.retry_agent_search(barcode)
+    if agent_status is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Agent search is unavailable; check Codex CLI and auth mount",
+        )
+    return agent_status
+
+
+@app.delete("/agent-search/{barcode}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_agent_search(barcode: str) -> None:
+    deleted = orchestrator.delete_agent_search(barcode)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent search not found")

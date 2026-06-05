@@ -71,6 +71,17 @@
 - [v] Prevent LLM fallback from overwriting confirmed local cache.
 - [v] Add tests for malformed or low-confidence LLM output.
 
+## Phase 5.5: Coding-Agent Research Fallback
+
+- [v] Add persisted coding-agent barcode research jobs.
+- [v] Mount Codex authentication read-only using the Pochita pattern.
+- [v] Run one isolated ephemeral Codex session per difficult barcode.
+- [v] Deduplicate active agent searches by barcode.
+- [v] Keep Grocy requests fast while agent research runs in the background.
+- [v] Add agent search status, retry, and delete endpoints.
+- [v] Prefer stronger database results over researched agent results.
+- [v] Add tests for agent job persistence and lookup priority.
+
 ## Phase 6: Optional External App
 
 - [ ] Add external barcode scan API endpoint.

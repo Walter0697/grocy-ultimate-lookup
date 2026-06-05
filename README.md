@@ -13,6 +13,7 @@ plugin wrapper in `plugin/grocy/` so the lookup logic stays outside Grocy.
 - Open Pet Food Facts
 - UPCItemDB trial endpoint
 - Web search fallback with structured page extraction
+- Ephemeral Codex coding-agent research fallback
 
 ## Run
 
@@ -217,3 +218,58 @@ LLM results:
 
 Only enable this after selecting a provider and accepting that limited retailer
 page text will be sent to that provider.
+
+## Coding-Agent Research Fallback
+
+The coding-agent fallback handles difficult barcodes that require multi-step
+research instead of extracting one known page. It uses one fresh ephemeral Codex
+CLI session per barcode and the same read-only Codex auth mount pattern used by
+Pochita.
+
+Workflow:
+
+1. Local confirmed products, trusted cache, databases, and structured web lookup run normally.
+2. If no result exists, or the best result confidence is `0.45` or lower, a background agent search is queued.
+3. The current Grocy request returns immediately instead of waiting for Codex.
+4. Codex searches multiple sources and returns strict product JSON.
+5. The researched result is persisted in `/data/agent-search.sqlite3`.
+6. A later scan uses the agent result unless a stronger database result is available.
+
+Configuration:
+
+```text
+ENABLE_AGENT_SEARCH=true
+AGENT_SEARCH_PATH=/data/agent-search.sqlite3
+AGENT_SEARCH_AUTH_PATH=/secrets/auth.json
+AGENT_SEARCH_MODEL=gpt-5.4-mini
+AGENT_SEARCH_TIMEOUT_SECONDS=300
+AGENT_SEARCH_TRIGGER_CONFIDENCE=0.45
+```
+
+Docker Compose mounts the host credential read-only:
+
+```yaml
+volumes:
+  - ~/.codex/auth.json:/secrets/auth.json:ro
+```
+
+Inspect a job:
+
+```bash
+curl -sS 'http://localhost:9290/agent-search/810669032478'
+```
+
+Force a new search:
+
+```bash
+curl -sS -X POST 'http://localhost:9290/agent-search/810669032478'
+```
+
+Remove a researched result:
+
+```bash
+curl -sS -X DELETE 'http://localhost:9290/agent-search/810669032478'
+```
+
+Agent results use `source=agent_search`, remain editable in Grocy, and never
+outrank confirmed local products or stronger database results.

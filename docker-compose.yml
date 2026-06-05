@@ -9,3 +9,4 @@ services:
       - .env
     volumes:
       - ./data:/data
+      - ~/.codex/auth.json:/secrets/auth.json:ro

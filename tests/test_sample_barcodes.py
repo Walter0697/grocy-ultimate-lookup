@@ -29,6 +29,17 @@ class SampleBarcodeAdapter:
         return self.results.get(barcode)
 
 
+class DisabledAgentSearch:
+    class Store:
+        def get_result(self, barcode: str):
+            return None
+
+    store = Store()
+
+    def submit(self, barcode: str) -> bool:
+        return False
+
+
 def run(coro):
     return asyncio.run(coro)
 
@@ -83,6 +94,7 @@ def test_sample_barcode_outcomes(barcode, expected, tmp_path) -> None:
     )
     orchestrator.cache = LookupCache(str(tmp_path / "cache.sqlite3"))
     orchestrator.local_store = LocalProductStore(str(tmp_path / "local.sqlite3"))
+    orchestrator.agent_search = DisabledAgentSearch()
 
     response = run(orchestrator.lookup(barcode, use_cache=False))
 

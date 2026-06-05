@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     llm_api_key: str | None = Field(default=None, alias="LLM_API_KEY")
     llm_model: str | None = Field(default=None, alias="LLM_MODEL")
     llm_max_page_chars: int = Field(default=12000, alias="LLM_MAX_PAGE_CHARS")
+    enable_agent_search: bool = Field(default=True, alias="ENABLE_AGENT_SEARCH")
+    agent_search_path: str = Field(default="/data/agent-search.sqlite3", alias="AGENT_SEARCH_PATH")
+    agent_search_auth_path: str = Field(default="/secrets/auth.json", alias="AGENT_SEARCH_AUTH_PATH")
+    agent_search_model: str = Field(default="gpt-5.4-mini", alias="AGENT_SEARCH_MODEL")
+    agent_search_timeout_seconds: int = Field(default=300, alias="AGENT_SEARCH_TIMEOUT_SECONDS")
+    agent_search_trigger_confidence: float = Field(default=0.45, alias="AGENT_SEARCH_TRIGGER_CONFIDENCE")
 
 
 settings = Settings()

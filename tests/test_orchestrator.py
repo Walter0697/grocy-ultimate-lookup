@@ -16,6 +16,24 @@ class FakeAdapter:
         return self.result
 
 
+class FakeAgentStore:
+    def __init__(self, result: LookupResult | None = None) -> None:
+        self.result = result
+
+    def get_result(self, barcode: str):
+        return self.result
+
+
+class FakeAgentSearch:
+    def __init__(self, result: LookupResult | None = None) -> None:
+        self.store = FakeAgentStore(result)
+        self.submitted: list[str] = []
+
+    def submit(self, barcode: str) -> bool:
+        self.submitted.append(barcode)
+        return True
+
+
 def run(coro):
     return asyncio.run(coro)
 
@@ -23,6 +41,7 @@ def run(coro):
 def isolate_storage(orchestrator: LookupOrchestrator, tmp_path) -> None:
     orchestrator.cache = LookupCache(str(tmp_path / "cache.sqlite3"))
     orchestrator.local_store = LocalProductStore(str(tmp_path / "local.sqlite3"))
+    orchestrator.agent_search = FakeAgentSearch()
 
 
 def make_result(source: str, confidence: float) -> LookupResult:
@@ -75,6 +94,34 @@ def test_lookup_prefers_local_confirmed_product_over_external_sources(tmp_path) 
     assert response.result.brand == "Home"
     assert response.result.size == "12 oz"
     assert adapter.calls == []
+
+
+def test_lookup_uses_completed_agent_result_when_external_sources_miss(tmp_path) -> None:
+    adapter = FakeAdapter(None)
+    agent_result = make_result("agent_search", 0.6)
+    orchestrator = LookupOrchestrator(adapters=[adapter], agent_search=FakeAgentSearch(agent_result))
+    orchestrator.cache = LookupCache(str(tmp_path / "cache.sqlite3"))
+    orchestrator.local_store = LocalProductStore(str(tmp_path / "local.sqlite3"))
+
+    response = run(orchestrator.lookup("123", use_cache=False))
+
+    assert response.result is not None
+    assert response.result.source == "agent_search"
+    assert adapter.calls == ["123"]
+
+
+def test_lookup_prefers_trusted_external_result_over_agent_result(tmp_path) -> None:
+    adapter = FakeAdapter(make_result("network", 0.9))
+    agent_result = make_result("agent_search", 0.6)
+    orchestrator = LookupOrchestrator(adapters=[adapter], agent_search=FakeAgentSearch(agent_result))
+    orchestrator.cache = LookupCache(str(tmp_path / "cache.sqlite3"))
+    orchestrator.local_store = LocalProductStore(str(tmp_path / "local.sqlite3"))
+
+    response = run(orchestrator.lookup("123", use_cache=False))
+
+    assert response.result is not None
+    assert response.result.source == "network"
+    assert [candidate.source for candidate in response.candidates] == ["agent_search"]
 
 
 def test_confirm_product_updates_existing_local_match(tmp_path) -> None:
@@ -152,3 +199,4 @@ def test_lookup_returns_not_found_when_all_adapters_miss(tmp_path) -> None:
     assert response.found is False
     assert response.result is None
     assert response.candidates == []
+    assert orchestrator.agent_search.submitted == ["123"]

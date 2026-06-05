@@ -27,6 +27,17 @@ def run(coro):
     return asyncio.run(coro)
 
 
+class DisabledAgentSearch:
+    class Store:
+        def get_result(self, barcode: str):
+            return None
+
+    store = Store()
+
+    def submit(self, barcode: str) -> bool:
+        return False
+
+
 def test_duckduckgo_result_parser_extracts_candidate_urls() -> None:
     html = """
     <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fproduct%2F123">Example Product</a>
@@ -270,6 +281,7 @@ def test_low_confidence_web_result_can_autofill_but_is_not_cached(tmp_path) -> N
     orchestrator = LookupOrchestrator(adapters=[FakeWebAdapter()])
     orchestrator.cache = LookupCache(str(tmp_path / "cache.sqlite3"))
     orchestrator.local_store = LocalProductStore(str(tmp_path / "local.sqlite3"))
+    orchestrator.agent_search = DisabledAgentSearch()
 
     response = run(orchestrator.lookup("123", use_cache=False))
 
