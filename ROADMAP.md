@@ -104,6 +104,8 @@
 - [v] Add compact manual scanner with mode, quantity, and location selection.
 - [v] Replace the manual scanner form with barcode-first preview and confirmation popup.
 - [v] Add Grocy-first, non-mutating scan preview endpoint.
+- [v] Automatically create complete trusted lookup matches in Grocy.
+- [v] Show loading states during barcode lookup and Grocy writes.
 - [v] Forward optional scan location to Grocy stock operations.
 - [v] Make only uncertain, unknown, researching, and failed cards require review.
 - [v] Add pending unknown-product review queue.

@@ -36,6 +36,13 @@ class FakeGrocy:
         self.product = details(22, product.name, 0)
         return self.product
 
+    async def get_objects(self, entity: str):
+        if entity == "locations":
+            return [{"id": 4, "name": "Kitchen"}]
+        if entity == "quantity_units":
+            return [{"id": 7, "name": "Piece"}]
+        return []
+
     def product_card(self, product):
         return {
             "product_id": product["product"]["id"],
@@ -110,6 +117,44 @@ def test_preview_uses_lookup_for_unknown_grocy_barcode(tmp_path) -> None:
 
     assert preview["resolution"] == "lookup"
     assert preview["product"]["name"] == "Suggested Product"
+
+
+def test_preview_auto_creates_complete_trusted_lookup_result(tmp_path) -> None:
+    result = LookupResult(
+        barcode="123456",
+        name="Trusted Product",
+        image_url="https://example.test/image.jpg",
+        source="open_food_facts",
+        confidence=0.95,
+    )
+    grocy = FakeGrocy()
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=True, result=result)))
+
+    preview = run(scanner.preview("123456"))
+
+    assert preview["resolution"] == "grocy_auto_created"
+    assert preview["product"]["name"] == "Trusted Product"
+    assert len(grocy.created) == 1
+    assert grocy.created[0][1].location_id == 4
+    assert grocy.created[0][1].qu_id == 7
+
+
+def test_preview_does_not_auto_create_incomplete_or_uncertain_lookup_result(tmp_path) -> None:
+    uncertain = LookupResult(
+        barcode="123456",
+        name="Uncertain Product",
+        image_url="https://example.test/image.jpg",
+        source="web_search",
+        confidence=0.95,
+        match_warnings=["search_title_product_name_mismatch"],
+    )
+    grocy = FakeGrocy()
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=True, result=uncertain)))
+
+    preview = run(scanner.preview("123456"))
+
+    assert preview["resolution"] == "lookup"
+    assert grocy.created == []
 
 
 def test_duplicate_event_id_does_not_apply_stock_twice(tmp_path) -> None:

@@ -83,7 +83,9 @@ The dashboard uses one newest-first Gallery Wall:
 - selecting a dotted card opens the product review drawer
 - the compact header scanner accepts a barcode and Enter
 - barcode preview checks Grocy first, then Ultimate Lookup, without changing stock
+- complete trusted lookup matches are created in Grocy automatically before preview; trusted means name, image, no lookup warnings, and confidence at or above `AUTO_CREATE_MIN_CONFIDENCE` (default `0.8`)
 - the preview popup selects add/remove/manage, quantity, and location before confirmation
+- lookup and Grocy write controls show progress and prevent duplicate submissions while requests run
 - set-mode submissions require explicit browser confirmation
 
 Preview a barcode without creating a scan event or changing stock:

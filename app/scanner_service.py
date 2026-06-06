@@ -34,14 +34,16 @@ class ScannerService:
     async def preview(self, barcode: str) -> dict:
         grocy_product = await self.grocy.find_product_by_barcode(barcode)
         if grocy_product is not None:
-            return {
-                "barcode": barcode,
-                "found": True,
-                "resolution": "grocy",
-                "product": self.grocy.product_card(grocy_product),
-                "lookup": None,
-            }
+            return self._preview_response(barcode, grocy_product, "grocy")
         response = await self.lookup.lookup(barcode, use_cache=False)
+        if self._can_auto_create(response):
+            product = await self._create_from_lookup(barcode, response.result)
+            return self._preview_response(
+                barcode,
+                product,
+                "grocy_auto_created",
+                lookup=response.model_dump(mode="json"),
+            )
         return {
             "barcode": barcode,
             "found": response.found,
@@ -49,6 +51,61 @@ class ScannerService:
             "product": response.result.model_dump(mode="json") if response.result else None,
             "lookup": response.model_dump(mode="json"),
         }
+
+    async def _create_from_lookup(self, barcode: str, result) -> dict:
+        locations = await self.grocy.get_objects("locations")
+        units = await self.grocy.get_objects("quantity_units")
+        if not locations or not units:
+            raise RuntimeError("Grocy needs at least one location and quantity unit before products can be created")
+        description_parts = [
+            f"Lookup source: {result.source}",
+            f"Lookup confidence: {result.confidence}",
+        ]
+        if result.raw_url:
+            description_parts.append(f"Source URL: {result.raw_url}")
+        product = PendingProductConfirmation(
+            name=result.name,
+            description="\n".join(description_parts),
+            brand=result.brand,
+            quantity=result.quantity or result.size,
+            image_url=result.image_url,
+            location_id=int(locations[0]["id"]),
+            qu_id=int(units[0]["id"]),
+        )
+        created = await self.grocy.create_product(barcode, product)
+        self.local_store.upsert(
+            barcode,
+            ConfirmedProductRequest(
+                name=result.name,
+                brand=result.brand,
+                quantity=result.quantity or result.size,
+                image_url=result.image_url,
+                notes="Automatically created from a trusted lookup result",
+            ),
+        )
+        return created
+
+    def _preview_response(self, barcode: str, product: dict, resolution: str, lookup: dict | None = None) -> dict:
+        return {
+            "barcode": barcode,
+            "found": True,
+            "resolution": resolution,
+            "product": self.grocy.product_card(product),
+            "lookup": lookup,
+        }
+
+    @staticmethod
+    def _can_auto_create(response) -> bool:
+        result = response.result
+        return bool(
+            response.found
+            and result
+            and result.name.strip()
+            and result.image_url
+            and result.confidence >= settings.auto_create_min_confidence
+            and not result.match_warnings
+            and response.research_status not in {"queued", "running"}
+        )
 
     async def refresh(self, event_id: str) -> dict:
         event = self._required(event_id)

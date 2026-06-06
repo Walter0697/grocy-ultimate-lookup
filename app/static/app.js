@@ -14,6 +14,18 @@ function toast(message) {
   const node = $("#toast"); node.textContent = message; node.classList.add("show");
   setTimeout(() => node.classList.remove("show"), 3500);
 }
+function setQuickScanBusy(busy) {
+  const form = $("#quick-scan");
+  form.classList.toggle("busy", busy);
+  form.querySelector("input").disabled = busy;
+}
+function setButtonBusy(button, busy, label) {
+  if (!button) return;
+  if (busy) button.dataset.label = button.textContent;
+  button.disabled = busy;
+  button.classList.toggle("busy-button", busy);
+  button.textContent = busy ? label : button.dataset.label || button.textContent;
+}
 function needsReview(event) { return ["pending", "researching", "failed"].includes(event.status); }
 function image(event) {
   if (event.image_url) return `<img src="${escapeHtml(event.image_url)}" alt="">`;
@@ -81,7 +93,7 @@ function previewImage(product) {
 }
 function previewDialog(preview) {
   const product = preview.product || {};
-  const source = preview.resolution === "grocy" ? "Existing Grocy product" : preview.resolution === "lookup" ? `Suggested by ${product.source || "Ultimate Lookup"}` : "Unknown product";
+  const source = preview.resolution === "grocy" ? "Existing Grocy product" : preview.resolution === "grocy_auto_created" ? "Trusted match added to Grocy" : preview.resolution === "lookup" ? `Suggested by ${product.source || "Ultimate Lookup"}` : "Unknown product";
   const locations = options.locations.map(x => `<button type="button" class="choice location-choice" data-value="${x.id}">${escapeHtml(x.name)}</button>`).join("");
   return `<div class="preview-photo">${previewImage(product)}</div><p class="drawer-kicker">${escapeHtml(source)}</p><h2>${escapeHtml(product.name || "Unknown product")}</h2>
     <p class="preview-barcode">${escapeHtml(preview.barcode)}</p>${product.stock_amount != null ? `<p class="current-stock">Current stock: <b>${product.stock_amount}</b> ${escapeHtml(product.quantity_unit || "")}</p>` : ""}
@@ -104,8 +116,10 @@ async function load() {
 }
 $("#quick-scan").addEventListener("submit", async event => {
   event.preventDefault(); const barcode = new FormData(event.target).get("barcode").trim();
+  setQuickScanBusy(true);
   try { openScanDialog(await api(`/scan-preview/${encodeURIComponent(barcode)}`)); event.target.barcode.value = ""; }
   catch (error) { toast(error.message); }
+  finally { setQuickScanBusy(false); }
 });
 document.addEventListener("click", async event => {
   const filter = event.target.closest("[data-filter]");
@@ -134,11 +148,15 @@ document.addEventListener("submit", async event => {
     if (mode === "set" && !confirm(`Set stock to ${quantity}?`)) return;
     const data = { event_id: `dashboard-manual-${Date.now()}`, device_id: "dashboard-manual", barcode: activePreview.barcode, mode, quantity };
     if (location) data.location_id = Number(location);
+    const button = event.target.querySelector(".confirm-scan"); setButtonBusy(button, true, "Updating Grocy...");
     try { await api("/scan-events", { method: "POST", body: JSON.stringify(data) }); $("#scan-dialog").close(); activePreview = null; await load(); $("#quick-scan input").focus(); } catch (error) { toast(error.message); }
+    finally { setButtonBusy(button, false); }
     return;
   }
   if (!event.target.matches(".review-form")) return;
   event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); data.location_id = Number(data.location_id); data.qu_id = Number(data.qu_id); if (!data.image_url) delete data.image_url;
+  const button = event.target.querySelector('button[type="submit"]'); setButtonBusy(button, true, "Adding to Grocy...");
   try { await api(`/scan-events/${event.target.dataset.event}/confirm`, { method: "POST", body: JSON.stringify(data) }); closeDrawer(); await load(); } catch (error) { toast(error.message); }
+  finally { setButtonBusy(button, false); }
 });
 load(); setInterval(load, 12000);
