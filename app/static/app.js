@@ -4,6 +4,7 @@ let events = [];
 let options = { locations: [], quantity_units: [] };
 let activeFilter = "all";
 let activePreview = null;
+let dashboardSignature = "";
 
 async function api(path, init) {
   const response = await fetch(path, { headers: { "Content-Type": "application/json" }, ...init });
@@ -43,6 +44,33 @@ function operationClass(event) {
   if (event.status === "failed") return "failed";
   if (needsReview(event)) return "pending";
   return event.mode;
+}
+function eventSignature(event) {
+  return {
+    event_id: event.event_id,
+    barcode: event.barcode,
+    mode: event.mode,
+    quantity: event.quantity,
+    location_id: event.location_id,
+    status: event.status,
+    product_id: event.product_id,
+    product_name: event.product_name,
+    image_url: event.image_url,
+    stock_before: event.stock_before,
+    stock_after: event.stock_after,
+    lookup_payload: event.lookup_payload,
+    error: event.error,
+    created_at: event.created_at
+  };
+}
+function optionsSignature(nextOptions) {
+  return {
+    locations: nextOptions.locations.map(x => ({ id: x.id, name: x.name })),
+    quantity_units: nextOptions.quantity_units.map(x => ({ id: x.id, name: x.name }))
+  };
+}
+function dataSignature(nextEvents, nextOptions) {
+  return JSON.stringify({ events: nextEvents.map(eventSignature), options: optionsSignature(nextOptions) });
 }
 function subtitle(event) {
   const change = event.stock_before == null ? "" : `Stock ${event.stock_before} → ${event.stock_after}`;
@@ -111,7 +139,15 @@ function openScanDialog(preview) {
   activePreview = preview; $("#scan-preview-content").innerHTML = previewDialog(preview); $("#scan-dialog").showModal(); updateConfirmLabel();
 }
 async function load() {
-  try { [events, options] = await Promise.all([api("/scan-events?limit=200"), api("/dashboard/options")]); render(); }
+  try {
+    const [nextEvents, nextOptions] = await Promise.all([api("/scan-events?limit=200"), api("/dashboard/options")]);
+    const nextSignature = dataSignature(nextEvents, nextOptions);
+    events = nextEvents;
+    options = nextOptions;
+    if (nextSignature === dashboardSignature) return;
+    dashboardSignature = nextSignature;
+    render();
+  }
   catch (error) { toast(error.message); }
 }
 $("#quick-scan").addEventListener("submit", async event => {
