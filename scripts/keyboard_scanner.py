@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import select
 import sys
 import urllib.error
 import urllib.request
@@ -126,6 +127,18 @@ def print_result(result: dict[str, Any]) -> None:
     print(f"[{marker}] {result.get('message')}")
 
 
+def drain_buffered_input(input_stream) -> int:
+    if not input_stream.isatty():
+        return 0
+    drained = 0
+    while True:
+        ready, _, _ = select.select([input_stream], [], [], 0)
+        if not ready:
+            return drained
+        input_stream.readline()
+        drained += 1
+
+
 def main() -> int:
     args = parse_args()
     server = args.server.rstrip("/")
@@ -149,7 +162,12 @@ def main() -> int:
                 continue
             try:
                 print(f"Scanning {line} with {state.status()}")
+                print("BUSY: sending scan to server; ignore scanner input until Ready is shown.")
                 print_result(post_json(f"{server}/scanner/scan", state.payload(line)))
+                ignored = drain_buffered_input(sys.stdin)
+                if ignored:
+                    print(f"Ignored {ignored} buffered input line(s) received while busy.")
+                print(f"Ready: {state.status()}")
             except urllib.error.HTTPError as exc:
                 failures += 1
                 print(exc.read().decode("utf-8"), file=sys.stderr)

@@ -88,6 +88,10 @@ Keyboard commands:
 - `?`: show current state
 - any other line: treat it as a barcode and submit the scan
 
+During a scan request the simulator prints `BUSY`. When running interactively,
+any extra barcode lines received before the next `Ready` prompt are discarded
+and reported, which is closer to how a physical device should behave.
+
 For manual/idempotent integrations, send a scanner event with your own event ID:
 
 ```bash

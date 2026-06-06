@@ -37,3 +37,14 @@ def test_stock_operations_forward_location() -> None:
 
         payload = client.requests[0][2]["json"]
         assert payload["location_id"] == 9
+
+
+def test_picture_file_name_is_unique_per_upload() -> None:
+    first = GrocyClient.picture_file_name("066200032500", "https://example.com/image.jpg")
+    second = GrocyClient.picture_file_name("066200032500", "https://example.com/image.jpg")
+
+    assert first.startswith("066200032500-")
+    assert first.endswith(".jpg")
+    assert second.startswith("066200032500-")
+    assert second.endswith(".jpg")
+    assert first != second

@@ -1,6 +1,7 @@
 import base64
 from pathlib import Path
 from urllib.parse import urlparse
+from uuid import uuid4
 
 import httpx
 from pydantic import HttpUrl
@@ -123,10 +124,7 @@ class GrocyClient:
             response = await client.get(str(image_url))
         if response.status_code != 200:
             return None
-        suffix = Path(urlparse(str(image_url)).path).suffix.lower()
-        if suffix not in {".jpg", ".jpeg", ".png", ".webp"}:
-            suffix = ".jpg"
-        file_name = f"{barcode}{suffix}"
+        file_name = self.picture_file_name(barcode, str(image_url))
         encoded = base64.b64encode(file_name.encode()).decode()
         await self._request(
             "PUT",
@@ -135,6 +133,13 @@ class GrocyClient:
             headers={"Content-Type": response.headers.get("content-type", "application/octet-stream")},
         )
         return file_name
+
+    @staticmethod
+    def picture_file_name(barcode: str, image_url: str) -> str:
+        suffix = Path(urlparse(image_url).path).suffix.lower()
+        if suffix not in {".jpg", ".jpeg", ".png", ".webp"}:
+            suffix = ".jpg"
+        return f"{barcode}-{uuid4().hex[:8]}{suffix}"
 
     async def _request(self, method: str, path: str, **kwargs):
         headers = {**self.headers(), **kwargs.pop("headers", {})}
