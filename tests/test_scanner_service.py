@@ -56,6 +56,7 @@ def request(event_id="event-1"):
         barcode="123456",
         mode="add",
         quantity=1,
+        location_id=2,
     )
 
 
@@ -85,6 +86,7 @@ def test_known_grocy_product_is_applied_before_external_lookup(tmp_path) -> None
     assert result["stock_after"] == 3
     assert lookup.calls == []
     assert len(grocy.operations) == 1
+    assert grocy.operations[0][1].location_id == 2
 
 
 def test_duplicate_event_id_does_not_apply_stock_twice(tmp_path) -> None:

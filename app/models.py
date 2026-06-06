@@ -64,6 +64,7 @@ class ScanEventRequest(BaseModel):
     barcode: str = Field(min_length=1, max_length=120)
     mode: Literal["add", "remove", "set"]
     quantity: float = Field(ge=0)
+    location_id: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def validate_quantity_for_mode(self):

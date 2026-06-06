@@ -27,6 +27,7 @@ class ScanEventStore:
                     barcode TEXT NOT NULL,
                     mode TEXT NOT NULL,
                     quantity REAL NOT NULL,
+                    location_id INTEGER,
                     status TEXT NOT NULL,
                     product_id INTEGER,
                     product_name TEXT,
@@ -40,6 +41,9 @@ class ScanEventStore:
                 )
                 """
             )
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(scan_events)")}
+            if "location_id" not in columns:
+                db.execute("ALTER TABLE scan_events ADD COLUMN location_id INTEGER")
 
     def create(self, event: ScanEventRequest) -> tuple[dict, bool]:
         existing = self.get(event.event_id)
@@ -48,10 +52,10 @@ class ScanEventStore:
         with self._connect() as db:
             db.execute(
                 """
-                INSERT INTO scan_events (event_id, device_id, barcode, mode, quantity, status)
-                VALUES (?, ?, ?, ?, ?, 'processing')
+                INSERT INTO scan_events (event_id, device_id, barcode, mode, quantity, location_id, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'processing')
                 """,
-                (event.event_id, event.device_id, event.barcode, event.mode, event.quantity),
+                (event.event_id, event.device_id, event.barcode, event.mode, event.quantity, event.location_id),
             )
         return self.get(event.event_id), True
 

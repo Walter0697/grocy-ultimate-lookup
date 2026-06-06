@@ -100,6 +100,10 @@
 - [v] Check Grocy for existing barcodes before external lookup.
 - [v] Add idempotent scan event log with add, remove, and set modes.
 - [v] Add responsive image-card dashboard.
+- [v] Replace separate dashboard sections with a unified Gallery Wall event grid.
+- [v] Add compact manual scanner with mode, quantity, and location selection.
+- [v] Forward optional scan location to Grocy stock operations.
+- [v] Make only uncertain, unknown, researching, and failed cards require review.
 - [v] Add pending unknown-product review queue.
 - [v] Add Grocy product creation and stock writeback after confirmation.
 - [v] Preserve and apply the original pending stock operation after confirmation.

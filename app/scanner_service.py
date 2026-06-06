@@ -107,4 +107,5 @@ class ScannerService:
             barcode=event["barcode"],
             mode=event["mode"],
             quantity=event["quantity"],
+            location_id=event["location_id"],
         )

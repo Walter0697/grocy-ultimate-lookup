@@ -37,15 +37,22 @@ class GrocyClient:
     async def apply_stock_operation(self, product_id: int, event: ScanEventRequest) -> dict:
         if event.mode == "add":
             payload = {"amount": event.quantity, "transaction_type": "purchase", "note": event.event_id}
+            if event.location_id is not None:
+                payload["location_id"] = event.location_id
             await self._request("POST", f"/stock/products/{product_id}/add", json=payload)
         elif event.mode == "remove":
             payload = {"amount": event.quantity, "transaction_type": "consume", "spoiled": False}
+            if event.location_id is not None:
+                payload["location_id"] = event.location_id
             await self._request("POST", f"/stock/products/{product_id}/consume", json=payload)
         else:
+            payload = {"new_amount": event.quantity, "note": event.event_id}
+            if event.location_id is not None:
+                payload["location_id"] = event.location_id
             await self._request(
                 "POST",
                 f"/stock/products/{product_id}/inventory",
-                json={"new_amount": event.quantity, "note": event.event_id},
+                json=payload,
             )
         return await self.product_details(product_id)
 

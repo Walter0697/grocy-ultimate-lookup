@@ -51,7 +51,8 @@ curl -sS -X POST 'http://localhost:9290/scan-events' \
     "device_id": "kitchen-pi",
     "barcode": "055966908051",
     "mode": "add",
-    "quantity": 1
+    "quantity": 1,
+    "location_id": 2
   }'
 ```
 
@@ -61,6 +62,12 @@ Supported modes:
 - `remove`: consume/remove the quantity from Grocy stock
 - `set`: inventory the product to the exact quantity, including zero
 
+`location_id` is optional. When supplied, it is forwarded to Grocy for add,
+remove, and set operations. When omitted, Grocy uses the product/default stock
+location behavior. Hardware clients should fetch available locations from
+`GET /dashboard/options` and send the stable numeric ID instead of a location
+name.
+
 Every hardware retry must reuse the same `event_id`. Duplicate event IDs return
 the original event and never apply the stock operation twice.
 
@@ -68,6 +75,14 @@ Unknown items remain `pending` or `researching`. The dashboard allows editing
 the product name, description, image, location, and quantity unit. Confirmation
 creates the product and barcode in Grocy, saves the confirmed lookup locally,
 and applies the original pending stock operation.
+
+The dashboard uses one newest-first Gallery Wall:
+
+- applied scans are solid Polaroid cards and require no interaction
+- researching, uncertain, unknown, and failed scans are dotted review cards
+- selecting a dotted card opens the product review drawer
+- the compact manual scanner supports barcode, mode, quantity, and location
+- set-mode submissions require explicit browser confirmation
 
 Scanner configuration:
 

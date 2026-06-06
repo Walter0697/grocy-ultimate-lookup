@@ -4,57 +4,50 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pantry Signal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600;9..144,800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <header>
-    <div>
-      <p class="eyebrow">GROCY SCANNER NETWORK</p>
-      <h1>Pantry Signal</h1>
-      <p class="lede">Every scan becomes a visible, reviewable stock event.</p>
+  <header class="topbar">
+    <div class="identity">
+      <p>SCANNER ACTIVITY</p>
+      <h1>Kitchen scans</h1>
     </div>
-    <div class="pulse"><span></span> Live dashboard</div>
+    <nav class="filters">
+      <button class="active" data-filter="all">All <b id="all-count">0</b></button>
+      <button data-filter="review">Needs review <b id="review-count">0</b></button>
+      <button data-filter="applied">Applied</button>
+      <button data-filter="failed">Failed</button>
+    </nav>
+    <div class="header-actions">
+      <span class="online"><i></i> Grocy online</span>
+      <button id="toggle-scanner">Manual scan</button>
+    </div>
   </header>
 
+  <section id="manual-scanner" class="manual-scanner hidden">
+    <form id="scan-form">
+      <label class="barcode-field">Barcode<input name="barcode" placeholder="Scan or enter barcode" required></label>
+      <label>Mode<select name="mode"><option value="add">Add</option><option value="remove">Remove</option><option value="set">Set</option></select></label>
+      <label>Quantity<input name="quantity" type="number" min="0" step="0.01" value="1" required></label>
+      <label>Location<select name="location_id"><option value="">Product default</option></select></label>
+      <input name="device_id" type="hidden" value="dashboard-manual">
+      <button>Apply scan</button>
+    </form>
+    <p>Known products apply instantly. Unknown or uncertain products appear as dotted review cards.</p>
+  </section>
+
   <main>
-    <section class="scanner-panel">
-      <div>
-        <p class="eyebrow">LOCAL TEST CONSOLE</p>
-        <h2>Send a scanner event</h2>
-      </div>
-      <form id="scan-form">
-        <input name="barcode" placeholder="Scan or enter barcode" required autofocus>
-        <input name="device_id" value="dashboard-test" placeholder="Device ID" required>
-        <select name="mode"><option value="add">Add</option><option value="remove">Remove</option><option value="set">Set</option></select>
-        <input name="quantity" type="number" min="0" step="0.01" value="1" required>
-        <button>Send scan</button>
-      </form>
-    </section>
-
-    <section>
-      <div class="section-heading">
-        <div><p class="eyebrow">ACTION REQUIRED</p><h2>Pending review</h2></div>
-        <span id="pending-count" class="count">0</span>
-      </div>
-      <div id="pending-grid" class="card-grid"></div>
-    </section>
-
-    <section>
-      <div class="section-heading">
-        <div><p class="eyebrow">EVENT STREAM</p><h2>Recent scans</h2></div>
-        <button class="ghost" id="refresh">Refresh</button>
-      </div>
-      <div id="event-grid" class="card-grid"></div>
-    </section>
-
-    <section>
-      <div class="section-heading">
-        <div><p class="eyebrow">GROCY SOURCE OF TRUTH</p><h2>Products</h2></div>
-        <span id="product-count" class="count">0</span>
-      </div>
-      <div id="product-grid" class="card-grid"></div>
-    </section>
+    <div id="event-grid" class="event-grid"></div>
   </main>
+
+  <aside id="review-drawer" class="review-drawer" aria-hidden="true">
+    <button id="close-drawer" class="close">Close</button>
+    <div id="drawer-content"></div>
+  </aside>
+  <div id="drawer-backdrop" class="backdrop hidden"></div>
   <div id="toast"></div>
   <script src="/static/app.js"></script>
 </body>
