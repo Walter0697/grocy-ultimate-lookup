@@ -113,7 +113,8 @@
 - [v] Preserve and apply the original pending stock operation after confirmation.
 - [ ] Add scanner device authentication.
 - [ ] Add device heartbeat and online/offline status.
-- [ ] Build Raspberry Pi scanner client.
+- [v] Add device-friendly scanner endpoint with server-generated event IDs.
+- [v] Build Raspberry Pi scanner client prototype.
 - [ ] Evaluate ESP32 scanner client.
 - [v] Support scanner workflows outside the Grocy UI.
 - [v] Reuse the same lookup core for Grocy plugin and external app paths.

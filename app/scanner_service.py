@@ -1,7 +1,9 @@
+from uuid import uuid4
+
 from app.config import settings
 from app.grocy import GrocyClient
 from app.local_store import LocalProductStore
-from app.models import ConfirmedProductRequest, PendingProductConfirmation, ScanEventRequest
+from app.models import ConfirmedProductRequest, DeviceScanRequest, PendingProductConfirmation, ScanEventRequest
 from app.orchestrator import LookupOrchestrator
 from app.scan_events import ScanEventStore
 
@@ -30,6 +32,19 @@ class ScannerService:
             return await self._lookup_pending(request)
         except Exception as exc:
             return self.store.update(request.event_id, status="failed", error=str(exc))
+
+    async def process_device_scan(self, request: DeviceScanRequest) -> dict:
+        event = await self.process(
+            ScanEventRequest(
+                event_id=self._device_event_id(request.device_id),
+                device_id=request.device_id,
+                barcode=request.barcode,
+                mode=request.mode,
+                quantity=request.quantity,
+                location_id=request.location_id,
+            )
+        )
+        return self._device_response(event)
 
     async def preview(self, barcode: str) -> dict:
         grocy_product = await self.grocy.find_product_by_barcode(barcode)
@@ -185,3 +200,32 @@ class ScannerService:
             quantity=event["quantity"],
             location_id=event["location_id"],
         )
+
+    @staticmethod
+    def _device_event_id(device_id: str) -> str:
+        safe_device = "".join(char if char.isalnum() or char in {"-", "_"} else "-" for char in device_id).strip("-")
+        return f"{safe_device or 'device'}-{uuid4().hex}"
+
+    @staticmethod
+    def _device_response(event: dict) -> dict:
+        needs_review = event["status"] in {"pending", "researching", "failed"}
+        if event["status"] == "applied":
+            message = f"{event['product_name'] or event['barcode']}: stock is now {event['stock_after']}"
+        elif event["status"] == "pending":
+            message = "Product needs dashboard review before stock can be changed"
+        elif event["status"] == "researching":
+            message = "Product lookup is still researching; check the dashboard"
+        else:
+            message = event.get("error") or "Scan failed; check the dashboard"
+        return {
+            "event_id": event["event_id"],
+            "status": event["status"],
+            "barcode": event["barcode"],
+            "mode": event["mode"],
+            "quantity": event["quantity"],
+            "product_name": event["product_name"],
+            "stock_before": event["stock_before"],
+            "stock_after": event["stock_after"],
+            "needs_review": needs_review,
+            "message": message,
+        }

@@ -41,7 +41,35 @@ are authoritative and immediately receive the requested stock operation.
 Unknown barcodes run through Ultimate Lookup and become pending dashboard cards
 for review.
 
-Send an idempotent scanner event:
+For a Pi/ESP-style device, prefer the device-friendly endpoint. The service
+generates the event ID and returns a compact response:
+
+```bash
+curl -sS -X POST 'http://localhost:9290/scanner/scan' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "device_id": "kitchen-pi",
+    "barcode": "066200032500",
+    "mode": "add",
+    "quantity": 1,
+    "location_id": 2
+  }'
+```
+
+Prototype a USB barcode scanner on Linux/Raspberry Pi:
+
+```bash
+python3 scripts/device_scanner.py \
+  --server http://localhost:9290 \
+  --device-id kitchen-pi \
+  --mode add \
+  --quantity 1
+```
+
+Most USB barcode scanners act like keyboards and send Enter after the barcode,
+so the script can run as a stdin loop.
+
+For manual/idempotent integrations, send a scanner event with your own event ID:
 
 ```bash
 curl -sS -X POST 'http://localhost:9290/scan-events' \

@@ -73,6 +73,33 @@ class ScanEventRequest(BaseModel):
         return self
 
 
+class DeviceScanRequest(BaseModel):
+    device_id: str = Field(min_length=1, max_length=120)
+    barcode: str = Field(min_length=1, max_length=120)
+    mode: Literal["add", "remove", "set"] = "add"
+    quantity: float = Field(default=1, ge=0)
+    location_id: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_quantity_for_mode(self):
+        if self.mode in {"add", "remove"} and self.quantity <= 0:
+            raise ValueError("Add and remove quantities must be greater than zero")
+        return self
+
+
+class DeviceScanResponse(BaseModel):
+    event_id: str
+    status: str
+    barcode: str
+    mode: str
+    quantity: float
+    product_name: str | None = None
+    stock_before: float | None = None
+    stock_after: float | None = None
+    needs_review: bool
+    message: str
+
+
 class PendingProductConfirmation(BaseModel):
     name: str = Field(min_length=1)
     description: str | None = None

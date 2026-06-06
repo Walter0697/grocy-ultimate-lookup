@@ -7,6 +7,8 @@ from fastapi.staticfiles import StaticFiles
 from app.models import (
     ConfirmedProduct,
     ConfirmedProductRequest,
+    DeviceScanRequest,
+    DeviceScanResponse,
     LookupResponse,
     PendingProductConfirmation,
     ScanEventRequest,
@@ -85,6 +87,11 @@ async def delete_agent_search(barcode: str) -> None:
 @app.post("/scan-events")
 async def create_scan_event(event: ScanEventRequest) -> dict:
     return await scanner.process(event)
+
+
+@app.post("/scanner/scan", response_model=DeviceScanResponse)
+async def create_device_scan(event: DeviceScanRequest) -> DeviceScanResponse:
+    return await scanner.process_device_scan(event)
 
 
 @app.get("/scan-preview/{barcode}")

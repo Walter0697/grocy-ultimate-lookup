@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.models import LookupResult, ScanEventRequest
+from app.models import DeviceScanRequest, LookupResult, ScanEventRequest
 
 
 def test_lookup_result_accepts_minimal_product() -> None:
@@ -24,3 +24,11 @@ def test_set_scan_allows_zero_but_add_does_not() -> None:
 
     with pytest.raises(ValidationError):
         ScanEventRequest(event_id="2", device_id="pi", barcode="123", mode="add", quantity=0)
+
+
+def test_device_scan_defaults_to_add_one() -> None:
+    request = DeviceScanRequest(device_id="kitchen-pi", barcode="123")
+
+    assert request.mode == "add"
+    assert request.quantity == 1
+    assert request.location_id is None

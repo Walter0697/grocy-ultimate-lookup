@@ -1,6 +1,6 @@
 import asyncio
 
-from app.models import LookupResponse, LookupResult, PendingProductConfirmation, ScanEventRequest
+from app.models import DeviceScanRequest, LookupResponse, LookupResult, PendingProductConfirmation, ScanEventRequest
 from app.local_store import LocalProductStore
 from app.scan_events import ScanEventStore
 from app.scanner_service import ScannerService
@@ -94,6 +94,25 @@ def test_known_grocy_product_is_applied_before_external_lookup(tmp_path) -> None
     assert lookup.calls == []
     assert len(grocy.operations) == 1
     assert grocy.operations[0][1].location_id == 2
+
+
+def test_device_scan_generates_event_id_and_returns_compact_response(tmp_path) -> None:
+    grocy = FakeGrocy(details())
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup)
+
+    result = run(
+        scanner.process_device_scan(
+            DeviceScanRequest(device_id="kitchen-pi", barcode="123456", mode="add", quantity=2, location_id=2)
+        )
+    )
+
+    assert result["event_id"].startswith("kitchen-pi-")
+    assert result["status"] == "applied"
+    assert result["barcode"] == "123456"
+    assert result["product_name"] == "Known Product"
+    assert result["stock_after"] == 3
+    assert len(grocy.operations) == 1
 
 
 def test_preview_checks_grocy_before_lookup(tmp_path) -> None:
