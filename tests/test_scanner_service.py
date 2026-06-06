@@ -209,7 +209,7 @@ def test_unknown_product_becomes_pending_with_lookup_suggestion(tmp_path) -> Non
         name="Suggested Product",
         image_url="https://example.test/image.jpg",
         source="test",
-        confidence=0.8,
+        confidence=0.7,
     )
     scanner = service(
         tmp_path,
@@ -222,6 +222,67 @@ def test_unknown_product_becomes_pending_with_lookup_suggestion(tmp_path) -> Non
     assert event["status"] == "pending"
     assert event["product_name"] == "Suggested Product"
     assert event["lookup_payload"]["result"]["source"] == "test"
+
+
+def test_device_scan_auto_creates_and_applies_complete_trusted_lookup_result(tmp_path) -> None:
+    result = LookupResult(
+        barcode="123456",
+        name="Trusted Product",
+        image_url="https://example.test/image.jpg",
+        source="open_food_facts",
+        confidence=0.95,
+    )
+    grocy = FakeGrocy()
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=True, result=result)))
+
+    event = run(scanner.process(request()))
+
+    assert event["status"] == "applied"
+    assert event["product_name"] == "Trusted Product"
+    assert len(grocy.created) == 1
+    assert len(grocy.operations) == 1
+
+
+def test_device_scan_trusts_agent_result_when_barcode_verified(tmp_path) -> None:
+    result = LookupResult(
+        barcode="123456",
+        name="Verified Agent Product",
+        image_url="https://example.test/image.jpg",
+        source="agent_search",
+        confidence=0.62,
+        raw_payload={"barcode_verified": True},
+    )
+    grocy = FakeGrocy()
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=True, result=result)))
+
+    event = run(scanner.process(request()))
+
+    assert event["status"] == "applied"
+    assert event["product_name"] == "Verified Agent Product"
+    assert len(grocy.created) == 1
+    assert len(grocy.operations) == 1
+
+
+def test_refresh_uses_existing_grocy_product_after_lookup_was_already_created(tmp_path) -> None:
+    result = LookupResult(
+        barcode="123456",
+        name="Trusted Product",
+        image_url="https://example.test/image.jpg",
+        source="open_food_facts",
+        confidence=0.95,
+    )
+    grocy = FakeGrocy()
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=True, result=result)))
+    pending = scanner.store.create(request())[0]
+    scanner.store.update(pending["event_id"], status="pending", product_name="Trusted Product")
+    grocy.product = details(22, "Trusted Product", 4)
+
+    event = run(scanner.refresh(pending["event_id"]))
+
+    assert event["status"] == "applied"
+    assert event["product_name"] == "Trusted Product"
+    assert len(grocy.created) == 0
+    assert len(grocy.operations) == 1
 
 
 def test_unknown_product_researching_status_is_preserved(tmp_path) -> None:

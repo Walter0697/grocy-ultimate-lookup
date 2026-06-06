@@ -112,12 +112,15 @@ class ScannerService:
     @staticmethod
     def _can_auto_create(response) -> bool:
         result = response.result
+        barcode_verified = bool((result.raw_payload or {}).get("barcode_verified")) if result else False
+        trusted_confidence = result.confidence >= settings.auto_create_min_confidence if result else False
+        trusted_agent = result.source == "agent_search" and barcode_verified if result else False
         return bool(
             response.found
             and result
             and result.name.strip()
             and result.image_url
-            and result.confidence >= settings.auto_create_min_confidence
+            and (trusted_confidence or trusted_agent)
             and not result.match_warnings
             and response.research_status not in {"queued", "running"}
         )
@@ -160,6 +163,18 @@ class ScannerService:
     async def _lookup_pending(self, request: ScanEventRequest) -> dict:
         response = await self.lookup.lookup(request.barcode, use_cache=False)
         result = response.result
+        if self._can_auto_create(response):
+            product = await self.grocy.find_product_by_barcode(request.barcode)
+            if product is None:
+                product = await self._create_from_lookup(request.barcode, result)
+            self.store.update(
+                request.event_id,
+                product_name=result.name,
+                image_url=str(result.image_url) if result.image_url else None,
+                lookup_payload=response.model_dump(mode="json"),
+                error=None,
+            )
+            return await self._apply(request, product)
         return self.store.update(
             request.event_id,
             status="researching" if response.research_status in {"queued", "running"} else "pending",
