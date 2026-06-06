@@ -27,7 +27,7 @@ function setButtonBusy(button, busy, label) {
   button.classList.toggle("busy-button", busy);
   button.textContent = busy ? label : button.dataset.label || button.textContent;
 }
-function isLoading(event) { return ["processing", "researching"].includes(event.status); }
+function isLoading(event) { return event.status === "processing"; }
 function needsReview(event) { return ["pending", "researching", "failed"].includes(event.status); }
 function image(event) {
   if (event.image_url) return `<img src="${escapeHtml(event.image_url)}" alt="">`;
@@ -36,7 +36,7 @@ function image(event) {
 }
 function operationBadge(event) {
   if (event.status === "processing") return "Working...";
-  if (event.status === "researching") return "Researching";
+  if (event.status === "researching") return event.product_name ? "Review match" : "Unknown";
   if (event.status === "pending") return event.product_name ? "Review match" : "Unknown";
   if (event.status === "failed") return event.product_name ? "Operation failed" : "Failed";
   if (event.mode === "set") return `Set ${event.quantity}`;
@@ -51,7 +51,6 @@ function operationClass(event) {
 function title(event) {
   if (event.product_name) return event.product_name;
   if (event.status === "processing") return "Processing scan";
-  if (event.status === "researching") return "Searching product";
   return "Unknown product";
 }
 function captionStatus(event, review) {
