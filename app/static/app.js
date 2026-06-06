@@ -27,13 +27,15 @@ function setButtonBusy(button, busy, label) {
   button.classList.toggle("busy-button", busy);
   button.textContent = busy ? label : button.dataset.label || button.textContent;
 }
+function isLoading(event) { return ["processing", "researching"].includes(event.status); }
 function needsReview(event) { return ["pending", "researching", "failed"].includes(event.status); }
 function image(event) {
   if (event.image_url) return `<img src="${escapeHtml(event.image_url)}" alt="">`;
-  if (event.status === "researching") return `<div class="placeholder"><strong>?</strong><i class="scan-beam"></i></div>`;
+  if (isLoading(event)) return `<div class="placeholder"><strong>...</strong><i class="scan-beam"></i></div>`;
   return `<div class="placeholder barcode-art"><i></i></div>`;
 }
 function operationBadge(event) {
+  if (event.status === "processing") return "Working...";
   if (event.status === "researching") return "Researching";
   if (event.status === "pending") return event.product_name ? "Review match" : "Unknown";
   if (event.status === "failed") return event.product_name ? "Operation failed" : "Failed";
@@ -41,9 +43,21 @@ function operationBadge(event) {
   return `${event.mode === "add" ? "+" : "−"}${event.quantity}`;
 }
 function operationClass(event) {
+  if (isLoading(event)) return "pending";
   if (event.status === "failed") return "failed";
   if (needsReview(event)) return "pending";
   return event.mode;
+}
+function title(event) {
+  if (event.product_name) return event.product_name;
+  if (event.status === "processing") return "Processing scan";
+  if (event.status === "researching") return "Searching product";
+  return "Unknown product";
+}
+function captionStatus(event, review) {
+  if (isLoading(event)) return "IN PROGRESS";
+  if (review) return event.status === "failed" ? "NEEDS ATTENTION" : "ACTION NEEDED";
+  return "APPLIED";
 }
 function eventSignature(event) {
   return {
@@ -80,13 +94,13 @@ function subtitle(event) {
 function card(event, index) {
   const review = needsReview(event);
   const result = event.lookup_payload?.result;
-  return `<article class="polaroid ${review ? "review" : "applied"} ${event.status}" data-event="${escapeHtml(event.event_id)}" style="--delay:${Math.min(index, 10) * 35}ms">
+  return `<article class="polaroid ${review || isLoading(event) ? "review" : "applied"} ${event.status}" data-event="${escapeHtml(event.event_id)}" style="--delay:${Math.min(index, 10) * 35}ms">
     <div class="photo">${image(event)}<em class="badge ${operationClass(event)}">${escapeHtml(operationBadge(event))}</em></div>
-    <div class="caption"><span>${review ? (event.status === "failed" ? "NEEDS ATTENTION" : "ACTION NEEDED") : "APPLIED"}</span>
-      <h2>${escapeHtml(event.product_name || "Unknown product")}</h2>
+    <div class="caption"><span>${captionStatus(event, review)}</span>
+      <h2>${escapeHtml(title(event))}</h2>
       ${result?.alternate_names ? Object.entries(result.alternate_names).slice(0, 1).map(([lang, name]) => `<p class="alternate">${escapeHtml(lang.toUpperCase())}: ${escapeHtml(name)}</p>`).join("") : ""}
       <p>${subtitle(event) || escapeHtml(event.barcode)}</p>${event.error ? `<p class="error">${escapeHtml(event.error)}</p>` : ""}
-      ${review ? `<button class="review-button">Review details</button>` : ""}</div></article>`;
+      ${review && !isLoading(event) ? `<button class="review-button">Review details</button>` : ""}</div></article>`;
 }
 function render() {
   const visible = events.filter(event => activeFilter === "review" ? needsReview(event) : activeFilter === "applied" ? event.status === "applied" : activeFilter === "failed" ? event.status === "failed" : true);
