@@ -69,6 +69,25 @@ python3 scripts/device_scanner.py \
 Most USB barcode scanners act like keyboards and send Enter after the barcode,
 so the script can run as a stdin loop.
 
+Test the future button workflow before wiring GPIO:
+
+```bash
+python3 scripts/keyboard_scanner.py \
+  --server http://localhost:9290 \
+  --device-id keyboard-pi
+```
+
+Keyboard commands:
+
+- `a`: add mode
+- `r`: remove mode
+- `s`: set/manage mode
+- `+`: quantity up
+- `-`: quantity down
+- `l`: cycle Grocy location
+- `?`: show current state
+- any other line: treat it as a barcode and submit the scan
+
 For manual/idempotent integrations, send a scanner event with your own event ID:
 
 ```bash

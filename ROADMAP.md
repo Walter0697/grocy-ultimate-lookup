@@ -115,6 +115,7 @@
 - [ ] Add device heartbeat and online/offline status.
 - [v] Add device-friendly scanner endpoint with server-generated event IDs.
 - [v] Build Raspberry Pi scanner client prototype.
+- [v] Add keyboard scanner simulator for mode, quantity, and location controls.
 - [ ] Evaluate ESP32 scanner client.
 - [v] Support scanner workflows outside the Grocy UI.
 - [v] Reuse the same lookup core for Grocy plugin and external app paths.
