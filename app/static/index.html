@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pantry Signal</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">GROCY SCANNER NETWORK</p>
+      <h1>Pantry Signal</h1>
+      <p class="lede">Every scan becomes a visible, reviewable stock event.</p>
+    </div>
+    <div class="pulse"><span></span> Live dashboard</div>
+  </header>
+
+  <main>
+    <section class="scanner-panel">
+      <div>
+        <p class="eyebrow">LOCAL TEST CONSOLE</p>
+        <h2>Send a scanner event</h2>
+      </div>
+      <form id="scan-form">
+        <input name="barcode" placeholder="Scan or enter barcode" required autofocus>
+        <input name="device_id" value="dashboard-test" placeholder="Device ID" required>
+        <select name="mode"><option value="add">Add</option><option value="remove">Remove</option><option value="set">Set</option></select>
+        <input name="quantity" type="number" min="0" step="0.01" value="1" required>
+        <button>Send scan</button>
+      </form>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <div><p class="eyebrow">ACTION REQUIRED</p><h2>Pending review</h2></div>
+        <span id="pending-count" class="count">0</span>
+      </div>
+      <div id="pending-grid" class="card-grid"></div>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <div><p class="eyebrow">EVENT STREAM</p><h2>Recent scans</h2></div>
+        <button class="ghost" id="refresh">Refresh</button>
+      </div>
+      <div id="event-grid" class="card-grid"></div>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <div><p class="eyebrow">GROCY SOURCE OF TRUTH</p><h2>Products</h2></div>
+        <span id="product-count" class="count">0</span>
+      </div>
+      <div id="product-grid" class="card-grid"></div>
+    </section>
+  </main>
+  <div id="toast"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

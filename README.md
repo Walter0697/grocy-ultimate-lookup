@@ -28,6 +28,59 @@ Service:
 http://localhost:9290/lookup/057000013165
 ```
 
+Dashboard:
+
+```text
+http://localhost:9290/
+```
+
+## External Scanner Dashboard
+
+The external scanner API checks Grocy first. Existing Grocy barcode mappings
+are authoritative and immediately receive the requested stock operation.
+Unknown barcodes run through Ultimate Lookup and become pending dashboard cards
+for review.
+
+Send an idempotent scanner event:
+
+```bash
+curl -sS -X POST 'http://localhost:9290/scan-events' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "event_id": "kitchen-pi-000001",
+    "device_id": "kitchen-pi",
+    "barcode": "055966908051",
+    "mode": "add",
+    "quantity": 1
+  }'
+```
+
+Supported modes:
+
+- `add`: purchase/add the quantity to Grocy stock
+- `remove`: consume/remove the quantity from Grocy stock
+- `set`: inventory the product to the exact quantity, including zero
+
+Every hardware retry must reuse the same `event_id`. Duplicate event IDs return
+the original event and never apply the stock operation twice.
+
+Unknown items remain `pending` or `researching`. The dashboard allows editing
+the product name, description, image, location, and quantity unit. Confirmation
+creates the product and barcode in Grocy, saves the confirmed lookup locally,
+and applies the original pending stock operation.
+
+Scanner configuration:
+
+```text
+SCAN_EVENTS_PATH=/data/scan-events.sqlite3
+GROCY_URL=http://host.docker.internal:9283/api
+GROCY_PUBLIC_URL=http://localhost:9283
+GROCY_API_KEY=
+```
+
+Set `GROCY_API_KEY` when Grocy authentication is enabled. Device authentication
+is intentionally deferred until the Pi/ESP32 client contract is finalized.
+
 ## Response Shape
 
 ```json

@@ -7,6 +7,8 @@ services:
       - "9290:9290"
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/data
       - ~/.codex/auth.json:/secrets/auth.json:ro

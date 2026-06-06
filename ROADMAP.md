@@ -96,9 +96,16 @@
 
 ## Phase 6: Optional External App
 
-- [ ] Add external barcode scan API endpoint.
-- [ ] Add simple lookup UI.
-- [ ] Add optional Grocy API writeback after confirmation.
-- [ ] Add Telegram confirmation flow.
-- [ ] Support scanner workflows outside the Grocy UI.
-- [ ] Reuse the same lookup core for Grocy plugin and external app paths.
+- [v] Add external barcode scan API endpoint.
+- [v] Check Grocy for existing barcodes before external lookup.
+- [v] Add idempotent scan event log with add, remove, and set modes.
+- [v] Add responsive image-card dashboard.
+- [v] Add pending unknown-product review queue.
+- [v] Add Grocy product creation and stock writeback after confirmation.
+- [v] Preserve and apply the original pending stock operation after confirmation.
+- [ ] Add scanner device authentication.
+- [ ] Add device heartbeat and online/offline status.
+- [ ] Build Raspberry Pi scanner client.
+- [ ] Evaluate ESP32 scanner client.
+- [v] Support scanner workflows outside the Grocy UI.
+- [v] Reuse the same lookup core for Grocy plugin and external app paths.

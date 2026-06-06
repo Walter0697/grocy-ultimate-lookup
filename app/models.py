@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field, HttpUrl
+from typing import Literal
+
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 
 class LookupResult(BaseModel):
@@ -54,3 +56,27 @@ class ConfirmedProduct(BaseModel):
     notes: str | None = None
     created_at: str
     updated_at: str
+
+
+class ScanEventRequest(BaseModel):
+    event_id: str = Field(min_length=1, max_length=120)
+    device_id: str = Field(min_length=1, max_length=120)
+    barcode: str = Field(min_length=1, max_length=120)
+    mode: Literal["add", "remove", "set"]
+    quantity: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_quantity_for_mode(self):
+        if self.mode in {"add", "remove"} and self.quantity <= 0:
+            raise ValueError("Add and remove quantities must be greater than zero")
+        return self
+
+
+class PendingProductConfirmation(BaseModel):
+    name: str = Field(min_length=1)
+    description: str | None = None
+    brand: str | None = None
+    quantity: str | None = None
+    image_url: HttpUrl | None = None
+    location_id: int = Field(gt=0)
+    qu_id: int = Field(gt=0)

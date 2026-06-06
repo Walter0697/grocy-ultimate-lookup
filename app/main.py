@@ -1,10 +1,29 @@
-from fastapi import FastAPI, HTTPException, Query, status
+from pathlib import Path
 
-from app.models import ConfirmedProduct, ConfirmedProductRequest, LookupResponse
+from fastapi import FastAPI, HTTPException, Query, status
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from app.models import (
+    ConfirmedProduct,
+    ConfirmedProductRequest,
+    LookupResponse,
+    PendingProductConfirmation,
+    ScanEventRequest,
+)
 from app.orchestrator import LookupOrchestrator
+from app.scanner_service import ScannerService
 
 app = FastAPI(title="Grocy Ultimate Lookup", version="0.1.0")
 orchestrator = LookupOrchestrator()
+scanner = ScannerService(lookup=orchestrator)
+static_path = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=static_path), name="static")
+
+
+@app.get("/", include_in_schema=False)
+async def dashboard() -> FileResponse:
+    return FileResponse(static_path / "index.html")
 
 
 @app.get("/health")
@@ -61,3 +80,52 @@ async def delete_agent_search(barcode: str) -> None:
     deleted = orchestrator.delete_agent_search(barcode)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent search not found")
+
+
+@app.post("/scan-events")
+async def create_scan_event(event: ScanEventRequest) -> dict:
+    return await scanner.process(event)
+
+
+@app.get("/scan-events")
+async def list_scan_events(
+    event_status: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[dict]:
+    return scanner.store.list(status=event_status, limit=limit)
+
+
+@app.get("/scan-events/{event_id}")
+async def get_scan_event(event_id: str) -> dict:
+    event = scanner.store.get(event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan event not found")
+    return event
+
+
+@app.post("/scan-events/{event_id}/refresh")
+async def refresh_scan_event(event_id: str) -> dict:
+    try:
+        return await scanner.refresh(event_id)
+    except KeyError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan event not found")
+
+
+@app.post("/scan-events/{event_id}/confirm")
+async def confirm_scan_event(event_id: str, product: PendingProductConfirmation) -> dict:
+    try:
+        return await scanner.confirm(event_id, product)
+    except KeyError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan event not found")
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@app.get("/dashboard/products")
+async def dashboard_products() -> list[dict]:
+    return await scanner.products()
+
+
+@app.get("/dashboard/options")
+async def dashboard_options() -> dict:
+    return await scanner.options()

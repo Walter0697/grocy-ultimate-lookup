@@ -1,4 +1,7 @@
-from app.models import LookupResult
+import pytest
+from pydantic import ValidationError
+
+from app.models import LookupResult, ScanEventRequest
 
 
 def test_lookup_result_accepts_minimal_product() -> None:
@@ -13,3 +16,11 @@ def test_lookup_result_accepts_minimal_product() -> None:
     assert result.barcode == "057000013165"
     assert result.name == "Heinz Tomato Ketchup"
     assert result.normalized_name == "Heinz Tomato Ketchup"
+
+
+def test_set_scan_allows_zero_but_add_does_not() -> None:
+    set_event = ScanEventRequest(event_id="1", device_id="pi", barcode="123", mode="set", quantity=0)
+    assert set_event.quantity == 0
+
+    with pytest.raises(ValidationError):
+        ScanEventRequest(event_id="2", device_id="pi", barcode="123", mode="add", quantity=0)
