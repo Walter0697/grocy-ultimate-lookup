@@ -31,6 +31,25 @@ class ScannerService:
         except Exception as exc:
             return self.store.update(request.event_id, status="failed", error=str(exc))
 
+    async def preview(self, barcode: str) -> dict:
+        grocy_product = await self.grocy.find_product_by_barcode(barcode)
+        if grocy_product is not None:
+            return {
+                "barcode": barcode,
+                "found": True,
+                "resolution": "grocy",
+                "product": self.grocy.product_card(grocy_product),
+                "lookup": None,
+            }
+        response = await self.lookup.lookup(barcode, use_cache=False)
+        return {
+            "barcode": barcode,
+            "found": response.found,
+            "resolution": "lookup" if response.found else "unknown",
+            "product": response.result.model_dump(mode="json") if response.result else None,
+            "lookup": response.model_dump(mode="json"),
+        }
+
     async def refresh(self, event_id: str) -> dict:
         event = self._required(event_id)
         if event["status"] not in {"pending", "researching"}:

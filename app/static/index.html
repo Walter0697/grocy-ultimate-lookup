@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600;9..144,800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/scan-dialog.css">
 </head>
 <body>
   <header class="topbar">
@@ -23,26 +24,20 @@
     </nav>
     <div class="header-actions">
       <span class="online"><i></i> Grocy online</span>
-      <button id="toggle-scanner">Manual scan</button>
+      <form id="quick-scan" class="quick-scan">
+        <input name="barcode" placeholder="Scan barcode + Enter" autocomplete="off" required autofocus>
+      </form>
     </div>
   </header>
-
-  <section id="manual-scanner" class="manual-scanner hidden">
-    <form id="scan-form">
-      <label class="barcode-field">Barcode<input name="barcode" placeholder="Scan or enter barcode" required></label>
-      <label>Mode<select name="mode"><option value="add">Add</option><option value="remove">Remove</option><option value="set">Set</option></select></label>
-      <label>Quantity<input name="quantity" type="number" min="0" step="0.01" value="1" required></label>
-      <label>Location<select name="location_id"><option value="">Product default</option></select></label>
-      <input name="device_id" type="hidden" value="dashboard-manual">
-      <button>Apply scan</button>
-    </form>
-    <p>Known products apply instantly. Unknown or uncertain products appear as dotted review cards.</p>
-  </section>
 
   <main>
     <div id="event-grid" class="event-grid"></div>
   </main>
 
+  <dialog id="scan-dialog" class="scan-dialog">
+    <button id="close-scan-dialog" class="close">Close</button>
+    <div id="scan-preview-content"></div>
+  </dialog>
   <aside id="review-drawer" class="review-drawer" aria-hidden="true">
     <button id="close-drawer" class="close">Close</button>
     <div id="drawer-content"></div>

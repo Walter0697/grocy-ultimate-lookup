@@ -81,8 +81,16 @@ The dashboard uses one newest-first Gallery Wall:
 - applied scans are solid Polaroid cards and require no interaction
 - researching, uncertain, unknown, and failed scans are dotted review cards
 - selecting a dotted card opens the product review drawer
-- the compact manual scanner supports barcode, mode, quantity, and location
+- the compact header scanner accepts a barcode and Enter
+- barcode preview checks Grocy first, then Ultimate Lookup, without changing stock
+- the preview popup selects add/remove/manage, quantity, and location before confirmation
 - set-mode submissions require explicit browser confirmation
+
+Preview a barcode without creating a scan event or changing stock:
+
+```bash
+curl -sS 'http://localhost:9290/scan-preview/055966908051'
+```
 
 Scanner configuration:
 

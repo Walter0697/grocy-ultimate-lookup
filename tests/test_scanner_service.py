@@ -89,6 +89,29 @@ def test_known_grocy_product_is_applied_before_external_lookup(tmp_path) -> None
     assert grocy.operations[0][1].location_id == 2
 
 
+def test_preview_checks_grocy_before_lookup(tmp_path) -> None:
+    grocy = FakeGrocy(details())
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup)
+
+    preview = run(scanner.preview("123456"))
+
+    assert preview["resolution"] == "grocy"
+    assert preview["product"]["name"] == "Known Product"
+    assert lookup.calls == []
+
+
+def test_preview_uses_lookup_for_unknown_grocy_barcode(tmp_path) -> None:
+    result = LookupResult(barcode="123456", name="Suggested Product", source="test", confidence=0.8)
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=True, result=result))
+    scanner = service(tmp_path, FakeGrocy(), lookup)
+
+    preview = run(scanner.preview("123456"))
+
+    assert preview["resolution"] == "lookup"
+    assert preview["product"]["name"] == "Suggested Product"
+
+
 def test_duplicate_event_id_does_not_apply_stock_twice(tmp_path) -> None:
     grocy = FakeGrocy(details())
     scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=False)))

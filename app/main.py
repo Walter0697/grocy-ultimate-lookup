@@ -87,6 +87,11 @@ async def create_scan_event(event: ScanEventRequest) -> dict:
     return await scanner.process(event)
 
 
+@app.get("/scan-preview/{barcode}")
+async def preview_scan(barcode: str) -> dict:
+    return await scanner.preview(barcode)
+
+
 @app.get("/scan-events")
 async def list_scan_events(
     event_status: str | None = Query(default=None, alias="status"),

@@ -102,6 +102,8 @@
 - [v] Add responsive image-card dashboard.
 - [v] Replace separate dashboard sections with a unified Gallery Wall event grid.
 - [v] Add compact manual scanner with mode, quantity, and location selection.
+- [v] Replace the manual scanner form with barcode-first preview and confirmation popup.
+- [v] Add Grocy-first, non-mutating scan preview endpoint.
 - [v] Forward optional scan location to Grocy stock operations.
 - [v] Make only uncertain, unknown, researching, and failed cards require review.
 - [v] Add pending unknown-product review queue.
