@@ -17,8 +17,9 @@ class FakeLookup:
 
 
 class FakeGrocy:
-    def __init__(self, product=None) -> None:
+    def __init__(self, product=None, fail_apply: Exception | None = None) -> None:
         self.product = product
+        self.fail_apply = fail_apply
         self.operations = []
         self.created = []
 
@@ -27,6 +28,8 @@ class FakeGrocy:
 
     async def apply_stock_operation(self, product_id: int, event: ScanEventRequest):
         self.operations.append((product_id, event))
+        if self.fail_apply:
+            raise self.fail_apply
         name = self.product["product"]["name"]
         self.product = details(product_id, name, event.quantity if event.mode == "set" else 3)
         return self.product
@@ -185,6 +188,19 @@ def test_duplicate_event_id_does_not_apply_stock_twice(tmp_path) -> None:
 
     assert first == second
     assert len(grocy.operations) == 1
+
+
+def test_failed_known_product_operation_keeps_product_context(tmp_path) -> None:
+    grocy = FakeGrocy(details(name="Diet Coca-Cola"), fail_apply=RuntimeError("Not enough stock"))
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=False)))
+
+    event = run(scanner.process(request()))
+
+    assert event["status"] == "failed"
+    assert event["product_id"] == 7
+    assert event["product_name"] == "Diet Coca-Cola"
+    assert event["stock_before"] == 2
+    assert event["error"] == "Not enough stock"
 
 
 def test_unknown_product_becomes_pending_with_lookup_suggestion(tmp_path) -> None:

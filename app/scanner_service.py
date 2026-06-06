@@ -171,7 +171,19 @@ class ScannerService:
 
     async def _apply(self, request: ScanEventRequest, grocy_product: dict) -> dict:
         before = float(grocy_product.get("stock_amount") or 0)
-        updated = await self.grocy.apply_stock_operation(int(grocy_product["product"]["id"]), request)
+        initial_card = self.grocy.product_card(grocy_product)
+        try:
+            updated = await self.grocy.apply_stock_operation(int(grocy_product["product"]["id"]), request)
+        except Exception as exc:
+            return self.store.update(
+                request.event_id,
+                status="failed",
+                product_id=initial_card["product_id"],
+                product_name=initial_card["name"],
+                image_url=initial_card["image_url"],
+                stock_before=before,
+                error=str(exc),
+            )
         card = self.grocy.product_card(updated)
         return self.store.update(
             request.event_id,

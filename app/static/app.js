@@ -36,7 +36,7 @@ function image(event) {
 function operationBadge(event) {
   if (event.status === "researching") return "Researching";
   if (event.status === "pending") return event.product_name ? "Review match" : "Unknown";
-  if (event.status === "failed") return "Failed";
+  if (event.status === "failed") return event.product_name ? "Operation failed" : "Failed";
   if (event.mode === "set") return `Set ${event.quantity}`;
   return `${event.mode === "add" ? "+" : "−"}${event.quantity}`;
 }
