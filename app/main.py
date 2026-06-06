@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, status
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.models import (
@@ -24,8 +24,19 @@ app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 
 @app.get("/", include_in_schema=False)
-async def dashboard() -> FileResponse:
-    return FileResponse(static_path / "index.html")
+async def dashboard() -> HTMLResponse:
+    return HTMLResponse(
+        versioned_index_html(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def versioned_index_html() -> str:
+    html = (static_path / "index.html").read_text()
+    for asset in ("styles.css", "scan-dialog.css", "app.js"):
+        version = str(int((static_path / asset).stat().st_mtime))
+        html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
+    return html
 
 
 @app.get("/health")

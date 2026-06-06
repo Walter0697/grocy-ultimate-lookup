@@ -31,3 +31,13 @@ def test_scanner_scan_endpoint_uses_device_friendly_payload(monkeypatch) -> None
     assert response.status_code == 200
     assert response.json()["event_id"] == "kitchen-pi-event"
     assert response.json()["needs_review"] is False
+
+
+def test_dashboard_uses_versioned_local_assets() -> None:
+    response = TestClient(app).get("/")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert "/static/app.js?v=" in response.text
+    assert "/static/styles.css?v=" in response.text
+    assert "/static/scan-dialog.css?v=" in response.text
