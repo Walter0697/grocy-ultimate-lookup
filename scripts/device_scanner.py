@@ -9,6 +9,11 @@ import sys
 import urllib.error
 import urllib.request
 
+try:
+    from scanner_state import DEFAULT_STATE_PATH, payload_from_state, read_state
+except ImportError:  # pragma: no cover - used when imported as scripts.device_scanner
+    from scripts.scanner_state import DEFAULT_STATE_PATH, payload_from_state, read_state
+
 
 def post_scan(base_url: str, payload: dict) -> dict:
     body = json.dumps(payload).encode("utf-8")
@@ -29,11 +34,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", choices=["add", "remove", "set"], default="add", help="Stock operation mode")
     parser.add_argument("--quantity", type=float, default=1, help="Quantity for the stock operation")
     parser.add_argument("--location-id", type=int, help="Optional Grocy location ID")
+    parser.add_argument(
+        "--state-file",
+        help=f"Read mode/quantity/location from this JSON file before each scan, e.g. {DEFAULT_STATE_PATH}",
+    )
     parser.add_argument("barcode", nargs="?", help="Barcode to send once; omit for scanner stdin loop")
     return parser.parse_args()
 
 
 def payload(args: argparse.Namespace, barcode: str) -> dict:
+    if args.state_file:
+        return payload_from_state(args.device_id, barcode, read_state(args.state_file))
     data = {
         "device_id": args.device_id,
         "barcode": barcode.strip(),
@@ -55,7 +66,14 @@ def scan_once(args: argparse.Namespace, barcode: str) -> int:
     if not barcode.strip():
         return 0
     try:
-        print_response(post_scan(args.server, payload(args, barcode)))
+        state = read_state(args.state_file) if args.state_file else None
+        if args.state_file:
+            print(f"Scanning {barcode.strip()} with {state.status()}", file=sys.stderr)
+            print("BUSY: sending scan to server; ignore scanner input until Ready is shown.", file=sys.stderr)
+        data = payload_from_state(args.device_id, barcode, state) if state else payload(args, barcode)
+        print_response(post_scan(args.server, data))
+        if args.state_file:
+            print(f"Ready: {read_state(args.state_file).status()}", file=sys.stderr)
         return 0
     except urllib.error.HTTPError as exc:
         print(exc.read().decode("utf-8"), file=sys.stderr)
@@ -69,7 +87,11 @@ def main() -> int:
     if args.barcode:
         return scan_once(args, args.barcode)
 
-    print("Ready. Scan barcode then Enter. Press Ctrl+C to stop.", file=sys.stderr)
+    if args.state_file:
+        print(f"Ready: {read_state(args.state_file).status()}", file=sys.stderr)
+        print("Scan barcode then Enter. State is reloaded from the state file before each scan.", file=sys.stderr)
+    else:
+        print("Ready. Scan barcode then Enter. Press Ctrl+C to stop.", file=sys.stderr)
     failures = 0
     try:
         for line in sys.stdin:

@@ -62,14 +62,35 @@ Prototype a USB barcode scanner on Linux/Raspberry Pi:
 python3 scripts/device_scanner.py \
   --server http://localhost:9290 \
   --device-id kitchen-pi \
-  --mode add \
-  --quantity 1
+  --state-file /tmp/grocy-scanner-state.json
 ```
 
 Most USB barcode scanners act like keyboards and send Enter after the barcode,
-so the script can run as a stdin loop.
+so the script can run as a stdin loop. With `--state-file`, the scanner reloads
+mode, quantity, and location from JSON before every barcode. This lets buttons
+or a separate control process update behavior without restarting the scanner.
 
-Test the future button workflow before wiring GPIO:
+Update the scanner state from another terminal:
+
+```bash
+python3 scripts/scanner_statectl.py \
+  --state-file /tmp/grocy-scanner-state.json \
+  --mode add \
+  --quantity 1 \
+  --location-id 2 \
+  --location-name Fridge
+```
+
+Run an interactive keyboard control loop for the same state file:
+
+```bash
+python3 scripts/scanner_statectl.py \
+  --server http://localhost:9290 \
+  --state-file /tmp/grocy-scanner-state.json \
+  --interactive
+```
+
+You can still test the combined keyboard workflow before wiring GPIO:
 
 ```bash
 python3 scripts/keyboard_scanner.py \
@@ -87,6 +108,9 @@ Keyboard commands:
 - `l`: cycle Grocy location
 - `?`: show current state
 - any other line: treat it as a barcode and submit the scan
+
+For the real Pi design, prefer `device_scanner.py --state-file` plus
+`scanner_statectl.py`; the older `keyboard_scanner.py` is a combined simulator.
 
 During a scan request the simulator prints `BUSY`. When running interactively,
 any extra barcode lines received before the next `Ready` prompt are discarded
