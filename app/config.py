@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     agent_search_trigger_confidence: float = Field(default=0.45, alias="AGENT_SEARCH_TRIGGER_CONFIDENCE")
     auto_create_min_confidence: float = Field(default=0.8, alias="AUTO_CREATE_MIN_CONFIDENCE")
     scan_events_path: str = Field(default="/data/scan-events.sqlite3", alias="SCAN_EVENTS_PATH")
+    scanner_device_tokens: str = Field(default="", alias="SCANNER_DEVICE_TOKENS")
+    scanner_device_offline_after_seconds: int = Field(default=120, alias="SCANNER_DEVICE_OFFLINE_AFTER_SECONDS")
     grocy_url: str = Field(default="http://host.docker.internal:9283/api", alias="GROCY_URL")
     grocy_public_url: str = Field(default="http://localhost:9283", alias="GROCY_PUBLIC_URL")
     grocy_api_key: str | None = Field(default=None, alias="GROCY_API_KEY")

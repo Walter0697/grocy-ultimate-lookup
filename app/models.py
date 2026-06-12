@@ -100,6 +100,26 @@ class DeviceScanResponse(BaseModel):
     message: str
 
 
+class DeviceHeartbeatRequest(BaseModel):
+    device_id: str = Field(min_length=1, max_length=120)
+    mode: Literal["add", "remove", "set"] | None = None
+    quantity: float | None = Field(default=None, ge=0)
+    location_id: int | None = Field(default=None, gt=0)
+    location_name: str | None = None
+    version: str | None = Field(default=None, max_length=120)
+
+
+class DeviceStatus(BaseModel):
+    device_id: str
+    online: bool
+    last_seen: str
+    mode: str | None = None
+    quantity: float | None = None
+    location_id: int | None = None
+    location_name: str | None = None
+    version: str | None = None
+
+
 class PendingProductConfirmation(BaseModel):
     name: str = Field(min_length=1)
     description: str | None = None

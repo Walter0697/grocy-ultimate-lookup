@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "device": {
+    "id": "kitchen-scanner",
+    "server_url": "http://localhost:9290"
+  },
+  "scanner": {
+    "type": "usb_hid",
+    "submit_suffix": "enter",
+    "notes": "USB keyboard-wedge scanner. Pi can read it from a TTY; ESP32 needs USB host support."
+  },
+  "display": {
+    "type": "text",
+    "status_template": "{mode} x{quantity} @ {location}"
+  },
+  "state_file": "/tmp/grocy-scanner-state.json",
+  "controls": {
+    "mode_add": {
+      "pin": 5,
+      "esp32_pin": 4,
+      "key": "a",
+      "action": "mode",
+      "value": "add"
+    },
+    "mode_remove": {
+      "pin": 6,
+      "esp32_pin": 5,
+      "key": "r",
+      "action": "mode",
+      "value": "remove"
+    },
+    "mode_set": {
+      "pin": 13,
+      "esp32_pin": 6,
+      "key": "s",
+      "action": "mode",
+      "value": "set"
+    },
+    "quantity_up": {
+      "pin": 19,
+      "esp32_pin": 7,
+      "key": "+",
+      "action": "quantity_delta",
+      "value": 1
+    },
+    "quantity_down": {
+      "pin": 26,
+      "esp32_pin": 8,
+      "key": "-",
+      "action": "quantity_delta",
+      "value": -1
+    },
+    "quantity_zero": {
+      "pin": 16,
+      "esp32_pin": 9,
+      "key": "0",
+      "action": "quantity_set",
+      "value": 0
+    },
+    "location_next": {
+      "pin": 20,
+      "esp32_pin": 10,
+      "key": "l",
+      "action": "location_next"
+    }
+  }
+}

@@ -1,7 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;" })[c]);
 let events = [];
-let options = { locations: [], quantity_units: [] };
+let options = { locations: [], quantity_units: [], scanner_devices: [] };
 let activeFilter = "all";
 let activePreview = null;
 let dashboardSignature = "";
@@ -79,7 +79,17 @@ function eventSignature(event) {
 function optionsSignature(nextOptions) {
   return {
     locations: nextOptions.locations.map(x => ({ id: x.id, name: x.name })),
-    quantity_units: nextOptions.quantity_units.map(x => ({ id: x.id, name: x.name }))
+    quantity_units: nextOptions.quantity_units.map(x => ({ id: x.id, name: x.name })),
+    scanner_devices: (nextOptions.scanner_devices || []).map(x => ({
+      device_id: x.device_id,
+      online: x.online,
+      last_seen: x.last_seen,
+      mode: x.mode,
+      quantity: x.quantity,
+      location_id: x.location_id,
+      location_name: x.location_name,
+      version: x.version
+    }))
   };
 }
 function dataSignature(nextEvents, nextOptions) {
@@ -89,6 +99,34 @@ function subtitle(event) {
   const change = event.stock_before == null ? "" : `Stock ${event.stock_before} → ${event.stock_after}`;
   const location = options.locations.find(x => x.id === event.location_id)?.name;
   return [change, location, event.device_id, event.created_at].filter(Boolean).map(escapeHtml).join(" · ");
+}
+function relativeTime(value) {
+  if (!value) return "never";
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  return `${hours}h ago`;
+}
+function scannerStatusLine(device) {
+  const location = device.location_name || options.locations.find(x => x.id === device.location_id)?.name || "Product default";
+  const state = [device.mode?.toUpperCase(), device.quantity != null ? `x${device.quantity}` : "", location].filter(Boolean).join(" ");
+  return `<article class="scanner-device ${device.online ? "online-device" : "offline-device"}">
+    <span><i></i>${escapeHtml(device.device_id)}</span>
+    <b>${device.online ? "Online" : "Offline"}</b>
+    <em>${escapeHtml(state || "No state reported")}</em>
+    <small>${escapeHtml(relativeTime(device.last_seen))}${device.version ? ` · ${escapeHtml(device.version)}` : ""}</small>
+  </article>`;
+}
+function renderScannerStatus() {
+  const devices = options.scanner_devices || [];
+  const node = $("#scanner-status");
+  if (!devices.length) {
+    node.innerHTML = `<div class="scanner-empty">No scanner clients have checked in yet.</div>`;
+    return;
+  }
+  node.innerHTML = devices.map(scannerStatusLine).join("");
 }
 function card(event, index) {
   const review = needsReview(event);
@@ -105,6 +143,7 @@ function render() {
   const visible = events.filter(event => activeFilter === "review" ? needsReview(event) : activeFilter === "applied" ? event.status === "applied" : activeFilter === "failed" ? event.status === "failed" : true);
   $("#all-count").textContent = events.length;
   $("#review-count").textContent = events.filter(needsReview).length;
+  renderScannerStatus();
   $("#event-grid").innerHTML = visible.length ? visible.map(card).join("") : `<div class="empty">No scans in this view yet.</div>`;
 }
 function reviewForm(event) {

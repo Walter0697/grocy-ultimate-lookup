@@ -1,24 +1,28 @@
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query, status
+from fastapi import FastAPI, Header, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.models import (
     ConfirmedProduct,
     ConfirmedProductRequest,
+    DeviceHeartbeatRequest,
     DeviceScanRequest,
     DeviceScanResponse,
+    DeviceStatus,
     LookupResponse,
     PendingProductConfirmation,
     ScanEventRequest,
 )
 from app.orchestrator import LookupOrchestrator
+from app.scanner_devices import ScannerDeviceRegistry, expected_device_token
 from app.scanner_service import ScannerService
 
 app = FastAPI(title="Grocy Ultimate Lookup", version="0.1.0")
 orchestrator = LookupOrchestrator()
 scanner = ScannerService(lookup=orchestrator)
+scanner_devices = ScannerDeviceRegistry()
 static_path = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
@@ -101,8 +105,36 @@ async def create_scan_event(event: ScanEventRequest) -> dict:
 
 
 @app.post("/scanner/scan", response_model=DeviceScanResponse)
-async def create_device_scan(event: DeviceScanRequest) -> DeviceScanResponse:
+async def create_device_scan(
+    event: DeviceScanRequest,
+    x_scanner_token: str | None = Header(default=None),
+) -> DeviceScanResponse:
+    require_scanner_token(event.device_id, x_scanner_token)
     return await scanner.process_device_scan(event)
+
+
+@app.post("/scanner/heartbeat", response_model=DeviceStatus)
+async def scanner_heartbeat(
+    heartbeat: DeviceHeartbeatRequest,
+    x_scanner_token: str | None = Header(default=None),
+) -> DeviceStatus:
+    require_scanner_token(heartbeat.device_id, x_scanner_token)
+    return scanner_devices.heartbeat(heartbeat)
+
+
+@app.get("/scanner/devices", response_model=list[DeviceStatus])
+async def list_scanner_devices() -> list[DeviceStatus]:
+    return scanner_devices.list()
+
+
+def require_scanner_token(device_id: str, token: str | None) -> None:
+    expected = expected_device_token(device_id)
+    if expected is None:
+        return
+    if token is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Scanner token is required")
+    if token != expected:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid scanner token")
 
 
 @app.get("/scan-preview/{barcode}")
@@ -151,4 +183,6 @@ async def dashboard_products() -> list[dict]:
 
 @app.get("/dashboard/options")
 async def dashboard_options() -> dict:
-    return await scanner.options()
+    options = await scanner.options()
+    options["scanner_devices"] = [device.model_dump(mode="json") for device in scanner_devices.list()]
+    return options

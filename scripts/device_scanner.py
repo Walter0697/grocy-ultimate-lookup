@@ -15,22 +15,36 @@ except ImportError:  # pragma: no cover - used when imported as scripts.device_s
     from scripts.scanner_state import DEFAULT_STATE_PATH, payload_from_state, read_state
 
 
-def post_scan(base_url: str, payload: dict) -> dict:
+def auth_headers(token: str | None) -> dict[str, str]:
+    return {"X-Scanner-Token": token} if token else {}
+
+
+def post_json(base_url: str, path: str, payload: dict, token: str | None = None, timeout: int = 60) -> dict:
     body = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json", **auth_headers(token)}
     request = urllib.request.Request(
-        f"{base_url.rstrip('/')}/scanner/scan",
+        f"{base_url.rstrip('/')}{path}",
         data=body,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=60) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def post_scan(base_url: str, payload: dict, token: str | None = None) -> dict:
+    return post_json(base_url, "/scanner/scan", payload, token=token, timeout=60)
+
+
+def post_heartbeat(base_url: str, payload: dict, token: str | None = None) -> dict:
+    return post_json(base_url, "/scanner/heartbeat", payload, token=token, timeout=20)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Send barcode scans to Grocy Ultimate Lookup.")
     parser.add_argument("--server", default="http://localhost:9290", help="Grocy Ultimate Lookup base URL")
     parser.add_argument("--device-id", default="kitchen-pi", help="Device ID shown in the dashboard")
+    parser.add_argument("--token", help="Optional scanner device token sent as X-Scanner-Token")
     parser.add_argument("--mode", choices=["add", "remove", "set"], default="add", help="Stock operation mode")
     parser.add_argument("--quantity", type=float, default=1, help="Quantity for the stock operation")
     parser.add_argument("--location-id", type=int, help="Optional Grocy location ID")
@@ -56,6 +70,28 @@ def payload(args: argparse.Namespace, barcode: str) -> dict:
     return data
 
 
+def heartbeat_payload(args: argparse.Namespace) -> dict:
+    if args.state_file:
+        state = read_state(args.state_file)
+        data = {
+            "device_id": args.device_id,
+            "mode": state.mode,
+            "quantity": state.quantity,
+            "location_id": state.location_id,
+            "location_name": state.location_name,
+            "version": "device_scanner.py",
+        }
+    else:
+        data = {
+            "device_id": args.device_id,
+            "mode": args.mode,
+            "quantity": args.quantity,
+            "location_id": args.location_id,
+            "version": "device_scanner.py",
+        }
+    return {key: value for key, value in data.items() if value is not None}
+
+
 def print_response(result: dict) -> None:
     marker = "REVIEW" if result.get("needs_review") else "OK"
     print(f"[{marker}] {result.get('message')}")
@@ -71,7 +107,11 @@ def scan_once(args: argparse.Namespace, barcode: str) -> int:
             print(f"Scanning {barcode.strip()} with {state.status()}", file=sys.stderr)
             print("BUSY: sending scan to server; ignore scanner input until Ready is shown.", file=sys.stderr)
         data = payload_from_state(args.device_id, barcode, state) if state else payload(args, barcode)
-        print_response(post_scan(args.server, data))
+        print_response(post_scan(args.server, data, token=args.token))
+        try:
+            post_heartbeat(args.server, heartbeat_payload(args), token=args.token)
+        except Exception as exc:
+            print(f"Heartbeat failed: {exc}", file=sys.stderr)
         if args.state_file:
             print(f"Ready: {read_state(args.state_file).status()}", file=sys.stderr)
         return 0
@@ -93,6 +133,10 @@ def main() -> int:
     else:
         print("Ready. Scan barcode then Enter. Press Ctrl+C to stop.", file=sys.stderr)
     failures = 0
+    try:
+        post_heartbeat(args.server, heartbeat_payload(args), token=args.token)
+    except Exception as exc:
+        print(f"Heartbeat failed: {exc}", file=sys.stderr)
     try:
         for line in sys.stdin:
             failures += scan_once(args, line)

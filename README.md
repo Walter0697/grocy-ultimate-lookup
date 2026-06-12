@@ -47,6 +47,7 @@ generates the event ID and returns a compact response:
 ```bash
 curl -sS -X POST 'http://localhost:9290/scanner/scan' \
   -H 'Content-Type: application/json' \
+  -H 'X-Scanner-Token: secret-token' \
   -d '{
     "device_id": "kitchen-pi",
     "barcode": "066200032500",
@@ -62,6 +63,7 @@ Prototype a USB barcode scanner on Linux/Raspberry Pi:
 python3 scripts/device_scanner.py \
   --server http://localhost:9290 \
   --device-id kitchen-pi \
+  --token secret-token \
   --state-file /tmp/grocy-scanner-state.json
 ```
 
@@ -69,6 +71,7 @@ Most USB barcode scanners act like keyboards and send Enter after the barcode,
 so the script can run as a stdin loop. With `--state-file`, the scanner reloads
 mode, quantity, and location from JSON before every barcode. This lets buttons
 or a separate control process update behavior without restarting the scanner.
+The scanner script sends a heartbeat at startup and after successful scans.
 
 Update the scanner state from another terminal:
 
@@ -90,12 +93,13 @@ python3 scripts/scanner_statectl.py \
   --interactive
 ```
 
-You can still test the combined keyboard workflow before wiring GPIO:
+`keyboard_scanner.py` is a convenience wrapper for the same state-file control
+loop:
 
 ```bash
 python3 scripts/keyboard_scanner.py \
   --server http://localhost:9290 \
-  --device-id keyboard-pi
+  --state-file /tmp/grocy-scanner-state.json
 ```
 
 Keyboard commands:
@@ -107,14 +111,45 @@ Keyboard commands:
 - `-`: quantity down
 - `l`: cycle Grocy location
 - `?`: show current state
-- any other line: treat it as a barcode and submit the scan
 
-For the real Pi design, prefer `device_scanner.py --state-file` plus
-`scanner_statectl.py`; the older `keyboard_scanner.py` is a combined simulator.
+Barcode input should go to `device_scanner.py`. Keyboard, GPIO, or another
+control process should only update the shared state file that `device_scanner.py`
+reads before each scan.
 
-During a scan request the simulator prints `BUSY`. When running interactively,
-any extra barcode lines received before the next `Ready` prompt are discarded
-and reported, which is closer to how a physical device should behave.
+For full Raspberry Pi service setup instructions, see
+`docs/pi-scanner-setup.md`.
+
+For the ESP32 direction, especially with a USB barcode scanner, see
+`docs/esp32-scanner-plan.md`.
+
+For Raspberry Pi buttons, map pins to state actions in JSON and run the GPIO
+controller beside `device_scanner.py`:
+
+```bash
+cp scanner-buttons.example.json scanner-buttons.json
+python3 scripts/gpio_state_controller.py \
+  --config scanner-buttons.json \
+  --server http://localhost:9290
+```
+
+The controller supports direct mode buttons, quantity buttons, and location
+cycling:
+
+- `mode` with value `add`, `remove`, or `set`
+- `quantity_delta` with value `1` or `-1`
+- `quantity_set` with value `0`
+- `location_next`
+
+You can test the same JSON mapping without GPIO hardware by using `--stdin`.
+Type a control name like `mode_add`, or its configured `key` such as `a`, `+`,
+`0`, or `l`:
+
+```bash
+python3 scripts/gpio_state_controller.py \
+  --config scanner-buttons.example.json \
+  --server http://localhost:9290 \
+  --stdin
+```
 
 For manual/idempotent integrations, send a scanner event with your own event ID:
 
@@ -173,13 +208,17 @@ Scanner configuration:
 
 ```text
 SCAN_EVENTS_PATH=/data/scan-events.sqlite3
+SCANNER_DEVICE_TOKENS=kitchen-pi:secret-token
+SCANNER_DEVICE_OFFLINE_AFTER_SECONDS=120
 GROCY_URL=http://host.docker.internal:9283/api
 GROCY_PUBLIC_URL=http://localhost:9283
 GROCY_API_KEY=
 ```
 
-Set `GROCY_API_KEY` when Grocy authentication is enabled. Device authentication
-is intentionally deferred until the Pi/ESP32 client contract is finalized.
+Set `GROCY_API_KEY` when Grocy authentication is enabled. Set
+`SCANNER_DEVICE_TOKENS` to require `X-Scanner-Token` for `/scanner/scan` and
+`/scanner/heartbeat`. Leave it empty for local unauthenticated testing. Multiple
+devices use comma-separated `device_id:token` pairs.
 
 ## Response Shape
 
