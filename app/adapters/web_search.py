@@ -91,6 +91,47 @@ class DuckDuckGoSearchProvider:
         return DuckDuckGoResultParser.parse(response.text, limit=limit)
 
 
+class SearxngSearchProvider:
+    def __init__(self, base_url: str, client: httpx.AsyncClient | None = None) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.client = client
+
+    async def search(self, query: str, limit: int) -> list[SearchResult]:
+        close_client = self.client is None
+        client = self.client or httpx.AsyncClient(
+            timeout=settings.lookup_request_timeout_seconds,
+            follow_redirects=True,
+        )
+        try:
+            response = await client.get(
+                f"{self.base_url}/search",
+                params={"q": query, "format": "json"},
+                headers={"User-Agent": settings.lookup_user_agent},
+            )
+        except httpx.HTTPError:
+            return []
+        finally:
+            if close_client:
+                await client.aclose()
+        if response.status_code != 200:
+            return []
+        try:
+            payload = response.json()
+        except json.JSONDecodeError:
+            return []
+        results = []
+        for item in payload.get("results", []):
+            if not isinstance(item, dict):
+                continue
+            title = item.get("title")
+            url = item.get("url")
+            if isinstance(title, str) and isinstance(url, str) and is_candidate_product_url(url):
+                results.append(SearchResult(title=normalize_text(title), url=url))
+            if len(results) >= limit:
+                break
+        return results
+
+
 class DuckDuckGoResultParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -282,23 +323,47 @@ class WebSearchAdapter(LookupAdapter):
 
     def __init__(
         self,
-        search_provider: DuckDuckGoSearchProvider | None = None,
+        search_provider: DuckDuckGoSearchProvider | SearxngSearchProvider | None = None,
         llm_provider: LlmProvider | None = None,
     ) -> None:
-        self.search_provider = search_provider or DuckDuckGoSearchProvider()
+        self.search_provider = search_provider or create_search_provider()
         self.llm_provider = llm_provider if llm_provider is not None else create_llm_provider()
 
-    async def lookup(self, barcode: str) -> LookupResult | None:
-        results = await self.search_provider.search(f'"{barcode}" product', limit=settings.web_search_max_results)
-        candidates = [result for result in results if is_candidate_product_url(result.url)]
+    async def lookup(self, barcode: str, client: httpx.AsyncClient | None = None) -> LookupResult | None:
+        candidates = await self._search_candidates(barcode)
         if not candidates:
             return None
 
-        async with httpx.AsyncClient(timeout=settings.lookup_request_timeout_seconds, follow_redirects=True) as client:
-            for candidate in candidates[: settings.web_search_fetch_limit]:
-                product = await self._fetch_product(client, barcode, candidate)
-                if product is not None:
-                    return product
+        if client is not None:
+            return await self._lookup_candidates(client, barcode, candidates)
+
+        async with httpx.AsyncClient(timeout=settings.lookup_request_timeout_seconds, follow_redirects=True) as owned_client:
+            return await self._lookup_candidates(owned_client, barcode, candidates)
+
+    async def _search_candidates(self, barcode: str) -> list[SearchResult]:
+        candidates: list[SearchResult] = []
+        seen_urls: set[str] = set()
+        for query in search_queries_for_barcode(barcode)[: settings.web_search_max_queries]:
+            results = await self.search_provider.search(query, limit=settings.web_search_max_results)
+            for result in results:
+                if not is_candidate_product_url(result.url) or result.url in seen_urls:
+                    continue
+                seen_urls.add(result.url)
+                candidates.append(result)
+                if len(candidates) >= settings.web_search_fetch_limit:
+                    return candidates
+        return candidates
+
+    async def _lookup_candidates(
+        self,
+        client: httpx.AsyncClient,
+        barcode: str,
+        candidates: list[SearchResult],
+    ) -> LookupResult | None:
+        for candidate in candidates[: settings.web_search_fetch_limit]:
+            product = await self._fetch_product(client, barcode, candidate)
+            if product is not None:
+                return product
         return None
 
     async def _fetch_product(
@@ -393,6 +458,21 @@ def build_structured_lookup_result(
             "product": product.raw_payload,
         },
     )
+
+
+def create_search_provider() -> DuckDuckGoSearchProvider | SearxngSearchProvider:
+    provider = settings.web_search_provider.strip().lower()
+    if provider == "searxng" and settings.searxng_base_url:
+        return SearxngSearchProvider(settings.searxng_base_url)
+    return DuckDuckGoSearchProvider()
+
+
+def search_queries_for_barcode(barcode: str) -> list[str]:
+    return [
+        f'"{barcode}" product',
+        f"{barcode} barcode product",
+        f"{barcode} UPC",
+    ]
 
 
 def decode_duckduckgo_url(url: str) -> str:

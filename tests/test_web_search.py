@@ -6,6 +6,7 @@ from app.adapters.web_search import (
     DuckDuckGoResultParser,
     ProductMetadataExtractor,
     SearchResult,
+    SearxngSearchProvider,
     VisibleTextExtractor,
     WebSearchAdapter,
     contains_barcode,
@@ -36,6 +37,23 @@ class DisabledAgentSearch:
 
     def submit(self, barcode: str) -> bool:
         return False
+
+
+class RecordingAgentSearch:
+    class Store:
+        def get_result(self, barcode: str):
+            return None
+
+        def get_status(self, barcode: str):
+            return None
+
+    def __init__(self) -> None:
+        self.store = self.Store()
+        self.submitted: list[tuple[str, LookupResult | None]] = []
+
+    def submit(self, barcode: str, fallback_result: LookupResult | None = None) -> bool:
+        self.submitted.append((barcode, fallback_result))
+        return True
 
 
 def test_duckduckgo_result_parser_extracts_candidate_urls() -> None:
@@ -263,6 +281,123 @@ def test_malformed_llm_fallback_returns_no_product() -> None:
             return await adapter._fetch_product(client, "067489302124", candidate)
 
     assert run(scenario()) is None
+
+
+def test_web_search_uses_multiple_barcoded_queries_with_deduped_fetches(monkeypatch) -> None:
+    class FakeSearchProvider:
+        def __init__(self) -> None:
+            self.queries: list[tuple[str, int]] = []
+
+        async def search(self, query: str, limit: int) -> list[SearchResult]:
+            self.queries.append((query, limit))
+            return [
+                SearchResult(f"{query} duplicate", "https://shop.example.com/product"),
+                SearchResult(f"{query} duplicate again", "https://shop.example.com/product"),
+                SearchResult(f"{query} ignored social", "https://reddit.com/r/barcode"),
+            ]
+
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(str(request.url))
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            text="""
+            <script type="application/ld+json">
+            {"@type":"Product","name":"Verified Search Product","gtin12":"067489302124"}
+            </script>
+            """,
+        )
+
+    async def scenario():
+        provider = FakeSearchProvider()
+        adapter = WebSearchAdapter(search_provider=provider, llm_provider=None)
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        async with client:
+            result = await adapter.lookup("067489302124", client=client)
+        return result, provider.queries
+
+    monkeypatch.setattr("app.adapters.web_search.settings.web_search_max_queries", 2)
+    monkeypatch.setattr("app.adapters.web_search.settings.web_search_max_results", 4)
+
+    result, queries = run(scenario())
+
+    assert result is not None
+    assert result.source == "web_json_ld"
+    assert result.match_reason == "barcode_in_structured_data"
+    assert [query for query, _limit in queries] == [
+        '"067489302124" product',
+        "067489302124 barcode product",
+    ]
+    assert [limit for _query, limit in queries] == [4, 4]
+    assert requests == ["https://shop.example.com/product"]
+
+
+def test_searxng_search_provider_parses_json_results() -> None:
+    seen_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_urls.append(str(request.url))
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "title": "Example Product",
+                        "url": "https://shop.example.com/product",
+                    },
+                    {
+                        "title": "Search Result Page",
+                        "url": "https://www.google.com/search?q=067489302124",
+                    },
+                ]
+            },
+        )
+
+    async def scenario():
+        provider = SearxngSearchProvider(
+            base_url="https://search.example.test",
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        async with provider.client:
+            return await provider.search('"067489302124" product', limit=5)
+
+    results = run(scenario())
+
+    assert seen_urls == [
+        "https://search.example.test/search?q=%22067489302124%22+product&format=json"
+    ]
+    assert len(results) == 1
+    assert results[0].title == "Example Product"
+    assert results[0].url == "https://shop.example.com/product"
+
+
+def test_verified_web_result_does_not_queue_agent_search(tmp_path) -> None:
+    class FakeWebAdapter:
+        name = "fake_web"
+
+        async def lookup(self, barcode: str) -> LookupResult:
+            return LookupResult(
+                barcode=barcode,
+                name="Verified Web Product",
+                normalized_name="Verified Web Product",
+                source="web_json_ld",
+                confidence=0.65,
+                match_reason="barcode_in_structured_data",
+            )
+
+    orchestrator = LookupOrchestrator(adapters=[FakeWebAdapter()])
+    orchestrator.cache = LookupCache(str(tmp_path / "cache.sqlite3"))
+    orchestrator.local_store = LocalProductStore(str(tmp_path / "local.sqlite3"))
+    orchestrator.agent_search = RecordingAgentSearch()
+
+    response = run(orchestrator.lookup("067489302124", use_cache=False))
+
+    assert response.found is True
+    assert response.result is not None
+    assert response.result.source == "web_json_ld"
+    assert orchestrator.agent_search.submitted == []
 
 
 def test_low_confidence_web_result_can_autofill_but_is_not_cached(tmp_path) -> None:

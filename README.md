@@ -377,6 +377,9 @@ Important settings:
 ```text
 CACHE_MIN_CONFIDENCE=0.7
 ENABLE_WEB_SEARCH=true
+WEB_SEARCH_PROVIDER=duckduckgo
+SEARXNG_BASE_URL=
+WEB_SEARCH_MAX_QUERIES=3
 WEB_SEARCH_MAX_RESULTS=5
 WEB_SEARCH_FETCH_LIMIT=3
 ```
@@ -384,6 +387,12 @@ WEB_SEARCH_FETCH_LIMIT=3
 Raise or lower `CACHE_MIN_CONFIDENCE` to control which lookup results are cached.
 Keep it above web fallback confidence if web results should remain fresh
 best-effort suggestions.
+
+`WEB_SEARCH_PROVIDER=duckduckgo` uses DuckDuckGo's HTML results directly.
+Set `WEB_SEARCH_PROVIDER=searxng` and `SEARXNG_BASE_URL=http://your-searxng`
+to route searches through a self-hosted SearXNG instance instead. The search
+loop generates a small set of barcode-focused queries, deduplicates candidate
+URLs, and fetches at most `WEB_SEARCH_FETCH_LIMIT` pages per lookup.
 
 ### Web Match Confidence
 
