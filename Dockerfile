@@ -15,4 +15,6 @@ COPY app ./app
 RUN pip install --no-cache-dir .
 
 EXPOSE 9290
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9290/health', timeout=3).read()"
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9290"]
