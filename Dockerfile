@@ -11,9 +11,8 @@ COPY --from=codex /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex
 
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir .
-
 COPY app ./app
+RUN pip install --no-cache-dir .
 
 EXPOSE 9290
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9290"]

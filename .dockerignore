@@ -1,0 +1,13 @@
+.git
+.venv
+.pytest_cache
+.code-review-graph
+__pycache__
+*.pyc
+.env
+data
+docs
+plugin
+tests
+scripts
+scanner-buttons.example.json
