@@ -149,3 +149,27 @@ class CommunityCatalogExporter:
                 logger.warning("Community catalog git command failed: %s", warning)
                 break
         return warnings
+
+
+class RuntimeCommunityCatalogExporter:
+    def __init__(self, settings_store) -> None:
+        self.settings_store = settings_store
+
+    def export_confirmed_product(
+        self,
+        barcode: str,
+        product: ConfirmedProductRequest,
+    ) -> CommunityCatalogExportResult:
+        current = self.settings_store.get_community_catalog()
+        exporter = CommunityCatalogExporter(
+            path=current.path,
+            enabled=current.enabled,
+            export_images=current.export_images,
+            auto_commit=current.auto_commit,
+            auto_push=current.auto_push,
+            git_remote=current.git_remote,
+            git_branch=current.git_branch,
+            author_name=current.author_name,
+            author_email=current.author_email,
+        )
+        return exporter.export_confirmed_product(barcode, product)

@@ -5,8 +5,9 @@ from app.adapters.open_facts import OpenFactsAdapter
 from app.adapters.upcitemdb import UpcItemDbAdapter
 from app.adapters.web_search import WebSearchAdapter
 from app.agent_search import AgentSearchManager
+from app.app_settings import AppSettingsStore
 from app.cache import LookupCache
-from app.community_catalog import CommunityCatalogExporter
+from app.community_catalog import RuntimeCommunityCatalogExporter
 from app.config import settings
 from app.local_store import LocalProductStore
 from app.models import ConfirmedProduct, ConfirmedProductRequest, LookupResponse, LookupResult
@@ -32,18 +33,8 @@ def default_adapters() -> list[LookupAdapter]:
     return adapters
 
 
-def default_community_catalog() -> CommunityCatalogExporter:
-    return CommunityCatalogExporter(
-        path=settings.community_catalog_path,
-        enabled=settings.community_catalog_enabled,
-        export_images=settings.community_catalog_export_images,
-        auto_commit=settings.community_catalog_auto_commit,
-        auto_push=settings.community_catalog_auto_push,
-        git_remote=settings.community_catalog_git_remote,
-        git_branch=settings.community_catalog_git_branch,
-        author_name=settings.community_catalog_author_name,
-        author_email=settings.community_catalog_author_email,
-    )
+def default_community_catalog() -> RuntimeCommunityCatalogExporter:
+    return RuntimeCommunityCatalogExporter(AppSettingsStore(settings.app_settings_path))
 
 
 class LookupOrchestrator:
@@ -51,7 +42,7 @@ class LookupOrchestrator:
         self,
         adapters: list[LookupAdapter] | None = None,
         agent_search: AgentSearchManager | None = None,
-        community_catalog: CommunityCatalogExporter | None = None,
+        community_catalog=None,
     ) -> None:
         self.adapters = adapters or default_adapters()
         self.cache = LookupCache(settings.lookup_cache_path)

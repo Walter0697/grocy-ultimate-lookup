@@ -4,6 +4,8 @@ from fastapi import FastAPI, Header, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.app_settings import AppSettingsStore, CommunityCatalogSettings, CommunityCatalogStatus
+from app.config import settings
 from app.models import (
     ConfirmedProduct,
     ConfirmedProductRequest,
@@ -20,6 +22,7 @@ from app.scanner_devices import ScannerDeviceRegistry, expected_device_token
 from app.scanner_service import ScannerService
 
 app = FastAPI(title="Grocy Ultimate Lookup", version="0.1.0")
+app_settings_store = AppSettingsStore(settings.app_settings_path)
 orchestrator = LookupOrchestrator()
 scanner = ScannerService(lookup=orchestrator)
 scanner_devices = ScannerDeviceRegistry()
@@ -38,6 +41,22 @@ async def dashboard() -> HTMLResponse:
 def versioned_index_html() -> str:
     html = (static_path / "index.html").read_text()
     for asset in ("styles.css", "scan-dialog.css", "app.js"):
+        version = str(int((static_path / asset).stat().st_mtime))
+        html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
+    return html
+
+
+@app.get("/settings", include_in_schema=False)
+async def settings_page() -> HTMLResponse:
+    return HTMLResponse(
+        settings_page_html(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def settings_page_html() -> str:
+    html = (static_path / "settings.html").read_text()
+    for asset in ("styles.css", "settings.css", "settings.js"):
         version = str(int((static_path / asset).stat().st_mtime))
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
     return html
@@ -71,6 +90,21 @@ async def delete_local_product(barcode: str) -> None:
     deleted = orchestrator.delete_confirmed_product(barcode)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Local product not found")
+
+
+@app.get("/settings/community-catalog", response_model=CommunityCatalogSettings)
+async def get_community_catalog_settings() -> CommunityCatalogSettings:
+    return app_settings_store.get_community_catalog()
+
+
+@app.put("/settings/community-catalog", response_model=CommunityCatalogSettings)
+async def put_community_catalog_settings(product: CommunityCatalogSettings) -> CommunityCatalogSettings:
+    return app_settings_store.set_community_catalog(product)
+
+
+@app.post("/settings/community-catalog/test", response_model=CommunityCatalogStatus)
+async def test_community_catalog_settings() -> CommunityCatalogStatus:
+    return app_settings_store.community_catalog_status()
 
 
 @app.get("/agent-search/{barcode}")

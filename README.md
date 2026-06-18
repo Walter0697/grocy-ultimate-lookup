@@ -193,7 +193,9 @@ This is intended for a federated catalog flow: each user can keep their own
 GitHub repository of confirmed products, and future versions can read other
 people's repositories as reference catalogs.
 
-Enable export by pointing the service at a Git-backed folder:
+Open `http://localhost:9290/settings` to configure export from the web UI.
+Settings are saved in SQLite at `APP_SETTINGS_PATH` and take effect without a
+container restart. Environment variables remain defaults for first startup:
 
 ```text
 COMMUNITY_CATALOG_ENABLED=true

@@ -128,3 +128,13 @@ def test_dashboard_static_includes_scanner_device_status_panel() -> None:
     assert 'id="scanner-status"' in index
     assert "renderScannerStatus" in script
     assert "scanner_devices" in script
+
+
+def test_dashboard_links_to_settings_page() -> None:
+    index = (static_path / "index.html").read_text()
+    settings_html = (static_path / "settings.html").read_text()
+    settings_script = (static_path / "settings.js").read_text()
+
+    assert 'href="/settings"' in index
+    assert 'id="community-catalog-form"' in settings_html
+    assert "/settings/community-catalog" in settings_script

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pantry Signal Settings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600;9..144,800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/settings.css">
+</head>
+<body>
+  <header class="topbar settings-topbar">
+    <div class="identity">
+      <p>APPLICATION SETTINGS</p>
+      <h1>Settings</h1>
+    </div>
+    <nav class="filters">
+      <a class="settings-link active" href="/settings">Settings</a>
+      <a class="settings-link" href="/">Scans</a>
+    </nav>
+    <div class="header-actions">
+      <span class="online"><i></i> Local config</span>
+    </div>
+  </header>
+
+  <main class="settings-main">
+    <section class="settings-section">
+      <div>
+        <p class="drawer-kicker">COMMUNITY CATALOG</p>
+        <h2>Confirmed product export</h2>
+      </div>
+      <form id="community-catalog-form" class="settings-form">
+        <label class="switch-row">
+          <input name="enabled" type="checkbox">
+          <span>Enable catalog export</span>
+        </label>
+        <label>Catalog path<input name="path" required></label>
+        <div class="settings-pair">
+          <label class="switch-row"><input name="export_images" type="checkbox"><span>Export images</span></label>
+          <label class="switch-row"><input name="auto_commit" type="checkbox"><span>Auto commit</span></label>
+          <label class="switch-row"><input name="auto_push" type="checkbox"><span>Auto push</span></label>
+        </div>
+        <div class="settings-pair">
+          <label>Git remote<input name="git_remote" required></label>
+          <label>Git branch<input name="git_branch" required></label>
+        </div>
+        <div class="settings-pair">
+          <label>Author name<input name="author_name"></label>
+          <label>Author email<input name="author_email" type="email"></label>
+        </div>
+        <div class="settings-actions">
+          <button type="submit">Save settings</button>
+          <button type="button" class="secondary" id="test-community-catalog">Test path</button>
+        </div>
+      </form>
+      <div id="community-catalog-status" class="settings-status" aria-live="polite"></div>
+    </section>
+  </main>
+  <div id="toast"></div>
+  <script src="/static/settings.js"></script>
+</body>
+</html>

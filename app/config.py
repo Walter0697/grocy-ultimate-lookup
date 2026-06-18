@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     agent_search_trigger_confidence: float = Field(default=0.45, alias="AGENT_SEARCH_TRIGGER_CONFIDENCE")
     auto_create_min_confidence: float = Field(default=0.8, alias="AUTO_CREATE_MIN_CONFIDENCE")
     scan_events_path: str = Field(default="/data/scan-events.sqlite3", alias="SCAN_EVENTS_PATH")
+    app_settings_path: str = Field(default="/data/app-settings.sqlite3", alias="APP_SETTINGS_PATH")
     scanner_device_tokens: str = Field(default="", alias="SCANNER_DEVICE_TOKENS")
     scanner_device_offline_after_seconds: int = Field(default=120, alias="SCANNER_DEVICE_OFFLINE_AFTER_SECONDS")
     community_catalog_enabled: bool = Field(default=False, alias="COMMUNITY_CATALOG_ENABLED")

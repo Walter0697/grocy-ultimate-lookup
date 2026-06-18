@@ -1,7 +1,8 @@
 import logging
 from uuid import uuid4
 
-from app.community_catalog import CommunityCatalogExporter
+from app.app_settings import AppSettingsStore
+from app.community_catalog import RuntimeCommunityCatalogExporter
 from app.config import settings
 from app.grocy import GrocyClient
 from app.local_store import LocalProductStore
@@ -19,22 +20,14 @@ class ScannerService:
         grocy: GrocyClient | None = None,
         lookup: LookupOrchestrator | None = None,
         local_store: LocalProductStore | None = None,
-        community_catalog: CommunityCatalogExporter | None = None,
+        community_catalog=None,
     ) -> None:
         self.store = store or ScanEventStore(settings.scan_events_path)
         self.grocy = grocy or GrocyClient()
         self.lookup = lookup or LookupOrchestrator()
         self.local_store = local_store or LocalProductStore(settings.local_products_path)
-        self.community_catalog = community_catalog or CommunityCatalogExporter(
-            path=settings.community_catalog_path,
-            enabled=settings.community_catalog_enabled,
-            export_images=settings.community_catalog_export_images,
-            auto_commit=settings.community_catalog_auto_commit,
-            auto_push=settings.community_catalog_auto_push,
-            git_remote=settings.community_catalog_git_remote,
-            git_branch=settings.community_catalog_git_branch,
-            author_name=settings.community_catalog_author_name,
-            author_email=settings.community_catalog_author_email,
+        self.community_catalog = community_catalog or RuntimeCommunityCatalogExporter(
+            AppSettingsStore(settings.app_settings_path)
         )
 
     async def process(self, request: ScanEventRequest) -> dict:
