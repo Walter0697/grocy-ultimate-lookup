@@ -186,6 +186,48 @@ the product name, description, image, location, and quantity unit. Confirmation
 creates the product and barcode in Grocy, saves the confirmed lookup locally,
 and applies the original pending stock operation.
 
+## Community Catalog Export
+
+Manual product confirmations can also be exported as portable JSON records.
+This is intended for a federated catalog flow: each user can keep their own
+GitHub repository of confirmed products, and future versions can read other
+people's repositories as reference catalogs.
+
+Enable export by pointing the service at a Git-backed folder:
+
+```text
+COMMUNITY_CATALOG_ENABLED=true
+COMMUNITY_CATALOG_PATH=/data/community-catalog
+COMMUNITY_CATALOG_EXPORT_IMAGES=false
+COMMUNITY_CATALOG_AUTO_COMMIT=false
+COMMUNITY_CATALOG_AUTO_PUSH=false
+COMMUNITY_CATALOG_GIT_REMOTE=origin
+COMMUNITY_CATALOG_GIT_BRANCH=main
+COMMUNITY_CATALOG_AUTHOR_NAME=Grocy Ultimate Lookup
+COMMUNITY_CATALOG_AUTHOR_EMAIL=grocy-lookup@example.local
+```
+
+When enabled, only user-confirmed products are exported. Trusted auto-created
+lookup results, web guesses, and agent guesses are not exported in this first
+version.
+
+Records are written using two three-digit shards plus the full barcode folder:
+
+```text
+products/
+  627/
+    985/
+      627985000070/
+        product.json
+        image.jpg
+```
+
+`product.json` stores the confirmed product fields and `source:
+user_confirmed`. If `COMMUNITY_CATALOG_EXPORT_IMAGES=true` and the confirmed
+product has an image URL, the service also attempts to download `image.jpg`.
+Image download, Git commit, and Git push failures are logged as warnings and do
+not block Grocy product creation or stock updates.
+
 The dashboard uses one newest-first Gallery Wall:
 
 - applied scans are solid Polaroid cards and require no interaction

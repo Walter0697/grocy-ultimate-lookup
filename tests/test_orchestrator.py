@@ -1,6 +1,7 @@
 import asyncio
 
 from app.cache import LookupCache
+from app.community_catalog import CommunityCatalogExporter
 from app.local_store import LocalProductStore
 from app.models import ConfirmedProductRequest, LookupResult
 from app.orchestrator import LookupOrchestrator
@@ -237,6 +238,21 @@ def test_confirm_product_clears_external_cache_for_same_barcode(tmp_path) -> Non
     assert response.result.source == "local_confirmed"
     assert response.result.name == "Confirmed Name"
     assert adapter.calls == []
+
+
+def test_confirm_product_exports_user_confirmed_product_to_catalog(tmp_path) -> None:
+    orchestrator = LookupOrchestrator(adapters=[])
+    isolate_storage(orchestrator, tmp_path)
+    catalog_path = tmp_path / "catalog"
+    orchestrator.community_catalog = CommunityCatalogExporter(path=catalog_path, enabled=True)
+
+    orchestrator.confirm_product(
+        "627985000070",
+        ConfirmedProductRequest(name="Manual Product", brand="Manual Brand"),
+    )
+
+    product_json = catalog_path / "products" / "627" / "985" / "627985000070" / "product.json"
+    assert product_json.exists()
 
 
 def test_lookup_uses_cache_without_calling_adapters(tmp_path) -> None:

@@ -1,9 +1,22 @@
 import asyncio
+from types import SimpleNamespace
 
 from app.models import DeviceScanRequest, LookupResponse, LookupResult, PendingProductConfirmation, ScanEventRequest
 from app.local_store import LocalProductStore
 from app.scan_events import ScanEventStore
 from app.scanner_service import ScannerService
+
+
+class FakeCommunityCatalog:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.exported = []
+
+    def export_confirmed_product(self, barcode, product):
+        if self.error:
+            raise self.error
+        self.exported.append((barcode, product))
+        return SimpleNamespace(warnings=())
 
 
 class FakeLookup:
@@ -70,12 +83,13 @@ def request(event_id="event-1"):
     )
 
 
-def service(tmp_path, grocy, lookup):
+def service(tmp_path, grocy, lookup, community_catalog=None):
     scanner = ScannerService(
         store=ScanEventStore(str(tmp_path / "events.sqlite3")),
         grocy=grocy,
         lookup=lookup,
         local_store=LocalProductStore(str(tmp_path / "local.sqlite3")),
+        community_catalog=community_catalog,
     )
     return scanner
 
@@ -320,3 +334,58 @@ def test_confirm_creates_grocy_product_then_applies_original_operation(tmp_path)
     assert event["product_name"] == "Confirmed Product"
     assert len(scanner.grocy.created) == 1
     assert len(scanner.grocy.operations) == 1
+
+
+def test_confirm_exports_user_confirmed_product_to_catalog(tmp_path) -> None:
+    catalog = FakeCommunityCatalog()
+    scanner = service(
+        tmp_path,
+        FakeGrocy(),
+        FakeLookup(LookupResponse(barcode="123456", found=False)),
+        community_catalog=catalog,
+    )
+    run(scanner.process(request()))
+
+    run(
+        scanner.confirm(
+            "event-1",
+            PendingProductConfirmation(
+                name="Confirmed Product",
+                brand="Confirmed Brand",
+                quantity="500 mL",
+                location_id=2,
+                qu_id=2,
+            ),
+        )
+    )
+
+    assert len(catalog.exported) == 1
+    barcode, product = catalog.exported[0]
+    assert barcode == "123456"
+    assert product.name == "Confirmed Product"
+    assert product.brand == "Confirmed Brand"
+    assert product.quantity == "500 mL"
+
+
+def test_confirm_still_applies_scan_when_catalog_export_fails(tmp_path) -> None:
+    scanner = service(
+        tmp_path,
+        FakeGrocy(),
+        FakeLookup(LookupResponse(barcode="123456", found=False)),
+        community_catalog=FakeCommunityCatalog(error=RuntimeError("git failed")),
+    )
+    run(scanner.process(request()))
+
+    event = run(
+        scanner.confirm(
+            "event-1",
+            PendingProductConfirmation(
+                name="Confirmed Product",
+                location_id=2,
+                qu_id=2,
+            ),
+        )
+    )
+
+    assert event["status"] == "applied"
+    assert event["product_name"] == "Confirmed Product"

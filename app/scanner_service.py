@@ -1,11 +1,15 @@
+import logging
 from uuid import uuid4
 
+from app.community_catalog import CommunityCatalogExporter
 from app.config import settings
 from app.grocy import GrocyClient
 from app.local_store import LocalProductStore
 from app.models import ConfirmedProductRequest, DeviceScanRequest, PendingProductConfirmation, ScanEventRequest
 from app.orchestrator import LookupOrchestrator
 from app.scan_events import ScanEventStore
+
+logger = logging.getLogger(__name__)
 
 
 class ScannerService:
@@ -15,11 +19,23 @@ class ScannerService:
         grocy: GrocyClient | None = None,
         lookup: LookupOrchestrator | None = None,
         local_store: LocalProductStore | None = None,
+        community_catalog: CommunityCatalogExporter | None = None,
     ) -> None:
         self.store = store or ScanEventStore(settings.scan_events_path)
         self.grocy = grocy or GrocyClient()
         self.lookup = lookup or LookupOrchestrator()
         self.local_store = local_store or LocalProductStore(settings.local_products_path)
+        self.community_catalog = community_catalog or CommunityCatalogExporter(
+            path=settings.community_catalog_path,
+            enabled=settings.community_catalog_enabled,
+            export_images=settings.community_catalog_export_images,
+            auto_commit=settings.community_catalog_auto_commit,
+            auto_push=settings.community_catalog_auto_push,
+            git_remote=settings.community_catalog_git_remote,
+            git_branch=settings.community_catalog_git_branch,
+            author_name=settings.community_catalog_author_name,
+            author_email=settings.community_catalog_author_email,
+        )
 
     async def process(self, request: ScanEventRequest) -> dict:
         event, created = self.store.create(request)
@@ -149,6 +165,19 @@ class ScannerService:
                 notes="Confirmed from external scanner dashboard",
             ),
         )
+        catalog_product = ConfirmedProductRequest(
+            name=product.name,
+            brand=product.brand,
+            quantity=product.quantity,
+            image_url=product.image_url,
+            notes=product.description,
+        )
+        try:
+            result = self.community_catalog.export_confirmed_product(event["barcode"], catalog_product)
+            for warning in result.warnings:
+                logger.warning("Community catalog export warning for %s: %s", event["barcode"], warning)
+        except Exception as exc:
+            logger.warning("Community catalog export failed for %s: %s", event["barcode"], exc)
         return await self._apply(self._request_from_event(event), existing)
 
     async def products(self) -> list[dict]:
