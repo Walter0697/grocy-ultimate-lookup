@@ -162,7 +162,8 @@ dialog {
   border: 1px solid var(--line);
   padding: 0;
   background: var(--paper);
-  max-width: 440px;
+  width: min(560px, calc(100vw - 28px));
+  max-width: 560px;
 }
 
 dialog::backdrop {
@@ -178,6 +179,17 @@ dialog::backdrop {
 .token-help h2 {
   font: 700 24px "Fraunces";
   margin: 0;
+}
+
+.token-help ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.token-help li {
+  margin: 0 0 8px;
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .token-help p {

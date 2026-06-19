@@ -74,8 +74,18 @@
   <dialog id="token-help-dialog">
     <form method="dialog" class="token-help">
       <h2>GitHub PAT</h2>
-      <p>Create a fine-grained personal access token for only the catalog repository.</p>
-      <p>Grant repository access to the selected catalog repo, then set Contents to Read and write. Use an expiration date.</p>
+      <ol>
+        <li>Open GitHub, then click your avatar in the top-right corner.</li>
+        <li>Go to <b>Settings</b>, then <b>Developer settings</b>.</li>
+        <li>Open <b>Personal access tokens</b>, then <b>Fine-grained tokens</b>.</li>
+        <li>Click <b>Generate new token</b>.</li>
+        <li>Name it something like <b>Grocy catalog push</b>.</li>
+        <li>Choose an expiration date.</li>
+        <li>Under <b>Repository access</b>, choose <b>Only select repositories</b>.</li>
+        <li>Select your catalog repository, for example <b>grocy-testing</b>.</li>
+        <li>Under <b>Repository permissions</b>, set <b>Contents</b> to <b>Read and write</b>.</li>
+        <li>Click <b>Generate token</b>, copy it, and paste it into the GitHub PAT field here.</li>
+      </ol>
       <button type="submit">Close</button>
     </form>
   </dialog>
