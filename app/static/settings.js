@@ -93,6 +93,7 @@ $("#community-catalog-form").auto_push.addEventListener("change", updateCatalogC
 $("#test-community-catalog").addEventListener("click", async event => {
   setButtonBusy(event.target, true, "Testing...");
   try {
+    fillForm(await api("/settings/community-catalog", { method: "PUT", body: JSON.stringify(formData()) }));
     renderStatus(await api("/settings/community-catalog/sync", { method: "POST" }));
     toast("Catalog checkout is ready");
   }
