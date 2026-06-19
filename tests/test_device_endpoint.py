@@ -135,6 +135,6 @@ def test_dashboard_links_to_settings_page() -> None:
     settings_html = (static_path / "settings.html").read_text()
     settings_script = (static_path / "settings.js").read_text()
 
-    assert 'href="/settings"' in index
+    assert '<a class="settings-button" href="/settings">Settings</a>' in index
     assert 'id="community-catalog-form"' in settings_html
     assert "/settings/community-catalog" in settings_script

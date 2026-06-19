@@ -17,7 +17,6 @@
       <h1>Kitchen scans</h1>
     </div>
     <nav class="filters">
-      <a class="settings-link" href="/settings">Settings</a>
       <button class="active" data-filter="all">All <b id="all-count">0</b></button>
       <button data-filter="review">Needs review <b id="review-count">0</b></button>
       <button data-filter="applied">Applied</button>
@@ -25,6 +24,7 @@
     </nav>
     <div class="header-actions">
       <span class="online"><i></i> Grocy online</span>
+      <a class="settings-button" href="/settings">Settings</a>
       <form id="quick-scan" class="quick-scan">
         <input name="barcode" placeholder="Scan barcode + Enter" autocomplete="off" required autofocus>
         <span class="scan-loading" aria-live="polite"><i></i><b>Looking up product...</b></span>
