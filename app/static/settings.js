@@ -46,6 +46,12 @@ function fillForm(settings) {
   form.auto_push.checked = settings.auto_push;
   form.author_name.value = settings.author_name || "";
   form.author_email.value = settings.author_email || "";
+  updateCatalogConfigState();
+}
+
+function updateCatalogConfigState() {
+  const form = $("#community-catalog-form");
+  $("#community-catalog-config").classList.toggle("is-dimmed", !form.enabled.checked);
 }
 
 function renderStatus(status) {
@@ -75,6 +81,8 @@ $("#community-catalog-form").addEventListener("submit", async event => {
   catch (error) { toast(error.message); }
   finally { setButtonBusy(button, false); }
 });
+
+$("#community-catalog-form").enabled.addEventListener("change", updateCatalogConfigState);
 
 $("#test-community-catalog").addEventListener("click", async event => {
   setButtonBusy(event.target, true, "Testing...");
