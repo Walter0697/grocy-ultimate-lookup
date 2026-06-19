@@ -4,8 +4,16 @@ from fastapi import FastAPI, Header, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.app_settings import AppSettingsStore, CommunityCatalogSettings, CommunityCatalogStatus
+from app.app_settings import (
+    AppSettingsStore,
+    CommunityCatalogDiff,
+    CommunityCatalogSettingsResponse,
+    CommunityCatalogSettingsUpdate,
+    CommunityCatalogStatus,
+    public_community_catalog_settings,
+)
 from app.config import settings
+from app.community_catalog import exporter_from_settings
 from app.models import (
     ConfirmedProduct,
     ConfirmedProductRequest,
@@ -92,19 +100,64 @@ async def delete_local_product(barcode: str) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Local product not found")
 
 
-@app.get("/settings/community-catalog", response_model=CommunityCatalogSettings)
-async def get_community_catalog_settings() -> CommunityCatalogSettings:
-    return app_settings_store.get_community_catalog()
+@app.get("/settings/community-catalog", response_model=CommunityCatalogSettingsResponse)
+async def get_community_catalog_settings() -> CommunityCatalogSettingsResponse:
+    return public_community_catalog_settings(app_settings_store.get_community_catalog())
 
 
-@app.put("/settings/community-catalog", response_model=CommunityCatalogSettings)
-async def put_community_catalog_settings(product: CommunityCatalogSettings) -> CommunityCatalogSettings:
-    return app_settings_store.set_community_catalog(product)
+@app.put("/settings/community-catalog", response_model=CommunityCatalogSettingsResponse)
+async def put_community_catalog_settings(product: CommunityCatalogSettingsUpdate) -> CommunityCatalogSettingsResponse:
+    return public_community_catalog_settings(app_settings_store.update_community_catalog(product))
 
 
 @app.post("/settings/community-catalog/test", response_model=CommunityCatalogStatus)
 async def test_community_catalog_settings() -> CommunityCatalogStatus:
     return app_settings_store.community_catalog_status()
+
+
+@app.post("/settings/community-catalog/sync", response_model=CommunityCatalogStatus)
+async def sync_community_catalog_checkout() -> CommunityCatalogStatus:
+    current = app_settings_store.get_community_catalog()
+    if not current.repository_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Repository URL is not configured")
+    warnings = exporter_from_settings(current).sync_checkout()
+    if warnings:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="; ".join(warnings))
+    return app_settings_store.community_catalog_status()
+
+
+@app.get("/settings/community-catalog/diff", response_model=CommunityCatalogDiff)
+async def get_community_catalog_diff() -> CommunityCatalogDiff:
+    current = app_settings_store.get_community_catalog()
+    if not current.repository_url:
+        return CommunityCatalogDiff(configured=False, pending_changes=False, status="Repository URL is not configured")
+    try:
+        pending, status_text, files = exporter_from_settings(current).pending_changes()
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return CommunityCatalogDiff(configured=True, pending_changes=pending, status=status_text, files=files)
+
+
+@app.post("/settings/community-catalog/push", response_model=CommunityCatalogDiff)
+async def push_community_catalog_changes() -> CommunityCatalogDiff:
+    current = app_settings_store.get_community_catalog()
+    if not current.repository_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Repository URL is not configured")
+    warnings = exporter_from_settings(current).push_pending_changes()
+    if warnings:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="; ".join(warnings))
+    return await get_community_catalog_diff()
+
+
+@app.post("/settings/community-catalog/discard", response_model=CommunityCatalogDiff)
+async def discard_community_catalog_changes() -> CommunityCatalogDiff:
+    current = app_settings_store.get_community_catalog()
+    if not current.repository_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Repository URL is not configured")
+    warnings = exporter_from_settings(current).discard_pending_changes()
+    if warnings:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="; ".join(warnings))
+    return await get_community_catalog_diff()
 
 
 @app.get("/agent-search/{barcode}")

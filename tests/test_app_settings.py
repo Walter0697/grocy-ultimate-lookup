@@ -1,4 +1,4 @@
-from app.app_settings import AppSettingsStore, CommunityCatalogSettings
+from app.app_settings import AppSettingsStore, CommunityCatalogSettings, CommunityCatalogSettingsUpdate
 from app.community_catalog import RuntimeCommunityCatalogExporter
 from app.models import ConfirmedProductRequest
 
@@ -6,6 +6,10 @@ from app.models import ConfirmedProductRequest
 def test_app_settings_store_returns_defaults_before_user_saves(tmp_path) -> None:
     defaults = CommunityCatalogSettings(
         enabled=False,
+        repository_url=None,
+        github_pat=None,
+        branch="main",
+        workdir=str(tmp_path / "workdir"),
         path=str(tmp_path / "default-catalog"),
         export_images=False,
         auto_commit=False,
@@ -26,6 +30,10 @@ def test_app_settings_store_persists_community_catalog_settings(tmp_path) -> Non
     store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
     saved = CommunityCatalogSettings(
         enabled=True,
+        repository_url="https://github.com/example/catalog.git",
+        github_pat="secret-token",
+        branch="catalog",
+        workdir=str(tmp_path / "workdir"),
         path=str(tmp_path / "catalog"),
         export_images=True,
         auto_commit=True,
@@ -47,6 +55,10 @@ def test_runtime_catalog_exporter_reads_latest_saved_settings(tmp_path) -> None:
         str(tmp_path / "settings.sqlite3"),
         community_catalog_defaults=CommunityCatalogSettings(
             enabled=False,
+            repository_url=None,
+            github_pat=None,
+            branch="main",
+            workdir=str(tmp_path / "workdir"),
             path=str(tmp_path / "disabled-catalog"),
             export_images=False,
             auto_commit=False,
@@ -63,6 +75,10 @@ def test_runtime_catalog_exporter_reads_latest_saved_settings(tmp_path) -> None:
     store.set_community_catalog(
         CommunityCatalogSettings(
             enabled=True,
+            repository_url=None,
+            github_pat=None,
+            branch="main",
+            workdir=str(tmp_path / "workdir"),
             path=str(tmp_path / "enabled-catalog"),
             export_images=False,
             auto_commit=False,
@@ -88,6 +104,10 @@ def test_app_settings_store_reports_catalog_path_status(tmp_path) -> None:
         str(tmp_path / "settings.sqlite3"),
         community_catalog_defaults=CommunityCatalogSettings(
             enabled=True,
+            repository_url=None,
+            github_pat=None,
+            branch="main",
+            workdir=str(tmp_path / "workdir"),
             path=str(catalog),
             export_images=False,
             auto_commit=False,
@@ -104,3 +124,31 @@ def test_app_settings_store_reports_catalog_path_status(tmp_path) -> None:
     assert status.path == str(catalog)
     assert status.path_exists is True
     assert status.is_git_repo is True
+
+
+def test_app_settings_update_preserves_saved_pat_when_blank(tmp_path) -> None:
+    store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
+
+    first = store.update_community_catalog(
+        CommunityCatalogSettingsUpdate(
+            enabled=True,
+            repository_url="https://github.com/example/catalog.git",
+            github_pat="secret-token",
+            branch="main",
+            auto_push=True,
+        )
+    )
+    second = store.update_community_catalog(
+        CommunityCatalogSettingsUpdate(
+            enabled=True,
+            repository_url="https://github.com/example/catalog.git",
+            github_pat=None,
+            branch="catalog",
+            auto_push=False,
+        )
+    )
+
+    assert first.github_pat == "secret-token"
+    assert second.github_pat == "secret-token"
+    assert second.branch == "catalog"
+    assert second.auto_push is False

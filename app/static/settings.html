@@ -36,15 +36,15 @@
           <input name="enabled" type="checkbox">
           <span>Enable catalog export</span>
         </label>
-        <label>Catalog path<input name="path" required></label>
+        <label>Repository URL<input name="repository_url" placeholder="https://github.com/you/grocy-catalog.git"></label>
+        <label>GitHub PAT<input name="github_pat" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved token"></label>
         <div class="settings-pair">
           <label class="switch-row"><input name="export_images" type="checkbox"><span>Export images</span></label>
-          <label class="switch-row"><input name="auto_commit" type="checkbox"><span>Auto commit</span></label>
           <label class="switch-row"><input name="auto_push" type="checkbox"><span>Auto push</span></label>
         </div>
         <div class="settings-pair">
-          <label>Git remote<input name="git_remote" required></label>
-          <label>Git branch<input name="git_branch" required></label>
+          <label>Branch<input name="branch" required></label>
+          <label>Saved token<input name="github_pat_status" disabled></label>
         </div>
         <div class="settings-pair">
           <label>Author name<input name="author_name"></label>
@@ -52,12 +52,25 @@
         </div>
         <div class="settings-actions">
           <button type="submit">Save settings</button>
-          <button type="button" class="secondary" id="test-community-catalog">Test path</button>
+          <button type="button" class="secondary" id="test-community-catalog">Test checkout</button>
+          <button type="button" class="secondary" id="show-token-help">PAT help</button>
+          <button type="button" class="secondary" id="review-community-catalog">Review pending changes</button>
+          <button type="button" class="secondary" id="push-community-catalog">Push pending</button>
+          <button type="button" class="secondary danger" id="discard-community-catalog">Discard pending</button>
         </div>
       </form>
       <div id="community-catalog-status" class="settings-status" aria-live="polite"></div>
+      <div id="community-catalog-diff" class="settings-status diff-status" aria-live="polite"></div>
     </section>
   </main>
+  <dialog id="token-help-dialog">
+    <form method="dialog" class="token-help">
+      <h2>GitHub PAT</h2>
+      <p>Create a fine-grained personal access token for only the catalog repository.</p>
+      <p>Grant repository access to the selected catalog repo, then set Contents to Read and write. Use an expiration date.</p>
+      <button type="submit">Close</button>
+    </form>
+  </dialog>
   <div id="toast"></div>
   <script src="/static/settings.js"></script>
 </body>

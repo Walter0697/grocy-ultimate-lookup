@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     scanner_device_offline_after_seconds: int = Field(default=120, alias="SCANNER_DEVICE_OFFLINE_AFTER_SECONDS")
     community_catalog_enabled: bool = Field(default=False, alias="COMMUNITY_CATALOG_ENABLED")
     community_catalog_path: str = Field(default="/data/community-catalog", alias="COMMUNITY_CATALOG_PATH")
+    community_catalog_workdir: str = Field(
+        default="/data/community-catalog-workdir",
+        alias="COMMUNITY_CATALOG_WORKDIR",
+    )
+    community_catalog_repository_url: str | None = Field(default=None, alias="COMMUNITY_CATALOG_REPOSITORY_URL")
+    community_catalog_github_pat: str | None = Field(default=None, alias="COMMUNITY_CATALOG_GITHUB_PAT")
     community_catalog_export_images: bool = Field(default=False, alias="COMMUNITY_CATALOG_EXPORT_IMAGES")
     community_catalog_auto_commit: bool = Field(default=False, alias="COMMUNITY_CATALOG_AUTO_COMMIT")
     community_catalog_auto_push: bool = Field(default=False, alias="COMMUNITY_CATALOG_AUTO_PUSH")

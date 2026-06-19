@@ -1,6 +1,6 @@
 import asyncio
 
-from app.app_settings import AppSettingsStore, CommunityCatalogSettings
+from app.app_settings import AppSettingsStore, CommunityCatalogSettings, CommunityCatalogSettingsUpdate
 from app.main import (
     get_community_catalog_settings,
     put_community_catalog_settings,
@@ -26,14 +26,13 @@ def test_community_catalog_settings_endpoint_reads_and_saves(monkeypatch, tmp_pa
 
     saved = run(
         put_community_catalog_settings(
-            CommunityCatalogSettings(
+            CommunityCatalogSettingsUpdate(
                 enabled=True,
-                path=str(tmp_path / "catalog"),
+                repository_url="https://github.com/example/catalog.git",
+                github_pat="secret-token",
+                branch="main",
                 export_images=True,
-                auto_commit=True,
                 auto_push=False,
-                git_remote="origin",
-                git_branch="main",
                 author_name="Walter",
                 author_email="walter@example.test",
             )
@@ -42,7 +41,10 @@ def test_community_catalog_settings_endpoint_reads_and_saves(monkeypatch, tmp_pa
     loaded = run(get_community_catalog_settings())
 
     assert saved.enabled is True
-    assert loaded == saved
+    assert saved.github_pat_set is True
+    assert loaded.github_pat_set is True
+    assert loaded.repository_url == "https://github.com/example/catalog.git"
+    assert not hasattr(loaded, "github_pat")
 
 
 def test_community_catalog_settings_test_reports_path_status(monkeypatch, tmp_path) -> None:
