@@ -1,17 +1,25 @@
 import json
 import subprocess
+from base64 import b64encode
 
 from app.community_catalog import CATALOG_README, CommunityCatalogExporter, catalog_product_dir
 from app.models import ConfirmedProductRequest
 
 
 class FakeGitRunner:
-    def __init__(self) -> None:
+    def __init__(self, *, fail_clone: bool = False) -> None:
         self.commands = []
+        self.fail_clone = fail_clone
 
     def __call__(self, command, **kwargs):
         self.commands.append((command, kwargs))
         if "clone" in command:
+            if self.fail_clone:
+                raise subprocess.CalledProcessError(
+                    128,
+                    command,
+                    stderr="remote: Repository not found.\nfatal: Authentication failed",
+                )
             destination = command[-1]
             from pathlib import Path
 
@@ -82,12 +90,34 @@ def test_exporter_clones_writes_commits_and_pushes_with_pat(tmp_path) -> None:
     ]
     assert commands[1] == ["git", "checkout", "catalog"]
     assert clone_env["GIT_CONFIG_KEY_0"] == "http.extraHeader"
-    assert clone_env["GIT_CONFIG_VALUE_0"] == "Authorization: Bearer secret-token"
+    expected_auth = b64encode(b"x-access-token:secret-token").decode()
+    assert clone_env["GIT_CONFIG_VALUE_0"] == f"Authorization: Basic {expected_auth}"
+    assert "secret-token" not in clone_env["GIT_CONFIG_VALUE_0"]
     assert ["git", "add", "products/627/985/627985000070", "README.md"] in commands
     assert ["git", "commit", "-m", "Add product 627985000070"] in commands
     assert ["git", "push", "origin", "catalog"] in commands
     assert (checkout / "products" / "627" / "985" / "627985000070" / "product.json").exists()
     assert (checkout / "README.md").read_text() == CATALOG_README
+
+
+def test_exporter_checkout_failure_reports_git_stderr(tmp_path) -> None:
+    runner = FakeGitRunner(fail_clone=True)
+    exporter = CommunityCatalogExporter(
+        path=tmp_path / "checkout",
+        enabled=True,
+        repository_url="https://github.com/example/catalog.git",
+        github_pat="secret-token",
+        auto_push=True,
+        command_runner=runner,
+    )
+
+    result = exporter.export_confirmed_product("627985000070", ConfirmedProductRequest(name="Manual Product"))
+
+    assert result.exported is False
+    assert result.warnings
+    assert "Repository not found" in result.warnings[0]
+    assert "Authentication failed" in result.warnings[0]
+    assert "secret-token" not in result.warnings[0]
 
 
 def test_exporter_does_not_replace_existing_catalog_readme(tmp_path) -> None:
@@ -132,7 +162,8 @@ def test_exporter_review_mode_syncs_and_leaves_product_uncommitted(tmp_path) -> 
     assert result.exported is True
     assert commands[0] == ["git", "fetch", "origin", "main"]
     assert commands[1] == ["git", "reset", "--hard", "origin/main"]
-    assert runner.commands[0][1]["env"]["GIT_CONFIG_VALUE_0"] == "Authorization: Bearer secret-token"
+    expected_auth = b64encode(b"x-access-token:secret-token").decode()
+    assert runner.commands[0][1]["env"]["GIT_CONFIG_VALUE_0"] == f"Authorization: Basic {expected_auth}"
     assert not any("commit" in command for command in commands)
     assert not any("push" in command for command in commands)
 

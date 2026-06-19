@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import urllib.request
+from base64 import b64encode
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -182,7 +183,7 @@ class CommunityCatalogExporter:
                     text=True,
                 )
             except Exception as exc:
-                warning = f"{self._command_label(command)} failed: {exc}"
+                warning = f"{self._command_label(command)} failed: {self._git_error_message(exc)}"
                 warnings.append(warning)
                 logger.warning("Community catalog git command failed: %s", warning)
                 break
@@ -240,8 +241,8 @@ class CommunityCatalogExporter:
             self._checkout_branch()
             return []
         except Exception as exc:
-            warning = f"catalog checkout sync failed: {exc}"
-            logger.warning("Community catalog checkout sync failed: %s", exc)
+            warning = f"catalog checkout sync failed: {self._git_error_message(exc)}"
+            logger.warning("Community catalog checkout sync failed: %s", warning)
             return [warning]
 
     def sync_checkout(self) -> list[str]:
@@ -278,13 +279,25 @@ class CommunityCatalogExporter:
             {
                 "GIT_CONFIG_COUNT": "1",
                 "GIT_CONFIG_KEY_0": "http.extraHeader",
-                "GIT_CONFIG_VALUE_0": f"Authorization: Bearer {self.github_pat}",
+                "GIT_CONFIG_VALUE_0": f"Authorization: Basic {self._github_basic_token()}",
             }
         )
         return env
 
+    def _github_basic_token(self) -> str:
+        return b64encode(f"x-access-token:{self.github_pat}".encode()).decode()
+
     def _command_label(self, command: list[str]) -> str:
         return " ".join("<redacted>" if self.github_pat and self.github_pat in part else part for part in command)
+
+    def _git_error_message(self, exc: Exception) -> str:
+        if isinstance(exc, subprocess.CalledProcessError):
+            stderr = (exc.stderr or "").strip()
+            stdout = (exc.stdout or "").strip()
+            detail = stderr or stdout
+            if detail:
+                return detail
+        return str(exc)
 
     def pending_changes(self) -> tuple[bool, str, list[str]]:
         if not (self.path / ".git").exists():
