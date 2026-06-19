@@ -3,7 +3,7 @@ import re
 from html import unescape
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 import httpx
 
@@ -409,7 +409,7 @@ class WebSearchAdapter(LookupAdapter):
             size=extracted.size or normalized.size,
             count=extracted.count or normalized.count,
             variant=extracted.variant or normalized.variant,
-            image_url=extracted.image_url,
+            image_url=absolute_image_url(extracted.image_url, candidate.url),
             source="llm_fallback",
             confidence=llm_confidence(extracted.barcode_seen, match_warnings),
             match_reason=match_reason,
@@ -444,7 +444,7 @@ def build_structured_lookup_result(
         size=normalized.size,
         count=normalized.count,
         variant=normalized.variant,
-        image_url=product.image_url,
+        image_url=absolute_image_url(product.image_url, candidate.url),
         source=f"web_{product.extraction_method}",
         confidence=web_confidence(product.match_reason, match_warnings),
         match_reason=product.match_reason,
@@ -465,6 +465,12 @@ def create_search_provider() -> DuckDuckGoSearchProvider | SearxngSearchProvider
     if provider == "searxng" and settings.searxng_base_url:
         return SearxngSearchProvider(settings.searxng_base_url)
     return DuckDuckGoSearchProvider()
+
+
+def absolute_image_url(image_url: str | None, page_url: str) -> str | None:
+    if not image_url:
+        return None
+    return urljoin(page_url, image_url)
 
 
 def search_queries_for_barcode(barcode: str) -> list[str]:

@@ -267,6 +267,31 @@ def test_structured_product_prevents_llm_fallback_call() -> None:
     assert result.source == "web_json_ld"
 
 
+def test_structured_product_resolves_relative_image_url() -> None:
+    async def scenario():
+        adapter = WebSearchAdapter(llm_provider=None)
+        candidate = SearchResult("Structured Product", "https://shop.example.com/products/item")
+        html = """
+        <script type="application/ld+json">
+        {
+          "@type":"Product",
+          "name":"Structured Product",
+          "gtin12":"067489302124",
+          "image":"/-/media/project/oneweb/product.jpg"
+        }
+        </script>
+        """
+        response = httpx.Response(200, headers={"content-type": "text/html"}, text=html)
+        client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: response))
+        async with client:
+            return await adapter._fetch_product(client, "067489302124", candidate)
+
+    result = run(scenario())
+
+    assert result is not None
+    assert str(result.image_url) == "https://shop.example.com/-/media/project/oneweb/product.jpg"
+
+
 def test_malformed_llm_fallback_returns_no_product() -> None:
     class EmptyLlmProvider(LlmProvider):
         async def extract_product(self, barcode: str, page_url: str, page_text: str) -> None:
