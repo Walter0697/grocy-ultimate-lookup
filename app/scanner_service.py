@@ -6,7 +6,13 @@ from app.community_catalog import RuntimeCommunityCatalogExporter
 from app.config import settings
 from app.grocy import GrocyClient
 from app.local_store import LocalProductStore
-from app.models import ConfirmedProductRequest, DeviceScanRequest, PendingProductConfirmation, ScanEventRequest
+from app.models import (
+    ConfirmedProductRequest,
+    DashboardScanConfirmation,
+    DeviceScanRequest,
+    PendingProductConfirmation,
+    ScanEventRequest,
+)
 from app.orchestrator import LookupOrchestrator
 from app.scan_events import ScanEventStore
 
@@ -60,14 +66,6 @@ class ScannerService:
         if grocy_product is not None:
             return self._preview_response(barcode, grocy_product, "grocy")
         response = await self.lookup.lookup(barcode, use_cache=False)
-        if self._can_auto_create(response):
-            product = await self._create_from_lookup(barcode, response.result)
-            return self._preview_response(
-                barcode,
-                product,
-                "grocy_auto_created",
-                lookup=response.model_dump(mode="json"),
-            )
         return {
             "barcode": barcode,
             "found": response.found,
@@ -145,11 +143,32 @@ class ScannerService:
         event = self._required(event_id)
         if event["status"] not in {"pending", "researching", "failed"}:
             return event
-        existing = await self.grocy.find_product_by_barcode(event["barcode"])
+        existing = await self._confirm_product(event["barcode"], product)
+        return await self._apply(self._request_from_event(event), existing)
+
+    async def confirm_dashboard_scan(self, confirmation: DashboardScanConfirmation) -> dict:
+        request = ScanEventRequest(
+            event_id=confirmation.event_id,
+            device_id=confirmation.device_id,
+            barcode=confirmation.barcode,
+            mode=confirmation.mode,
+            quantity=confirmation.quantity,
+            location_id=confirmation.location_id,
+        )
+        event, created = self.store.create(request)
+        if not created:
+            return event
+        product = await self._confirm_product(confirmation.barcode, confirmation.product)
+        return await self._apply(request, product)
+
+    async def _confirm_product(self, barcode: str, product: PendingProductConfirmation) -> dict:
+        existing = await self.grocy.find_product_by_barcode(barcode)
         if existing is None:
-            existing = await self.grocy.create_product(event["barcode"], product)
+            existing = await self.grocy.create_product(barcode, product)
+        else:
+            existing = await self.grocy.update_product(int(existing["product"]["id"]), barcode, product)
         self.local_store.upsert(
-            event["barcode"],
+            barcode,
             ConfirmedProductRequest(
                 name=product.name,
                 brand=product.brand,
@@ -166,12 +185,12 @@ class ScannerService:
             notes=product.description,
         )
         try:
-            result = self.community_catalog.export_confirmed_product(event["barcode"], catalog_product)
+            result = self.community_catalog.export_confirmed_product(barcode, catalog_product)
             for warning in result.warnings:
-                logger.warning("Community catalog export warning for %s: %s", event["barcode"], warning)
+                logger.warning("Community catalog export warning for %s: %s", barcode, warning)
         except Exception as exc:
-            logger.warning("Community catalog export failed for %s: %s", event["barcode"], exc)
-        return await self._apply(self._request_from_event(event), existing)
+            logger.warning("Community catalog export failed for %s: %s", barcode, exc)
+        return existing
 
     async def products(self) -> list[dict]:
         return await self.grocy.dashboard_products()

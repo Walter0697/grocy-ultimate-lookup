@@ -100,6 +100,22 @@ class DeviceScanResponse(BaseModel):
     message: str
 
 
+class DashboardScanConfirmation(BaseModel):
+    event_id: str = Field(min_length=1, max_length=120)
+    device_id: str = Field(min_length=1, max_length=120)
+    barcode: str = Field(min_length=1, max_length=120)
+    mode: Literal["add", "remove", "set"]
+    quantity: float = Field(ge=0)
+    location_id: int | None = Field(default=None, gt=0)
+    product: "PendingProductConfirmation"
+
+    @model_validator(mode="after")
+    def validate_quantity_for_mode(self):
+        if self.mode in {"add", "remove"} and self.quantity <= 0:
+            raise ValueError("Add and remove quantities must be greater than zero")
+        return self
+
+
 class DeviceHeartbeatRequest(BaseModel):
     device_id: str = Field(min_length=1, max_length=120)
     mode: Literal["add", "remove", "set"] | None = None

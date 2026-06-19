@@ -1,7 +1,14 @@
 import asyncio
 from types import SimpleNamespace
 
-from app.models import DeviceScanRequest, LookupResponse, LookupResult, PendingProductConfirmation, ScanEventRequest
+from app.models import (
+    DashboardScanConfirmation,
+    DeviceScanRequest,
+    LookupResponse,
+    LookupResult,
+    PendingProductConfirmation,
+    ScanEventRequest,
+)
 from app.local_store import LocalProductStore
 from app.scan_events import ScanEventStore
 from app.scanner_service import ScannerService
@@ -35,6 +42,7 @@ class FakeGrocy:
         self.fail_apply = fail_apply
         self.operations = []
         self.created = []
+        self.updated = []
 
     async def find_product_by_barcode(self, barcode: str):
         return self.product
@@ -50,6 +58,11 @@ class FakeGrocy:
     async def create_product(self, barcode: str, product: PendingProductConfirmation):
         self.created.append((barcode, product))
         self.product = details(22, product.name, 0)
+        return self.product
+
+    async def update_product(self, product_id: int, barcode: str, product: PendingProductConfirmation):
+        self.updated.append((product_id, barcode, product))
+        self.product = details(product_id, product.name, 0)
         return self.product
 
     async def get_objects(self, entity: str):
@@ -144,6 +157,24 @@ def test_preview_checks_grocy_before_lookup(tmp_path) -> None:
     assert lookup.calls == []
 
 
+def test_dashboard_preview_does_not_auto_create_trusted_lookup_product(tmp_path) -> None:
+    result = LookupResult(
+        barcode="123456",
+        name="Trusted Lookup Product",
+        image_url="https://example.test/product.jpg",
+        source="open_food_facts",
+        confidence=0.95,
+    )
+    grocy = FakeGrocy()
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=True, result=result)))
+
+    preview = run(scanner.preview("123456"))
+
+    assert preview["resolution"] == "lookup"
+    assert preview["product"]["name"] == "Trusted Lookup Product"
+    assert grocy.created == []
+
+
 def test_preview_uses_lookup_for_unknown_grocy_barcode(tmp_path) -> None:
     result = LookupResult(barcode="123456", name="Suggested Product", source="test", confidence=0.8)
     lookup = FakeLookup(LookupResponse(barcode="123456", found=True, result=result))
@@ -155,7 +186,7 @@ def test_preview_uses_lookup_for_unknown_grocy_barcode(tmp_path) -> None:
     assert preview["product"]["name"] == "Suggested Product"
 
 
-def test_preview_auto_creates_complete_trusted_lookup_result(tmp_path) -> None:
+def test_process_auto_creates_complete_trusted_lookup_result_for_scanner_path(tmp_path) -> None:
     result = LookupResult(
         barcode="123456",
         name="Trusted Product",
@@ -166,13 +197,14 @@ def test_preview_auto_creates_complete_trusted_lookup_result(tmp_path) -> None:
     grocy = FakeGrocy()
     scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=True, result=result)))
 
-    preview = run(scanner.preview("123456"))
+    event = run(scanner.process(request()))
 
-    assert preview["resolution"] == "grocy_auto_created"
-    assert preview["product"]["name"] == "Trusted Product"
+    assert event["status"] == "applied"
+    assert event["product_name"] == "Trusted Product"
     assert len(grocy.created) == 1
     assert grocy.created[0][1].location_id == 4
     assert grocy.created[0][1].qu_id == 7
+    assert len(grocy.operations) == 1
 
 
 def test_preview_does_not_auto_create_incomplete_or_uncertain_lookup_result(tmp_path) -> None:
@@ -202,6 +234,70 @@ def test_duplicate_event_id_does_not_apply_stock_twice(tmp_path) -> None:
 
     assert first == second
     assert len(grocy.operations) == 1
+
+
+def test_dashboard_confirm_uses_edited_product_before_applying_scan(tmp_path) -> None:
+    catalog = FakeCommunityCatalog()
+    scanner = service(
+        tmp_path,
+        FakeGrocy(),
+        FakeLookup(LookupResponse(barcode="123456", found=False)),
+        community_catalog=catalog,
+    )
+
+    event = run(
+        scanner.confirm_dashboard_scan(
+            DashboardScanConfirmation(
+                event_id="dashboard-1",
+                device_id="dashboard-manual",
+                barcode="123456",
+                mode="add",
+                quantity=2,
+                location_id=4,
+                product=PendingProductConfirmation(
+                    name="Edited Product",
+                    brand="Edited Brand",
+                    quantity="12 oz",
+                    location_id=4,
+                    qu_id=7,
+                ),
+            )
+        )
+    )
+
+    assert event["status"] == "applied"
+    assert event["product_name"] == "Edited Product"
+    assert len(scanner.grocy.created) == 1
+    assert scanner.grocy.created[0][1].name == "Edited Product"
+    assert scanner.grocy.operations[0][1].location_id == 4
+    assert catalog.exported[0][1].name == "Edited Product"
+
+
+def test_dashboard_confirm_updates_existing_grocy_product_before_applying_scan(tmp_path) -> None:
+    grocy = FakeGrocy(details(9, "Old Product", 1))
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=False)))
+
+    event = run(
+        scanner.confirm_dashboard_scan(
+            DashboardScanConfirmation(
+                event_id="dashboard-existing",
+                device_id="dashboard-manual",
+                barcode="123456",
+                mode="add",
+                quantity=1,
+                product=PendingProductConfirmation(
+                    name="Edited Existing Product",
+                    location_id=4,
+                    qu_id=7,
+                ),
+            )
+        )
+    )
+
+    assert event["status"] == "applied"
+    assert event["product_name"] == "Edited Existing Product"
+    assert grocy.created == []
+    assert grocy.updated[0][0] == 9
 
 
 def test_failed_known_product_operation_keeps_product_context(tmp_path) -> None:

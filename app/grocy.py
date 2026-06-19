@@ -64,6 +64,29 @@ class GrocyClient:
         product: PendingProductConfirmation,
     ) -> dict:
         picture_file_name = await self._upload_product_picture(barcode, product.image_url)
+        payload = self.product_payload(product, picture_file_name=picture_file_name)
+        created = await self._request("POST", "/objects/products", json=payload)
+        product_id = int(created["created_object_id"])
+        await self._request(
+            "POST",
+            "/objects/product_barcodes",
+            json={"product_id": product_id, "barcode": barcode, "qu_id": product.qu_id},
+        )
+        return await self.product_details(product_id)
+
+    async def update_product(
+        self,
+        product_id: int,
+        barcode: str,
+        product: PendingProductConfirmation,
+    ) -> dict:
+        picture_file_name = await self._upload_product_picture(barcode, product.image_url)
+        payload = self.product_payload(product, picture_file_name=picture_file_name)
+        await self._request("PUT", f"/objects/products/{product_id}", json=payload)
+        return await self.product_details(product_id)
+
+    @staticmethod
+    def product_payload(product: PendingProductConfirmation, picture_file_name: str | None = None) -> dict:
         description = product.description or ""
         if product.brand:
             description = f"{description}\nBrand: {product.brand}".strip()
@@ -80,14 +103,7 @@ class GrocyClient:
         }
         if picture_file_name:
             payload["picture_file_name"] = picture_file_name
-        created = await self._request("POST", "/objects/products", json=payload)
-        product_id = int(created["created_object_id"])
-        await self._request(
-            "POST",
-            "/objects/product_barcodes",
-            json={"product_id": product_id, "barcode": barcode, "qu_id": product.qu_id},
-        )
-        return await self.product_details(product_id)
+        return payload
 
     async def dashboard_products(self) -> list[dict]:
         products = await self.get_objects("products")

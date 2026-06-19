@@ -18,6 +18,7 @@ from app.grocy import GrocyError
 from app.models import (
     ConfirmedProduct,
     ConfirmedProductRequest,
+    DashboardScanConfirmation,
     DeviceHeartbeatRequest,
     DeviceScanRequest,
     DeviceScanResponse,
@@ -190,6 +191,14 @@ async def delete_agent_search(barcode: str) -> None:
 @app.post("/scan-events")
 async def create_scan_event(event: ScanEventRequest) -> dict:
     return await scanner.process(event)
+
+
+@app.post("/dashboard/scan-confirm")
+async def confirm_dashboard_scan(confirmation: DashboardScanConfirmation) -> dict:
+    try:
+        return await scanner.confirm_dashboard_scan(confirmation)
+    except GrocyError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
 @app.post("/scanner/scan", response_model=DeviceScanResponse)
