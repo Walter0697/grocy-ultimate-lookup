@@ -89,8 +89,28 @@
   gap: 10px;
 }
 
+.auto-push-row {
+  display: grid;
+  grid-template-columns: minmax(150px, .55fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
 .review-actions {
-  padding-top: 4px;
+  align-self: stretch;
+  align-content: center;
+  border: 1px dashed var(--line);
+  background: rgba(255, 255, 255, .42);
+  padding: 10px;
+  transition: opacity .16s ease, filter .16s ease;
+}
+
+.review-actions.is-dimmed {
+  opacity: .42;
+  filter: grayscale(.35);
+}
+
+.review-actions button:disabled {
+  cursor: not-allowed;
 }
 
 .settings-actions button,
@@ -164,7 +184,8 @@ dialog::backdrop {
 
 @media (max-width: 700px) {
   .settings-pair,
-  .field-action-row {
+  .field-action-row,
+  .auto-push-row {
     grid-template-columns: 1fr;
   }
 

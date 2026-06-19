@@ -47,7 +47,14 @@
           </div>
           <div class="settings-pair">
             <label class="switch-row"><input name="export_images" type="checkbox"><span>Export images</span></label>
-            <label class="switch-row"><input name="auto_push" type="checkbox"><span>Auto push</span></label>
+            <div class="auto-push-row">
+              <label class="switch-row"><input name="auto_push" type="checkbox"><span>Auto push</span></label>
+              <div id="pending-review-actions" class="settings-actions review-actions">
+                <button type="button" class="secondary" id="review-community-catalog">Review pending changes</button>
+                <button type="button" class="secondary" id="push-community-catalog">Push pending</button>
+                <button type="button" class="secondary danger" id="discard-community-catalog">Discard pending</button>
+              </div>
+            </div>
           </div>
           <div class="settings-pair">
             <label>Branch<input name="branch" required></label>
@@ -56,11 +63,6 @@
           <div class="settings-pair">
             <label>Author name<input name="author_name"></label>
             <label>Author email<input name="author_email" type="email"></label>
-          </div>
-          <div class="settings-actions review-actions">
-            <button type="button" class="secondary" id="review-community-catalog">Review pending changes</button>
-            <button type="button" class="secondary" id="push-community-catalog">Push pending</button>
-            <button type="button" class="secondary danger" id="discard-community-catalog">Discard pending</button>
           </div>
         </div>
         <div class="settings-actions">

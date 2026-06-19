@@ -52,6 +52,11 @@ function fillForm(settings) {
 function updateCatalogConfigState() {
   const form = $("#community-catalog-form");
   $("#community-catalog-config").classList.toggle("is-dimmed", !form.enabled.checked);
+  const reviewActions = $("#pending-review-actions");
+  reviewActions.classList.toggle("is-dimmed", form.auto_push.checked);
+  reviewActions.querySelectorAll("button").forEach(button => {
+    button.disabled = form.auto_push.checked;
+  });
 }
 
 function renderStatus(status) {
@@ -83,6 +88,7 @@ $("#community-catalog-form").addEventListener("submit", async event => {
 });
 
 $("#community-catalog-form").enabled.addEventListener("change", updateCatalogConfigState);
+$("#community-catalog-form").auto_push.addEventListener("change", updateCatalogConfigState);
 
 $("#test-community-catalog").addEventListener("click", async event => {
   setButtonBusy(event.target, true, "Testing...");
