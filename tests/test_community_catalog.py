@@ -1,7 +1,7 @@
 import json
 import subprocess
 
-from app.community_catalog import CommunityCatalogExporter, catalog_product_dir
+from app.community_catalog import CATALOG_README, CommunityCatalogExporter, catalog_product_dir
 from app.models import ConfirmedProductRequest
 
 
@@ -83,10 +83,33 @@ def test_exporter_clones_writes_commits_and_pushes_with_pat(tmp_path) -> None:
     assert commands[1] == ["git", "checkout", "catalog"]
     assert clone_env["GIT_CONFIG_KEY_0"] == "http.extraHeader"
     assert clone_env["GIT_CONFIG_VALUE_0"] == "Authorization: Bearer secret-token"
-    assert ["git", "add", "products/627/985/627985000070"] in commands
+    assert ["git", "add", "products/627/985/627985000070", "README.md"] in commands
     assert ["git", "commit", "-m", "Add product 627985000070"] in commands
     assert ["git", "push", "origin", "catalog"] in commands
     assert (checkout / "products" / "627" / "985" / "627985000070" / "product.json").exists()
+    assert (checkout / "README.md").read_text() == CATALOG_README
+
+
+def test_exporter_does_not_replace_existing_catalog_readme(tmp_path) -> None:
+    runner = FakeGitRunner()
+    checkout = tmp_path / "checkout"
+    (checkout / ".git").mkdir(parents=True)
+    (checkout / "README.md").write_text("Existing catalog readme\n")
+    exporter = CommunityCatalogExporter(
+        path=checkout,
+        enabled=True,
+        repository_url="https://github.com/example/catalog.git",
+        branch="main",
+        auto_push=True,
+        command_runner=runner,
+    )
+
+    exporter.export_confirmed_product("627985000070", ConfirmedProductRequest(name="Manual Product"))
+
+    commands = [call[0] for call in runner.commands]
+    assert ["git", "add", "products/627/985/627985000070"] in commands
+    assert not any(command == ["git", "add", "products/627/985/627985000070", "README.md"] for command in commands)
+    assert (checkout / "README.md").read_text() == "Existing catalog readme\n"
 
 
 def test_exporter_review_mode_syncs_and_leaves_product_uncommitted(tmp_path) -> None:

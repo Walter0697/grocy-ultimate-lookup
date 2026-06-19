@@ -17,6 +17,17 @@ logger = logging.getLogger(__name__)
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
 
+CATALOG_README = """# Grocy Community Catalog
+
+Welcome. This repository is a product catalog created by Grocy Ultimate Lookup.
+
+Products are stored by barcode under the `products/` directory. Each product folder can contain a `product.json` file and, when image export is enabled, an `image.jpg` file.
+
+This catalog can be produced by connecting your own product scanning workflow to Grocy Ultimate Lookup and confirming products as you scan them.
+
+See [Grocy Ultimate Lookup](https://github.com/Walter0697/grocy-ultimate-lookup) for how the catalog format works and how to run the lookup service.
+"""
+
 
 @dataclass(frozen=True)
 class CommunityCatalogExportResult:
@@ -104,6 +115,13 @@ class CommunityCatalogExporter:
             warnings=tuple(warnings),
         )
 
+    def _ensure_readme(self) -> bool:
+        readme_path = self.path / "README.md"
+        if readme_path.exists():
+            return False
+        readme_path.write_text(CATALOG_README)
+        return True
+
     def _product_payload(self, barcode: str, product: ConfirmedProductRequest) -> dict:
         return {
             "schema_version": 1,
@@ -129,9 +147,12 @@ class CommunityCatalogExporter:
     def _commit_and_maybe_push(self, product_json_path: Path, barcode: str) -> list[str]:
         warnings: list[str] = []
         relative_product_dir = product_json_path.parent.relative_to(self.path)
+        commit_paths: list[Path | str] = [relative_product_dir]
+        if self.repository_url and self._ensure_readme():
+            commit_paths.append("README.md")
         commit_message = f"Add product {barcode}"
         env = self._git_env(self._git_author_env())
-        warnings.extend(self._commit_path(relative_product_dir, commit_message, env=env))
+        warnings.extend(self._commit_paths(commit_paths, commit_message, env=env))
         if warnings:
             return warnings
         if self.auto_push:
@@ -139,8 +160,11 @@ class CommunityCatalogExporter:
         return warnings
 
     def _commit_path(self, relative_path: Path | str, message: str, *, env: dict[str, str] | None) -> list[str]:
+        return self._commit_paths([relative_path], message, env=env)
+
+    def _commit_paths(self, relative_paths: list[Path | str], message: str, *, env: dict[str, str] | None) -> list[str]:
         commands = [
-            self._git_command(["add", str(relative_path)]),
+            self._git_command(["add", *(str(relative_path) for relative_path in relative_paths)]),
             self._git_command(["commit", "-m", message]),
         ]
         return self._run_git_sequence(commands, env=env)
