@@ -83,6 +83,10 @@
   line-height: 1.3;
 }
 
+.setting-row {
+  min-height: 46px;
+}
+
 .settings-actions {
   display: flex;
   flex-wrap: wrap;

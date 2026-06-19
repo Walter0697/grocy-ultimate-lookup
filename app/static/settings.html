@@ -45,15 +45,13 @@
             <label>GitHub PAT<input name="github_pat" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved token"></label>
             <button type="button" class="secondary" id="show-token-help">PAT help</button>
           </div>
-          <div class="settings-pair">
-            <label class="switch-row"><input name="export_images" type="checkbox"><span>Export images</span></label>
-            <div class="auto-push-row">
-              <label class="switch-row"><input name="auto_push" type="checkbox"><span>Auto push</span></label>
-              <div id="pending-review-actions" class="settings-actions review-actions">
-                <button type="button" class="secondary" id="review-community-catalog">Review pending changes</button>
-                <button type="button" class="secondary" id="push-community-catalog">Push pending</button>
-                <button type="button" class="secondary danger" id="discard-community-catalog">Discard pending</button>
-              </div>
+          <label class="switch-row setting-row"><input name="export_images" type="checkbox"><span>Export images</span></label>
+          <div class="auto-push-row">
+            <label class="switch-row"><input name="auto_push" type="checkbox"><span>Auto push</span></label>
+            <div id="pending-review-actions" class="settings-actions review-actions">
+              <button type="button" class="secondary" id="review-community-catalog">Review pending changes</button>
+              <button type="button" class="secondary" id="push-community-catalog">Push pending</button>
+              <button type="button" class="secondary danger" id="discard-community-catalog">Discard pending</button>
             </div>
           </div>
           <div class="settings-pair">
