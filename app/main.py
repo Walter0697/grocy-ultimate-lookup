@@ -14,6 +14,7 @@ from app.app_settings import (
 )
 from app.config import settings
 from app.community_catalog import exporter_from_settings
+from app.grocy import GrocyError
 from app.models import (
     ConfirmedProduct,
     ConfirmedProductRequest,
@@ -226,7 +227,10 @@ def require_scanner_token(device_id: str, token: str | None) -> None:
 
 @app.get("/scan-preview/{barcode}")
 async def preview_scan(barcode: str) -> dict:
-    return await scanner.preview(barcode)
+    try:
+        return await scanner.preview(barcode)
+    except GrocyError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
 @app.get("/scan-events")
@@ -265,11 +269,17 @@ async def confirm_scan_event(event_id: str, product: PendingProductConfirmation)
 
 @app.get("/dashboard/products")
 async def dashboard_products() -> list[dict]:
-    return await scanner.products()
+    try:
+        return await scanner.products()
+    except GrocyError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
 @app.get("/dashboard/options")
 async def dashboard_options() -> dict:
-    options = await scanner.options()
+    try:
+        options = await scanner.options()
+    except GrocyError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
     options["scanner_devices"] = [device.model_dump(mode="json") for device in scanner_devices.list()]
     return options

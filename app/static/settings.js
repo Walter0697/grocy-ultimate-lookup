@@ -2,7 +2,19 @@ const $ = (selector) => document.querySelector(selector);
 
 async function api(path, init) {
   const response = await fetch(path, { headers: { "Content-Type": "application/json" }, ...init });
-  if (!response.ok) throw new Error((await response.json()).detail || response.statusText);
+  if (!response.ok) {
+    const body = await response.text();
+    let message = response.statusText;
+    if (body) {
+      try {
+        message = JSON.parse(body).detail || message;
+      }
+      catch {
+        message = body;
+      }
+    }
+    throw new Error(message);
+  }
   return response.status === 204 ? null : response.json();
 }
 

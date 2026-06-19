@@ -1,4 +1,5 @@
 import base64
+import json
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -153,4 +154,8 @@ class GrocyClient:
             raise GrocyError(f"Grocy {response.status_code}: {detail}")
         if response.status_code == 204 or not response.content:
             return None
-        return response.json()
+        try:
+            return response.json()
+        except json.JSONDecodeError:
+            detail = response.text.strip() or response.headers.get("content-type", "empty response")
+            raise GrocyError(f"Grocy returned non-JSON response: {detail[:300]}")

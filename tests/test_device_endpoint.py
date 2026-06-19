@@ -6,12 +6,15 @@ from app.config import settings
 from app.main import (
     app,
     create_device_scan,
+    dashboard_options,
     list_scanner_devices,
+    preview_scan,
     scanner,
     scanner_heartbeat,
     static_path,
     versioned_index_html,
 )
+from app.grocy import GrocyError
 from app.models import DeviceHeartbeatRequest, DeviceScanRequest
 
 
@@ -138,3 +141,33 @@ def test_dashboard_links_to_settings_page() -> None:
     assert '<a class="settings-button" href="/settings">Settings</a>' in index
     assert 'id="community-catalog-form"' in settings_html
     assert "/settings/community-catalog" in settings_script
+
+
+def test_dashboard_options_maps_grocy_errors_to_json_api_error(monkeypatch) -> None:
+    async def fake_options():
+        raise GrocyError("Grocy returned non-JSON response: setup is missing")
+
+    monkeypatch.setattr(scanner, "options", fake_options)
+
+    try:
+        run(dashboard_options())
+    except HTTPException as exc:
+        assert exc.status_code == 502
+        assert "setup is missing" in exc.detail
+    else:
+        raise AssertionError("GrocyError was not converted to an API error")
+
+
+def test_scan_preview_maps_grocy_errors_to_json_api_error(monkeypatch) -> None:
+    async def fake_preview(barcode):
+        raise GrocyError("Grocy returned non-JSON response: setup is missing")
+
+    monkeypatch.setattr(scanner, "preview", fake_preview)
+
+    try:
+        run(preview_scan("123456"))
+    except HTTPException as exc:
+        assert exc.status_code == 502
+        assert "setup is missing" in exc.detail
+    else:
+        raise AssertionError("GrocyError was not converted to an API error")
