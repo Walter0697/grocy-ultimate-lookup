@@ -17,9 +17,9 @@ class CommunityCatalogSettings(BaseModel):
     branch: str = "main"
     workdir: str = "/data/community-catalog-workdir"
     path: str = "/data/community-catalog"
-    export_images: bool = False
+    export_images: bool = True
     auto_commit: bool = False
-    auto_push: bool = False
+    auto_push: bool = True
     git_remote: str = "origin"
     git_branch: str = "main"
     author_name: str | None = None
@@ -52,8 +52,8 @@ class CommunityCatalogSettingsUpdate(BaseModel):
     repository_url: str | None = None
     github_pat: str | None = None
     branch: str = "main"
-    export_images: bool = False
-    auto_push: bool = False
+    export_images: bool = True
+    auto_push: bool = True
     author_name: str | None = None
     author_email: str | None = None
 

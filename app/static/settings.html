@@ -45,7 +45,7 @@
             <label>GitHub PAT<input name="github_pat" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved token"></label>
             <button type="button" class="secondary" id="show-token-help">PAT help</button>
           </div>
-          <label class="switch-row setting-row"><input name="export_images" type="checkbox"><span>Export images</span></label>
+          <label class="switch-row setting-row"><input name="export_images" type="checkbox"><span>Include product images</span></label>
           <div class="auto-push-row">
             <label class="switch-row"><input name="auto_push" type="checkbox"><span>Auto push</span></label>
             <div id="pending-review-actions" class="settings-actions review-actions">
@@ -67,8 +67,6 @@
           <button type="submit">Save settings</button>
         </div>
       </form>
-      <div id="community-catalog-status" class="settings-status" aria-live="polite"></div>
-      <div id="community-catalog-diff" class="settings-status diff-status" aria-live="polite"></div>
     </section>
   </main>
   <dialog id="token-help-dialog">

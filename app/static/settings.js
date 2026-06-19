@@ -60,12 +60,19 @@ function updateCatalogConfigState() {
 }
 
 function renderStatus(status) {
-  $("#community-catalog-status").innerHTML = `Repository: <b>${status.repository_url || "not configured"}</b><br>Branch: <b>${status.branch}</b><br>Internal checkout: <b>${status.path}</b><br>Exists: <b>${status.path_exists ? "yes" : "no"}</b><br>Git repository: <b>${status.is_git_repo ? "yes" : "no"}</b><br>Pending changes: <b>${status.pending_changes ? "yes" : "no"}</b>`;
+  const node = $("#community-catalog-status");
+  if (!node) return;
+  node.innerHTML = `Repository: <b>${status.repository_url || "not configured"}</b><br>Branch: <b>${status.branch}</b><br>Internal checkout: <b>${status.path}</b><br>Exists: <b>${status.path_exists ? "yes" : "no"}</b><br>Git repository: <b>${status.is_git_repo ? "yes" : "no"}</b><br>Pending changes: <b>${status.pending_changes ? "yes" : "no"}</b>`;
 }
 
 function renderDiff(diff) {
+  const node = $("#community-catalog-diff");
   const files = diff.files.length ? diff.files.map(file => `<li>${file}</li>`).join("") : "<li>No pending files</li>";
-  $("#community-catalog-diff").innerHTML = `Pending changes: <b>${diff.pending_changes ? "yes" : "no"}</b><ul>${files}</ul>`;
+  if (!node) {
+    toast(diff.pending_changes ? `Pending catalog changes: ${diff.files.length} file(s)` : "No pending catalog changes");
+    return;
+  }
+  node.innerHTML = `Pending changes: <b>${diff.pending_changes ? "yes" : "no"}</b><ul>${files}</ul>`;
 }
 
 async function load() {
