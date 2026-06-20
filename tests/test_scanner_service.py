@@ -258,6 +258,7 @@ def test_dashboard_confirm_uses_edited_product_before_applying_scan(tmp_path) ->
                     name="Edited Product",
                     brand="Edited Brand",
                     quantity="12 oz",
+                    image_url="http://host.docker.internal:9290/uploaded-images/edited-product.jpg",
                     location_id=4,
                     qu_id=7,
                 ),
@@ -271,6 +272,10 @@ def test_dashboard_confirm_uses_edited_product_before_applying_scan(tmp_path) ->
     assert scanner.grocy.created[0][1].name == "Edited Product"
     assert scanner.grocy.operations[0][1].location_id == 4
     assert catalog.exported[0][1].name == "Edited Product"
+    assert (
+        str(catalog.exported[0][1].image_url)
+        == "http://host.docker.internal:9290/uploaded-images/edited-product.jpg"
+    )
 
 
 def test_dashboard_confirm_updates_existing_grocy_product_before_applying_scan(tmp_path) -> None:

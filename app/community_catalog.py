@@ -11,7 +11,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
+from urllib.parse import unquote, urlparse
 
+from app.config import settings
 from app.models import ConfirmedProductRequest
 
 logger = logging.getLogger(__name__)
@@ -65,6 +67,8 @@ class CommunityCatalogExporter:
         branch: str | None = None,
         author_name: str | None = None,
         author_email: str | None = None,
+        uploaded_images_path: str | Path | None = None,
+        uploaded_images_base_url: str | None = None,
         command_runner: CommandRunner | None = None,
     ) -> None:
         self.path = Path(path)
@@ -78,6 +82,8 @@ class CommunityCatalogExporter:
         self.github_pat = github_pat
         self.author_name = author_name
         self.author_email = author_email
+        self.uploaded_images_path = Path(uploaded_images_path) if uploaded_images_path else None
+        self.uploaded_images_base_url = uploaded_images_base_url
         self.command_runner = command_runner or subprocess.run
 
     def export_confirmed_product(
@@ -102,7 +108,7 @@ class CommunityCatalogExporter:
 
         if self.export_images and product.image_url is not None:
             try:
-                self._download_image(str(product.image_url), product_dir / "image.jpg")
+                self._write_product_image(str(product.image_url), product_dir / "image.jpg")
             except Exception as exc:
                 warnings.append(f"image export failed: {exc}")
                 logger.warning("Community catalog image export failed for %s: %s", barcode, exc)
@@ -124,7 +130,7 @@ class CommunityCatalogExporter:
         return True
 
     def _product_payload(self, barcode: str, product: ConfirmedProductRequest) -> dict:
-        return {
+        payload = {
             "schema_version": 1,
             "barcode": barcode,
             "name": product.name.strip(),
@@ -133,11 +139,50 @@ class CommunityCatalogExporter:
             "size": product.size,
             "count": product.count,
             "variant": product.variant,
-            "image_url": str(product.image_url) if product.image_url is not None else None,
             "notes": product.notes,
             "source": "user_confirmed",
             "confirmed_at": datetime.now(UTC).isoformat(),
         }
+        if product.image_url is not None and not self._is_uploaded_image_url(str(product.image_url)):
+            payload["image_url"] = str(product.image_url)
+        return payload
+
+    def _write_product_image(self, image_url: str, image_path: Path) -> None:
+        if self._copy_uploaded_image(image_url, image_path):
+            return
+        self._download_image(image_url, image_path)
+
+    def _copy_uploaded_image(self, image_url: str, image_path: Path) -> bool:
+        if not self._is_uploaded_image_url(image_url):
+            return False
+        relative_name = self._uploaded_image_name(image_url)
+        if not self.uploaded_images_path:
+            return False
+        source_path = self.uploaded_images_path / relative_name
+        if not source_path.is_file():
+            raise FileNotFoundError(f"uploaded image file not found: {relative_name}")
+        shutil.copyfile(source_path, image_path)
+        return True
+
+    def _is_uploaded_image_url(self, image_url: str) -> bool:
+        if not (self.uploaded_images_path and self.uploaded_images_base_url):
+            return False
+        base = urlparse(self.uploaded_images_base_url.rstrip("/") + "/")
+        source = urlparse(image_url)
+        if (source.scheme, source.netloc) != (base.scheme, base.netloc):
+            return False
+        if not source.path.startswith(base.path):
+            return False
+        relative_name = unquote(source.path[len(base.path) :])
+        if "/" in relative_name or "\\" in relative_name or not relative_name:
+            raise ValueError("uploaded image URL must reference a single uploaded file")
+        return True
+
+    def _uploaded_image_name(self, image_url: str) -> str:
+        base = urlparse(self.uploaded_images_base_url.rstrip("/") + "/") if self.uploaded_images_base_url else None
+        if base is None:
+            raise ValueError("uploaded image base URL is not configured")
+        return unquote(urlparse(image_url).path[len(base.path) :])
 
     @staticmethod
     def _download_image(image_url: str, image_path: Path) -> None:
@@ -221,7 +266,8 @@ class CommunityCatalogExporter:
                     )
                 except subprocess.CalledProcessError as exc:
                     if self._remote_branch_missing(exc):
-                        self._checkout_branch()
+                        shutil.rmtree(self.path)
+                        self._clone_checkout()
                         return []
                     raise
                 self.command_runner(
@@ -237,14 +283,7 @@ class CommunityCatalogExporter:
             if self.path.exists():
                 shutil.rmtree(self.path)
 
-            self.command_runner(
-                self._git_command(["clone", self.repository_url, str(self.path)]),
-                env=self._git_env(),
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            self._checkout_branch()
+            self._clone_checkout()
             return []
         except Exception as exc:
             warning = f"catalog checkout sync failed: {self._git_error_message(exc)}"
@@ -253,6 +292,16 @@ class CommunityCatalogExporter:
 
     def sync_checkout(self) -> list[str]:
         return self._sync_checkout()
+
+    def _clone_checkout(self) -> None:
+        self.command_runner(
+            self._git_command(["clone", self.repository_url, str(self.path)]),
+            env=self._git_env(),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self._checkout_branch()
 
     def _checkout_branch(self) -> None:
         try:
@@ -368,6 +417,8 @@ class RuntimeCommunityCatalogExporter:
             branch=current.branch,
             author_name=current.author_name,
             author_email=current.author_email,
+            uploaded_images_path=settings.uploaded_images_path,
+            uploaded_images_base_url=settings.uploaded_images_base_url,
         )
         return exporter.export_confirmed_product(barcode, product)
 
@@ -386,5 +437,7 @@ def exporter_from_settings(current, *, command_runner: CommandRunner | None = No
         branch=current.branch,
         author_name=current.author_name,
         author_email=current.author_email,
+        uploaded_images_path=settings.uploaded_images_path,
+        uploaded_images_base_url=settings.uploaded_images_base_url,
         command_runner=command_runner,
     )

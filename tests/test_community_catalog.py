@@ -69,6 +69,34 @@ def test_exporter_writes_confirmed_product_json(tmp_path) -> None:
     assert payload["confirmed_at"]
 
 
+def test_exporter_copies_dashboard_uploaded_image(tmp_path) -> None:
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    (uploads / "uploaded-product.jpg").write_bytes(b"uploaded-image")
+    exporter = CommunityCatalogExporter(
+        path=tmp_path / "catalog",
+        enabled=True,
+        export_images=True,
+        uploaded_images_path=uploads,
+        uploaded_images_base_url="http://host.docker.internal:9290/uploaded-images",
+    )
+
+    result = exporter.export_confirmed_product(
+        "627985000070",
+        ConfirmedProductRequest(
+            name="Manual Product",
+            image_url="http://host.docker.internal:9290/uploaded-images/uploaded-product.jpg",
+        ),
+    )
+
+    image_path = tmp_path / "catalog" / "products" / "627" / "985" / "627985000070" / "image.jpg"
+    product_path = tmp_path / "catalog" / "products" / "627" / "985" / "627985000070" / "product.json"
+    payload = json.loads(product_path.read_text())
+    assert result.warnings == ()
+    assert image_path.read_bytes() == b"uploaded-image"
+    assert "image_url" not in payload
+
+
 def test_exporter_clones_writes_commits_and_pushes_with_pat(tmp_path) -> None:
     runner = FakeGitRunner()
     checkout = tmp_path / "checkout"
@@ -179,6 +207,9 @@ def test_exporter_bootstraps_existing_empty_remote_checkout(tmp_path) -> None:
     runner = FakeGitRunner(fail_fetch_missing_branch=True)
     checkout = tmp_path / "checkout"
     (checkout / ".git").mkdir(parents=True)
+    stale_product = checkout / "products" / "111" / "222" / "111222333444" / "product.json"
+    stale_product.parent.mkdir(parents=True)
+    stale_product.write_text('{"name":"stale"}\n')
     exporter = CommunityCatalogExporter(
         path=checkout,
         enabled=True,
@@ -194,12 +225,14 @@ def test_exporter_bootstraps_existing_empty_remote_checkout(tmp_path) -> None:
     assert result.exported is True
     assert result.warnings == ()
     assert commands[0] == ["git", "fetch", "origin", "main"]
-    assert commands[1] == ["git", "checkout", "main"]
+    assert commands[1] == ["git", "clone", "https://github.com/example/catalog.git", str(checkout)]
+    assert commands[2] == ["git", "checkout", "main"]
     assert ["git", "add", "products/627/985/627985000070", "README.md"] in commands
     assert ["git", "commit", "-m", "Add product 627985000070"] in commands
     assert ["git", "push", "origin", "main"] in commands
     assert (checkout / "README.md").read_text() == CATALOG_README
     assert (checkout / "products" / "627" / "985" / "627985000070" / "product.json").exists()
+    assert not stale_product.exists()
 
 
 def test_disabled_exporter_does_not_write_files(tmp_path) -> None:
