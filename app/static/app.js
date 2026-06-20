@@ -199,14 +199,14 @@ function previewDialog(preview) {
   return `<div class="preview-photo">${previewImage(product)}</div><p class="drawer-kicker">${escapeHtml(source)}</p><h2>${escapeHtml(product.name || "Unknown product")}</h2>
     <p class="preview-barcode">${escapeHtml(preview.barcode)}</p>${product.stock_amount != null ? `<p class="current-stock">Current stock: <b>${product.stock_amount}</b> ${escapeHtml(product.quantity_unit || "")}</p>` : ""}
     <form id="preview-confirm-form">
-      <fieldset class="product-edit-fields"><legend>Product</legend><label>Product name<input name="name" value="${escapeHtml(product.name || "")}" required></label>
-        <label>Brand<input name="brand" value="${escapeHtml(product.brand || "")}"></label><label>Package quantity<input name="package_quantity" value="${escapeHtml(product.quantity || product.size || "")}"></label>
-        <label>Image URL<input name="image_url" value="${escapeHtml(product.image_url || "")}"></label><label>Description<textarea name="description">${escapeHtml(previewDescription(preview, product))}</textarea></label>
-        <div class="form-pair"><label>Default location<select name="product_location_id" required>${locationOptions}</select></label><label>Quantity unit<select name="qu_id" required>${unitOptions}</select></label></div></fieldset>
       <fieldset><legend>Operation</legend><div class="choice-group"><button type="button" class="choice mode-choice selected add-choice" data-value="add">＋ Add</button><button type="button" class="choice mode-choice remove-choice" data-value="remove">− Remove</button><button type="button" class="choice mode-choice set-choice" data-value="set">◎ Manage / Set</button></div></fieldset>
       <fieldset><legend>Quantity</legend><div class="choice-group quantity-group"><button type="button" class="choice quantity-choice selected" data-value="1">1</button><button type="button" class="choice quantity-choice" data-value="2">2</button><button type="button" class="choice quantity-choice" data-value="3">3</button><input id="custom-quantity" type="number" min="0" step="0.01" value="1" aria-label="Custom quantity"></div></fieldset>
       <fieldset><legend>Stock location</legend><div class="choice-group location-group"><button type="button" class="choice location-choice selected" data-value="">Product default</button>${locationButtons}</div></fieldset>
-      <button type="submit" class="confirm-scan">Confirm Add 1</button></form>`;
+      <button type="submit" class="confirm-scan">Confirm Add 1</button>
+      <fieldset class="product-edit-fields"><legend>Product</legend><label>Product name<input name="name" value="${escapeHtml(product.name || "")}" required></label>
+        <label>Brand<input name="brand" value="${escapeHtml(product.brand || "")}"></label><label>Package quantity<input name="package_quantity" value="${escapeHtml(product.quantity || product.size || "")}"></label>
+        <label>Image URL<input name="image_url" value="${escapeHtml(product.image_url || "")}"></label><label>Description<textarea name="description">${escapeHtml(previewDescription(preview, product))}</textarea></label>
+        <div class="form-pair"><label>Default location<select name="product_location_id" required>${locationOptions}</select></label><label>Quantity unit<select name="qu_id" required>${unitOptions}</select></label></div></fieldset></form>`;
 }
 function updateConfirmLabel() {
   const form = $("#preview-confirm-form"); if (!form) return;
