@@ -4,7 +4,7 @@ from app.adapters.base import LookupAdapter
 from app.adapters.community_catalog import CommunityCatalogAdapter
 from app.adapters.open_facts import OpenFactsAdapter
 from app.adapters.upcitemdb import UpcItemDbAdapter
-from app.adapters.web_search import WebSearchAdapter
+from app.adapters.web_search import WebSearchAdapter, WebSearchLlmFallbackAdapter
 from app.agent_search import AgentSearchManager
 from app.app_settings import AppSettingsStore
 from app.cache import LookupCache
@@ -31,7 +31,14 @@ def default_adapters() -> list[LookupAdapter]:
     if settings.enable_upcitemdb:
         adapters.append(UpcItemDbAdapter())
     if settings.enable_web_search:
-        adapters.append(WebSearchAdapter())
+        adapters.append(WebSearchAdapter(llm_provider=None))
+    return adapters
+
+
+def default_ai_adapters() -> list[LookupAdapter]:
+    adapters: list[LookupAdapter] = []
+    if settings.enable_web_search:
+        adapters.append(WebSearchLlmFallbackAdapter())
     return adapters
 
 
@@ -43,10 +50,17 @@ class LookupOrchestrator:
     def __init__(
         self,
         adapters: list[LookupAdapter] | None = None,
+        ai_adapters: list[LookupAdapter] | None = None,
         agent_search: AgentSearchManager | None = None,
         community_catalog=None,
     ) -> None:
         self.adapters = adapters or default_adapters()
+        if ai_adapters is not None:
+            self.ai_adapters = ai_adapters
+        elif adapters is None:
+            self.ai_adapters = default_ai_adapters()
+        else:
+            self.ai_adapters = []
         self.cache = LookupCache(settings.lookup_cache_path)
         self.local_store = LocalProductStore(settings.local_products_path)
         self.agent_search = agent_search or AgentSearchManager()
@@ -73,10 +87,21 @@ class LookupOrchestrator:
                 )
 
         candidates: list[LookupResult] = []
+        for adapter in self.adapters:
+            result = await adapter.lookup(barcode)
+            if result:
+                candidates.append(result)
+
+        if candidates:
+            best = sorted(candidates, key=candidate_rank, reverse=True)[0]
+            if should_defer_ai_fallback(best):
+                return self._complete_found_response(barcode, candidates)
+
         agent_result = self.agent_search.store.get_result(barcode)
         if agent_result is not None:
             candidates.append(agent_result)
-        for adapter in self.adapters:
+
+        for adapter in self.ai_adapters:
             result = await adapter.lookup(barcode)
             if result:
                 candidates.append(result)
@@ -89,13 +114,24 @@ class LookupOrchestrator:
                 research_status=self.agent_research_status(barcode),
             )
 
-        ranked_candidates = sorted(candidates, key=candidate_rank, reverse=True)
-        best = ranked_candidates[0]
-        best.alternate_names = merge_alternate_names(ranked_candidates, best)
+        return self._complete_found_response(barcode, candidates)
+
+    def _complete_found_response(self, barcode: str, candidates: list[LookupResult]) -> LookupResponse:
+        response = self._found_response(barcode, candidates)
+        best = response.result
+        if best is None:
+            return response
         if best.confidence >= settings.cache_min_confidence and not is_known_non_english(best):
             self.cache.set(best)
         if best.confidence <= settings.agent_search_trigger_confidence or is_known_non_english(best):
             self.agent_search.submit(barcode, fallback_result=best if is_known_non_english(best) else None)
+            response.research_status = self.agent_research_status(barcode)
+        return response
+
+    def _found_response(self, barcode: str, candidates: list[LookupResult]) -> LookupResponse:
+        ranked_candidates = sorted(candidates, key=candidate_rank, reverse=True)
+        best = ranked_candidates[0]
+        best.alternate_names = merge_alternate_names(ranked_candidates, best)
         return LookupResponse(
             barcode=barcode,
             found=True,
@@ -159,6 +195,10 @@ def candidate_rank(result: LookupResult) -> tuple[int, float]:
     if result.name_origin == "translated":
         return (1, result.confidence)
     return (2, result.confidence)
+
+
+def should_defer_ai_fallback(result: LookupResult) -> bool:
+    return result.confidence > settings.agent_search_trigger_confidence and not is_known_non_english(result)
 
 
 def merge_alternate_names(candidates: list[LookupResult], selected: LookupResult) -> dict[str, str]:

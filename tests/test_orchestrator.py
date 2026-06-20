@@ -196,7 +196,7 @@ def test_lookup_uses_completed_agent_result_when_external_sources_miss(tmp_path)
     assert adapter.calls == ["123"]
 
 
-def test_lookup_prefers_trusted_external_result_over_agent_result(tmp_path) -> None:
+def test_lookup_skips_completed_agent_result_when_trusted_external_result_exists(tmp_path) -> None:
     adapter = FakeAdapter(make_result("network", 0.9))
     agent_result = make_result("agent_search", 0.6)
     orchestrator = LookupOrchestrator(adapters=[adapter], agent_search=FakeAgentSearch(agent_result))
@@ -207,7 +207,7 @@ def test_lookup_prefers_trusted_external_result_over_agent_result(tmp_path) -> N
 
     assert response.result is not None
     assert response.result.source == "network"
-    assert [candidate.source for candidate in response.candidates] == ["agent_search"]
+    assert response.candidates == []
 
 
 def test_confirm_product_updates_existing_local_match(tmp_path) -> None:
