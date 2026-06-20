@@ -1,6 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;" })[c]);
 let pendingProducts = [];
+let catalogSources = [];
 
 async function api(path, init) {
   const response = await fetch(path, { headers: { "Content-Type": "application/json" }, ...init });
@@ -130,6 +131,51 @@ function updatePendingDialogActions() {
   $("#discard-all-products").disabled = !hasProducts;
 }
 
+function renderCatalogSources() {
+  const list = $("#catalog-source-list");
+  if (!catalogSources.length) {
+    list.innerHTML = `<div class="pending-empty">No community catalogs saved yet.</div>`;
+    return;
+  }
+  list.innerHTML = catalogSources.map((source, index) => `<article class="catalog-source-card" data-index="${index}">
+    <label class="inline-option"><input type="checkbox" class="source-enabled" ${source.enabled ? "checked" : ""}> Enabled</label>
+    <label>Name<input class="source-name" value="${escapeHtml(source.name || "")}" placeholder="Optional label"></label>
+    <label>Repository URL<input class="source-url" value="${escapeHtml(source.repository_url)}"></label>
+    <div class="source-order-actions">
+      <button type="button" class="secondary source-up" ${index === 0 ? "disabled" : ""}>Move up</button>
+      <button type="button" class="secondary source-down" ${index === catalogSources.length - 1 ? "disabled" : ""}>Move down</button>
+      <button type="button" class="secondary danger source-remove">Remove</button>
+    </div>
+  </article>`).join("");
+}
+
+function syncCatalogSourcesFromDom() {
+  catalogSources = Array.from(document.querySelectorAll(".catalog-source-card")).map((card, index) => {
+    const existing = catalogSources[Number(card.dataset.index)] || {};
+    return {
+      id: existing.id || null,
+      name: card.querySelector(".source-name").value.trim() || null,
+      repository_url: card.querySelector(".source-url").value.trim(),
+      enabled: card.querySelector(".source-enabled").checked,
+      priority: index
+    };
+  }).filter(source => source.repository_url);
+}
+
+async function loadCatalogSources() {
+  const payload = await api("/settings/community-catalog-sources");
+  catalogSources = payload.sources || [];
+  renderCatalogSources();
+}
+
+function moveCatalogSource(index, direction) {
+  syncCatalogSourcesFromDom();
+  const next = index + direction;
+  if (next < 0 || next >= catalogSources.length) return;
+  [catalogSources[index], catalogSources[next]] = [catalogSources[next], catalogSources[index]];
+  renderCatalogSources();
+}
+
 async function refreshPendingProducts() {
   const payload = await api("/settings/community-catalog/pending-products");
   renderPendingProducts(payload);
@@ -215,6 +261,53 @@ $("#discard-selected-products").addEventListener("click", event => {
 $("#discard-all-products").addEventListener("click", event => {
   if (!confirm("Discard all pending catalog products?")) return;
   runPendingAction(event.target, "/settings/community-catalog/discard-products", pendingProducts.map(product => product.barcode), "Discarding...", "All pending catalog products discarded");
+});
+
+$("#open-catalog-source-list").addEventListener("click", async event => {
+  setButtonBusy(event.target, true, "Loading...");
+  try {
+    await loadCatalogSources();
+    $("#catalog-sources-dialog").showModal();
+  }
+  catch (error) { toast(error.message); }
+  finally { setButtonBusy(event.target, false); }
+});
+
+$("#add-catalog-source").addEventListener("click", () => {
+  syncCatalogSourcesFromDom();
+  const input = $("#new-source-url");
+  const repositoryUrl = input.value.trim();
+  if (!repositoryUrl) return toast("Enter a catalog repository URL");
+  if (catalogSources.some(source => source.repository_url.toLowerCase() === repositoryUrl.toLowerCase())) return toast("Catalog already exists");
+  catalogSources.push({ id: null, name: null, repository_url: repositoryUrl, enabled: true, priority: catalogSources.length });
+  input.value = "";
+  renderCatalogSources();
+});
+
+$("#catalog-source-list").addEventListener("click", event => {
+  const card = event.target.closest(".catalog-source-card");
+  if (!card) return;
+  const index = Number(card.dataset.index);
+  if (event.target.matches(".source-up")) return moveCatalogSource(index, -1);
+  if (event.target.matches(".source-down")) return moveCatalogSource(index, 1);
+  if (event.target.matches(".source-remove")) {
+    syncCatalogSourcesFromDom();
+    catalogSources.splice(index, 1);
+    renderCatalogSources();
+  }
+});
+
+$("#save-catalog-sources").addEventListener("click", async event => {
+  syncCatalogSourcesFromDom();
+  setButtonBusy(event.target, true, "Saving...");
+  try {
+    const saved = await api("/settings/community-catalog-sources", { method: "PUT", body: JSON.stringify({ sources: catalogSources }) });
+    catalogSources = saved.sources || [];
+    renderCatalogSources();
+    toast("Community catalog list saved");
+  }
+  catch (error) { toast(error.message); }
+  finally { setButtonBusy(event.target, false); }
 });
 
 load().catch(error => toast(error.message));

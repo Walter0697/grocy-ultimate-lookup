@@ -1,6 +1,7 @@
 import json
 import sqlite3
 from pathlib import Path
+from uuid import uuid4
 
 from pydantic import BaseModel
 
@@ -83,6 +84,18 @@ class CommunityCatalogPendingProducts(BaseModel):
 
 class CommunityCatalogProductSelection(BaseModel):
     barcodes: list[str] = []
+
+
+class CommunityCatalogSource(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    repository_url: str
+    enabled: bool = True
+    priority: int = 0
+
+
+class CommunityCatalogSourceList(BaseModel):
+    sources: list[CommunityCatalogSource] = []
 
 
 def default_community_catalog_settings() -> CommunityCatalogSettings:
@@ -206,6 +219,36 @@ class AppSettingsStore:
         except FileNotFoundError:
             return False
         return bool(result.stdout.strip())
+
+    def get_community_catalog_sources(self) -> CommunityCatalogSourceList:
+        payload = self._get_json("community_catalog_sources")
+        if payload is None:
+            return CommunityCatalogSourceList()
+        return CommunityCatalogSourceList.model_validate(payload)
+
+    def set_community_catalog_sources(self, value: CommunityCatalogSourceList) -> CommunityCatalogSourceList:
+        normalized: list[CommunityCatalogSource] = []
+        seen: set[str] = set()
+        for index, source in enumerate(value.sources):
+            repository_url = source.repository_url.strip()
+            if not repository_url:
+                continue
+            dedupe_key = repository_url.lower()
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            normalized.append(
+                CommunityCatalogSource(
+                    id=source.id or uuid4().hex,
+                    name=source.name.strip() if source.name else None,
+                    repository_url=repository_url,
+                    enabled=source.enabled,
+                    priority=index,
+                )
+            )
+        saved = CommunityCatalogSourceList(sources=normalized)
+        self._set_json("community_catalog_sources", saved.model_dump(mode="json"))
+        return self.get_community_catalog_sources()
 
     def _get_json(self, key: str) -> dict | None:
         with self._connect() as db:

@@ -1,4 +1,10 @@
-from app.app_settings import AppSettingsStore, CommunityCatalogSettings, CommunityCatalogSettingsUpdate
+from app.app_settings import (
+    AppSettingsStore,
+    CommunityCatalogSettings,
+    CommunityCatalogSettingsUpdate,
+    CommunityCatalogSource,
+    CommunityCatalogSourceList,
+)
 from app.community_catalog import RuntimeCommunityCatalogExporter
 from app.models import ConfirmedProductRequest
 
@@ -152,3 +158,33 @@ def test_app_settings_update_preserves_saved_pat_when_blank(tmp_path) -> None:
     assert second.github_pat == "secret-token"
     assert second.branch == "catalog"
     assert second.auto_push is False
+
+
+def test_app_settings_store_persists_ordered_community_catalog_sources(tmp_path) -> None:
+    store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
+
+    saved = store.set_community_catalog_sources(
+        CommunityCatalogSourceList(
+            sources=[
+                CommunityCatalogSource(
+                    name="Second",
+                    repository_url="https://github.com/example/second.git",
+                    enabled=False,
+                ),
+                CommunityCatalogSource(
+                    name="First",
+                    repository_url="https://github.com/example/first.git",
+                    enabled=True,
+                ),
+            ]
+        )
+    )
+
+    reopened = AppSettingsStore(str(tmp_path / "settings.sqlite3")).get_community_catalog_sources()
+    assert [source.repository_url for source in saved.sources] == [
+        "https://github.com/example/second.git",
+        "https://github.com/example/first.git",
+    ]
+    assert [source.priority for source in reopened.sources] == [0, 1]
+    assert all(source.id for source in reopened.sources)
+    assert reopened.sources[0].enabled is False

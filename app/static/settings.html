@@ -66,6 +66,15 @@
         </div>
       </form>
     </section>
+    <section class="settings-section">
+      <div>
+        <p class="drawer-kicker">CATALOG LOOKUP</p>
+        <h2>Community catalog sources</h2>
+      </div>
+      <div class="settings-actions">
+        <button type="button" id="open-catalog-source-list">Community catalog list</button>
+      </div>
+    </section>
   </main>
   <dialog id="token-help-dialog">
     <form method="dialog" class="token-help">
@@ -100,6 +109,25 @@
         <button type="button" class="secondary" id="push-all-products">Push all</button>
         <button type="button" class="secondary danger" id="discard-selected-products">Discard selected</button>
         <button type="button" class="secondary danger" id="discard-all-products">Discard all</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="catalog-sources-dialog">
+    <form method="dialog" class="pending-products-panel">
+      <div class="dialog-title-row">
+        <div>
+          <p class="drawer-kicker">LOOKUP SOURCES</p>
+          <h2>Community catalog list</h2>
+        </div>
+        <button type="submit" class="secondary">Close</button>
+      </div>
+      <div id="catalog-source-list" class="catalog-source-list"></div>
+      <div class="field-action-row source-add-row">
+        <label>Catalog repository URL<input id="new-source-url" placeholder="https://github.com/someone/grocy-catalog.git"></label>
+        <button type="button" class="secondary" id="add-catalog-source">Add catalog</button>
+      </div>
+      <div class="settings-actions pending-dialog-actions">
+        <button type="button" id="save-catalog-sources">Save list</button>
       </div>
     </form>
   </dialog>

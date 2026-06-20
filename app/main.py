@@ -10,6 +10,7 @@ from app.app_settings import (
     CommunityCatalogDiff,
     CommunityCatalogPendingProducts,
     CommunityCatalogProductSelection,
+    CommunityCatalogSourceList,
     CommunityCatalogSettingsResponse,
     CommunityCatalogSettingsUpdate,
     CommunityCatalogStatus,
@@ -117,6 +118,16 @@ async def get_community_catalog_settings() -> CommunityCatalogSettingsResponse:
 @app.put("/settings/community-catalog", response_model=CommunityCatalogSettingsResponse)
 async def put_community_catalog_settings(product: CommunityCatalogSettingsUpdate) -> CommunityCatalogSettingsResponse:
     return public_community_catalog_settings(app_settings_store.update_community_catalog(product))
+
+
+@app.get("/settings/community-catalog-sources", response_model=CommunityCatalogSourceList)
+async def get_community_catalog_sources() -> CommunityCatalogSourceList:
+    return app_settings_store.get_community_catalog_sources()
+
+
+@app.put("/settings/community-catalog-sources", response_model=CommunityCatalogSourceList)
+async def put_community_catalog_sources(sources: CommunityCatalogSourceList) -> CommunityCatalogSourceList:
+    return app_settings_store.set_community_catalog_sources(sources)
 
 
 @app.post("/settings/community-catalog/test", response_model=CommunityCatalogStatus)

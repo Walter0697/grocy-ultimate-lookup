@@ -161,6 +161,16 @@ def test_settings_page_uses_pending_product_review_dialog() -> None:
     assert "/settings/community-catalog/discard-products" in settings_script
 
 
+def test_settings_page_includes_community_catalog_source_list_dialog() -> None:
+    settings_html = (static_path / "settings.html").read_text()
+    settings_script = (static_path / "settings.js").read_text()
+
+    assert 'id="open-catalog-source-list"' in settings_html
+    assert 'id="catalog-sources-dialog"' in settings_html
+    assert "/settings/community-catalog-sources" in settings_script
+    assert "moveCatalogSource" in settings_script
+
+
 def test_delete_scan_event_removes_dashboard_review_item() -> None:
     scanner.store.delete("delete-endpoint-event")
     event, created = scanner.store.create(

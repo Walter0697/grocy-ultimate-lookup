@@ -219,6 +219,13 @@ dialog::backdrop {
   overflow: auto;
 }
 
+.catalog-source-list {
+  display: grid;
+  gap: 10px;
+  max-height: min(48vh, 480px);
+  overflow: auto;
+}
+
 .pending-empty {
   border: 1px dashed var(--line);
   background: white;
@@ -265,6 +272,37 @@ dialog::backdrop {
 }
 
 .pending-dialog-actions {
+  padding-top: 4px;
+}
+
+.catalog-source-card {
+  border: 1px solid var(--line);
+  background: white;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.catalog-source-card label {
+  display: grid;
+  gap: 6px;
+  font: 600 9px "IBM Plex Mono";
+  letter-spacing: .08em;
+}
+
+.catalog-source-card input {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.source-order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.source-add-row {
   padding-top: 4px;
 }
 
