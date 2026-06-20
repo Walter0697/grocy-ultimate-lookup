@@ -90,12 +90,15 @@ class CommunityCatalogExporter:
         self,
         barcode: str,
         product: ConfirmedProductRequest,
+        *,
+        local_image_path: str | Path | None = None,
+        sync_checkout: bool = True,
     ) -> CommunityCatalogExportResult:
         if not self.enabled:
             return CommunityCatalogExportResult(exported=False)
 
         warnings: list[str] = []
-        if self.repository_url:
+        if self.repository_url and sync_checkout:
             warnings.extend(self._sync_checkout())
             if warnings:
                 return CommunityCatalogExportResult(exported=False, warnings=tuple(warnings))
@@ -103,12 +106,16 @@ class CommunityCatalogExporter:
         product_dir = self.path / catalog_product_dir(barcode)
         product_dir.mkdir(parents=True, exist_ok=True)
         product_json_path = product_dir / "product.json"
-        payload = self._product_payload(barcode, product)
+        payload = self._product_payload(barcode, product, local_image_path=local_image_path)
         product_json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
-        if self.export_images and product.image_url is not None:
+        if self.export_images and (product.image_url is not None or local_image_path is not None):
             try:
-                self._write_product_image(str(product.image_url), product_dir / "image.jpg")
+                self._write_product_image(
+                    str(product.image_url) if product.image_url is not None else None,
+                    product_dir / "image.jpg",
+                    local_image_path=local_image_path,
+                )
             except Exception as exc:
                 warnings.append(f"image export failed: {exc}")
                 logger.warning("Community catalog image export failed for %s: %s", barcode, exc)
@@ -129,7 +136,13 @@ class CommunityCatalogExporter:
         readme_path.write_text(CATALOG_README)
         return True
 
-    def _product_payload(self, barcode: str, product: ConfirmedProductRequest) -> dict:
+    def _product_payload(
+        self,
+        barcode: str,
+        product: ConfirmedProductRequest,
+        *,
+        local_image_path: str | Path | None = None,
+    ) -> dict:
         payload = {
             "schema_version": 1,
             "barcode": barcode,
@@ -143,13 +156,24 @@ class CommunityCatalogExporter:
             "source": "user_confirmed",
             "confirmed_at": datetime.now(UTC).isoformat(),
         }
-        if product.image_url is not None and not self._is_uploaded_image_url(str(product.image_url)):
+        if local_image_path is None and product.image_url is not None and not self._is_uploaded_image_url(str(product.image_url)):
             payload["image_url"] = str(product.image_url)
         return payload
 
-    def _write_product_image(self, image_url: str, image_path: Path) -> None:
-        if self._copy_uploaded_image(image_url, image_path):
+    def _write_product_image(
+        self,
+        image_url: str | None,
+        image_path: Path,
+        *,
+        local_image_path: str | Path | None = None,
+    ) -> None:
+        if local_image_path is not None:
+            shutil.copyfile(Path(local_image_path), image_path)
             return
+        if image_url is not None and self._copy_uploaded_image(image_url, image_path):
+            return
+        if image_url is None:
+            raise ValueError("image URL is required when no local image path is provided")
         self._download_image(image_url, image_path)
 
     def _copy_uploaded_image(self, image_url: str, image_path: Path) -> bool:
@@ -367,7 +391,7 @@ class CommunityCatalogExporter:
         if not (self.path / ".git").exists():
             return False, "checkout is not ready", []
         result = self.command_runner(
-            self._git_command(["status", "--porcelain"]),
+            self._git_command(["status", "--porcelain", "--untracked-files=all"]),
             cwd=self.path,
             env=self._git_env(),
             check=True,
@@ -377,8 +401,72 @@ class CommunityCatalogExporter:
         files = [line[3:] for line in result.stdout.splitlines() if len(line) > 3]
         return bool(files), result.stdout, files
 
+    def pending_products(self) -> list[dict]:
+        pending, _status, files = self.pending_changes()
+        if not pending:
+            return []
+        grouped: dict[str, dict] = {}
+        for file_path in files:
+            product_dirs = self._pending_product_dirs(file_path)
+            if not product_dirs:
+                continue
+            for product_dir in product_dirs:
+                barcode = product_dir.name
+                entry = grouped.setdefault(
+                    barcode,
+                    {
+                        "barcode": barcode,
+                        "path": product_dir.as_posix(),
+                        "name": None,
+                        "brand": None,
+                        "quantity": None,
+                        "has_image": False,
+                        "files": [],
+                    },
+                )
+                if file_path not in entry["files"]:
+                    entry["files"].append(file_path)
+
+        for entry in grouped.values():
+            product_json = self.path / entry["path"] / "product.json"
+            if product_json.exists():
+                try:
+                    payload = json.loads(product_json.read_text())
+                except Exception:
+                    payload = {}
+                entry["name"] = payload.get("name")
+                entry["brand"] = payload.get("brand")
+                entry["quantity"] = payload.get("quantity") or payload.get("size")
+            entry["has_image"] = (self.path / entry["path"] / "image.jpg").exists() or any(
+                file_path.endswith("/image.jpg") for file_path in entry["files"]
+            )
+        return sorted(grouped.values(), key=lambda item: item["barcode"])
+
     def push_pending_changes(self) -> list[str]:
-        warnings = self._commit_path("products", "Add confirmed products", env=self._git_env(self._git_author_env()))
+        commit_paths: list[Path | str] = ["products"]
+        if self.repository_url and self._ensure_readme():
+            commit_paths.append("README.md")
+        warnings = self._commit_paths(commit_paths, "Add confirmed products", env=self._git_env(self._git_author_env()))
+        if warnings:
+            return warnings
+        return self._run_git_sequence(
+            [self._git_command(["push", self.git_remote, self.git_branch])],
+            env=self._git_env(self._git_author_env()),
+        )
+
+    def push_pending_products(self, barcodes: list[str]) -> list[str]:
+        product_paths = self._selected_product_paths(barcodes)
+        if not product_paths:
+            return ["No selected pending products"]
+        return self.commit_and_push_paths(list(product_paths), "Add confirmed products")
+
+    def commit_and_push_paths(self, paths: list[Path | str], message: str) -> list[str]:
+        if not paths:
+            return ["No selected pending products"]
+        commit_paths: list[Path | str] = list(paths)
+        if self.repository_url and self._ensure_readme():
+            commit_paths.append("README.md")
+        warnings = self._commit_paths(commit_paths, message, env=self._git_env(self._git_author_env()))
         if warnings:
             return warnings
         return self._run_git_sequence(
@@ -393,10 +481,72 @@ class CommunityCatalogExporter:
         ]
         return self._run_git_sequence(commands, env=None)
 
+    def discard_pending_products(self, barcodes: list[str]) -> list[str]:
+        product_paths = self._selected_product_paths(barcodes)
+        if not product_paths:
+            return ["No selected pending products"]
+        warnings: list[str] = []
+        for product_path in product_paths:
+            restore = self.command_runner(
+                self._git_command(["restore", "--", str(product_path)]),
+                cwd=self.path,
+                env=None,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if restore.returncode not in {0, 1}:
+                warnings.append(f"git restore {product_path} failed: {self._completed_error_message(restore)}")
+                break
+            clean = self.command_runner(
+                self._git_command(["clean", "-fd", "--", str(product_path)]),
+                cwd=self.path,
+                env=None,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if clean.returncode != 0:
+                warnings.append(f"git clean {product_path} failed: {self._completed_error_message(clean)}")
+                break
+        return warnings
+
+    def _pending_product_dirs(self, file_path: str) -> list[Path]:
+        path = Path(file_path)
+        parts = path.parts
+        if len(parts) < 2 or parts[0] != "products":
+            return []
+        if len(parts) >= 4:
+            return [Path(*parts[:4])]
+        root = self.path / path
+        if not root.exists():
+            return []
+        product_dirs: list[Path] = []
+        for product_json in root.glob("*/*/product.json"):
+            try:
+                product_dirs.append(product_json.parent.relative_to(self.path))
+            except ValueError:
+                continue
+        return sorted(product_dirs)
+
+    def _selected_product_paths(self, barcodes: list[str]) -> list[Path]:
+        selected = {sanitize_barcode(barcode) for barcode in barcodes}
+        pending = self.pending_products()
+        paths: list[Path] = []
+        for product in pending:
+            if product["barcode"] in selected:
+                paths.append(Path(product["path"]))
+        return paths
+
+    @staticmethod
+    def _completed_error_message(result: subprocess.CompletedProcess[str]) -> str:
+        return (result.stderr or result.stdout or "").strip()
+
 
 class RuntimeCommunityCatalogExporter:
-    def __init__(self, settings_store) -> None:
+    def __init__(self, settings_store, queue_store=None) -> None:
         self.settings_store = settings_store
+        self.queue_store = queue_store
 
     def export_confirmed_product(
         self,
@@ -404,12 +554,61 @@ class RuntimeCommunityCatalogExporter:
         product: ConfirmedProductRequest,
     ) -> CommunityCatalogExportResult:
         current = self.settings_store.get_community_catalog()
-        exporter = CommunityCatalogExporter(
+        if not current.enabled:
+            return CommunityCatalogExportResult(exported=False)
+        local_image_path = self._local_uploaded_image_path(product)
+        if current.repository_url and not current.auto_push:
+            self._queue().upsert(barcode, product, local_image_path=str(local_image_path) if local_image_path else None)
+            return CommunityCatalogExportResult(exported=True)
+
+        exporter = self._exporter(current)
+        result = exporter.export_confirmed_product(barcode, product, local_image_path=local_image_path)
+        if result.warnings:
+            self._queue().upsert(barcode, product, local_image_path=str(local_image_path) if local_image_path else None)
+        return result
+
+    def pending_products(self) -> list[dict]:
+        return [self._public_pending_item(item) for item in self._queue().list()]
+
+    def push_pending_products(self, barcodes: list[str]) -> list[str]:
+        current = self.settings_store.get_community_catalog()
+        queued = self._queue().selected(barcodes)
+        if not queued:
+            return ["No selected pending products"]
+        exporter = self._exporter(current, auto_push=False, auto_commit=False)
+        warnings = exporter.sync_checkout()
+        if warnings:
+            return warnings
+        product_paths: list[Path] = []
+        pushed_barcodes: list[str] = []
+        for item in queued:
+            result = exporter.export_confirmed_product(
+                item["barcode"],
+                item["product"],
+                local_image_path=item["local_image_path"],
+                sync_checkout=False,
+            )
+            if result.warnings:
+                return list(result.warnings)
+            product_paths.append(catalog_product_dir(item["barcode"]))
+            pushed_barcodes.append(item["barcode"])
+        warnings = exporter.commit_and_push_paths(product_paths, "Add confirmed products")
+        if warnings:
+            return warnings
+        self._queue().delete(pushed_barcodes)
+        return []
+
+    def discard_pending_products(self, barcodes: list[str]) -> list[str]:
+        self._queue().delete(barcodes)
+        return []
+
+    def _exporter(self, current, *, auto_push: bool | None = None, auto_commit: bool | None = None) -> CommunityCatalogExporter:
+        return CommunityCatalogExporter(
             path=current.workdir if current.repository_url else current.path,
             enabled=current.enabled,
             export_images=current.export_images,
-            auto_commit=current.auto_commit,
-            auto_push=current.auto_push,
+            auto_commit=current.auto_commit if auto_commit is None else auto_commit,
+            auto_push=current.auto_push if auto_push is None else auto_push,
             git_remote=current.git_remote,
             git_branch=current.git_branch,
             repository_url=current.repository_url,
@@ -420,7 +619,26 @@ class RuntimeCommunityCatalogExporter:
             uploaded_images_path=settings.uploaded_images_path,
             uploaded_images_base_url=settings.uploaded_images_base_url,
         )
-        return exporter.export_confirmed_product(barcode, product)
+
+    def _queue(self):
+        if self.queue_store is None:
+            from app.community_catalog_queue import CommunityCatalogQueue
+
+            self.queue_store = CommunityCatalogQueue(settings.community_catalog_queue_path)
+        return self.queue_store
+
+    def _local_uploaded_image_path(self, product: ConfirmedProductRequest) -> Path | None:
+        if product.image_url is None:
+            return None
+        exporter = self._exporter(self.settings_store.get_community_catalog())
+        image_url = str(product.image_url)
+        if not exporter._is_uploaded_image_url(image_url):
+            return None
+        return Path(settings.uploaded_images_path) / exporter._uploaded_image_name(image_url)
+
+    @staticmethod
+    def _public_pending_item(item: dict) -> dict:
+        return {key: value for key, value in item.items() if key not in {"product", "local_image_path"}}
 
 
 def exporter_from_settings(current, *, command_runner: CommandRunner | None = None) -> CommunityCatalogExporter:

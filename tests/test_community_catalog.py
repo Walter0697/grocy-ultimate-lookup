@@ -2,15 +2,23 @@ import json
 import subprocess
 from base64 import b64encode
 
-from app.community_catalog import CATALOG_README, CommunityCatalogExporter, catalog_product_dir
+from app.community_catalog import CATALOG_README, CommunityCatalogExporter, RuntimeCommunityCatalogExporter, catalog_product_dir
+from app.community_catalog_queue import CommunityCatalogQueue
 from app.models import ConfirmedProductRequest
 
 
 class FakeGitRunner:
-    def __init__(self, *, fail_clone: bool = False, fail_fetch_missing_branch: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_clone: bool = False,
+        fail_fetch_missing_branch: bool = False,
+        status_stdout: str = "",
+    ) -> None:
         self.commands = []
         self.fail_clone = fail_clone
         self.fail_fetch_missing_branch = fail_fetch_missing_branch
+        self.status_stdout = status_stdout
 
     def __call__(self, command, **kwargs):
         self.commands.append((command, kwargs))
@@ -33,6 +41,8 @@ class FakeGitRunner:
                 command,
                 stderr="fatal: couldn't find remote ref main",
             )
+        if command[:2] == ["git", "status"]:
+            return subprocess.CompletedProcess(command, 0, stdout=self.status_stdout, stderr="")
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
 
@@ -201,6 +211,141 @@ def test_exporter_review_mode_syncs_and_leaves_product_uncommitted(tmp_path) -> 
     assert runner.commands[0][1]["env"]["GIT_CONFIG_VALUE_0"] == f"Authorization: Basic {expected_auth}"
     assert not any("commit" in command for command in commands)
     assert not any("push" in command for command in commands)
+
+
+def test_exporter_lists_pending_products_from_git_status(tmp_path) -> None:
+    runner = FakeGitRunner(
+        status_stdout=(
+            "?? products/627/985/627985000070/product.json\n"
+            "?? products/627/985/627985000070/image.jpg\n"
+            "?? README.md\n"
+        )
+    )
+    checkout = tmp_path / "checkout"
+    product_dir = checkout / "products" / "627" / "985" / "627985000070"
+    (checkout / ".git").mkdir(parents=True)
+    product_dir.mkdir(parents=True)
+    (product_dir / "product.json").write_text(
+        json.dumps({"name": "Manual Product", "brand": "Manual Brand", "quantity": "500 mL"})
+    )
+    (product_dir / "image.jpg").write_bytes(b"image")
+    exporter = CommunityCatalogExporter(path=checkout, enabled=True, command_runner=runner)
+
+    products = exporter.pending_products()
+
+    assert products == [
+        {
+            "barcode": "627985000070",
+            "path": "products/627/985/627985000070",
+            "name": "Manual Product",
+            "brand": "Manual Brand",
+            "quantity": "500 mL",
+            "has_image": True,
+            "files": [
+                "products/627/985/627985000070/product.json",
+                "products/627/985/627985000070/image.jpg",
+            ],
+        }
+    ]
+
+
+def test_exporter_expands_directory_only_pending_product_status(tmp_path) -> None:
+    runner = FakeGitRunner(status_stdout="?? products/126/\n")
+    checkout = tmp_path / "checkout"
+    product_dir = checkout / "products" / "126" / "146" / "12614626"
+    (checkout / ".git").mkdir(parents=True)
+    product_dir.mkdir(parents=True)
+    (product_dir / "product.json").write_text(json.dumps({"name": "Manual Product"}))
+    exporter = CommunityCatalogExporter(path=checkout, enabled=True, command_runner=runner)
+
+    products = exporter.pending_products()
+
+    commands = [call[0] for call in runner.commands]
+    assert ["git", "status", "--porcelain", "--untracked-files=all"] in commands
+    assert products[0]["barcode"] == "12614626"
+    assert products[0]["path"] == "products/126/146/12614626"
+    assert products[0]["name"] == "Manual Product"
+    assert products[0]["files"] == ["products/126/"]
+
+
+def test_exporter_pushes_selected_pending_products(tmp_path) -> None:
+    runner = FakeGitRunner(
+        status_stdout=(
+            "?? products/627/985/627985000070/product.json\n"
+            "?? products/799/253/799253441424/product.json\n"
+        )
+    )
+    checkout = tmp_path / "checkout"
+    (checkout / ".git").mkdir(parents=True)
+    (checkout / "products" / "627" / "985" / "627985000070").mkdir(parents=True)
+    (checkout / "products" / "799" / "253" / "799253441424").mkdir(parents=True)
+    exporter = CommunityCatalogExporter(
+        path=checkout,
+        enabled=True,
+        auto_push=False,
+        command_runner=runner,
+    )
+
+    warnings = exporter.push_pending_products(["799253441424"])
+
+    commands = [call[0] for call in runner.commands]
+    assert warnings == []
+    assert ["git", "add", "products/799/253/799253441424"] in commands
+    assert ["git", "add", "products/627/985/627985000070"] not in commands
+    assert ["git", "commit", "-m", "Add confirmed products"] in commands
+    assert ["git", "push", "origin", "main"] in commands
+
+
+def test_exporter_discards_selected_pending_products(tmp_path) -> None:
+    runner = FakeGitRunner(
+        status_stdout=(
+            "?? products/627/985/627985000070/product.json\n"
+            "?? products/799/253/799253441424/product.json\n"
+        )
+    )
+    checkout = tmp_path / "checkout"
+    (checkout / ".git").mkdir(parents=True)
+    exporter = CommunityCatalogExporter(path=checkout, enabled=True, command_runner=runner)
+
+    warnings = exporter.discard_pending_products(["627985000070"])
+
+    commands = [call[0] for call in runner.commands]
+    assert warnings == []
+    assert ["git", "restore", "--", "products/627/985/627985000070"] in commands
+    assert ["git", "clean", "-fd", "--", "products/627/985/627985000070"] in commands
+    assert ["git", "restore", "--", "products/799/253/799253441424"] not in commands
+
+
+def test_runtime_manual_mode_queues_pending_product(tmp_path) -> None:
+    from app.app_settings import CommunityCatalogSettings
+
+    class Store:
+        def get_community_catalog(self):
+            return CommunityCatalogSettings(
+                enabled=True,
+                repository_url="https://github.com/example/catalog.git",
+                github_pat=None,
+                branch="main",
+                workdir=str(tmp_path / "workdir"),
+                path=str(tmp_path / "workdir"),
+                export_images=True,
+                auto_commit=False,
+                auto_push=False,
+                git_remote="origin",
+                git_branch="main",
+                author_name=None,
+                author_email=None,
+            )
+
+    queue = CommunityCatalogQueue(tmp_path / "queue.sqlite3")
+    runtime = RuntimeCommunityCatalogExporter(Store(), queue_store=queue)
+
+    result = runtime.export_confirmed_product("627985000070", ConfirmedProductRequest(name="Manual Product"))
+
+    assert result.exported is True
+    products = runtime.pending_products()
+    assert products[0]["barcode"] == "627985000070"
+    assert products[0]["name"] == "Manual Product"
 
 
 def test_exporter_bootstraps_existing_empty_remote_checkout(tmp_path) -> None:

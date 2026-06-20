@@ -148,6 +148,19 @@ def test_dashboard_links_to_settings_page() -> None:
     assert "/settings/community-catalog" in settings_script
 
 
+def test_settings_page_uses_pending_product_review_dialog() -> None:
+    settings_html = (static_path / "settings.html").read_text()
+    settings_script = (static_path / "settings.js").read_text()
+
+    assert 'id="review-community-catalog"' in settings_html
+    assert 'id="pending-products-dialog"' in settings_html
+    assert 'id="push-community-catalog"' not in settings_html
+    assert 'id="discard-community-catalog"' not in settings_html
+    assert "/settings/community-catalog/pending-products" in settings_script
+    assert "/settings/community-catalog/push-products" in settings_script
+    assert "/settings/community-catalog/discard-products" in settings_script
+
+
 def test_delete_scan_event_removes_dashboard_review_item() -> None:
     scanner.store.delete("delete-endpoint-event")
     event, created = scanner.store.create(

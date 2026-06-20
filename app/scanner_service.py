@@ -177,19 +177,20 @@ class ScannerService:
                 notes="Confirmed from external scanner dashboard",
             ),
         )
-        catalog_product = ConfirmedProductRequest(
-            name=product.name,
-            brand=product.brand,
-            quantity=product.quantity,
-            image_url=product.image_url,
-            notes=product.description,
-        )
-        try:
-            result = self.community_catalog.export_confirmed_product(barcode, catalog_product)
-            for warning in result.warnings:
-                logger.warning("Community catalog export warning for %s: %s", barcode, warning)
-        except Exception as exc:
-            logger.warning("Community catalog export failed for %s: %s", barcode, exc)
+        if product.catalog_contribution:
+            catalog_product = ConfirmedProductRequest(
+                name=product.name,
+                brand=product.brand,
+                quantity=product.quantity,
+                image_url=product.image_url,
+                notes=product.description,
+            )
+            try:
+                result = self.community_catalog.export_confirmed_product(barcode, catalog_product)
+                for warning in result.warnings:
+                    logger.warning("Community catalog export warning for %s: %s", barcode, warning)
+            except Exception as exc:
+                logger.warning("Community catalog export failed for %s: %s", barcode, exc)
         return existing
 
     async def products(self) -> list[dict]:

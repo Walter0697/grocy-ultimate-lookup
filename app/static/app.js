@@ -218,6 +218,12 @@ function previewDescription(preview, product) {
   const url = product?.raw_url ? `Source URL: ${product.raw_url}` : "";
   return [product?.description || "", alternate, source, confidence, url].filter(Boolean).join("\n");
 }
+function reviewIsManualContribution(event) {
+  return !event.lookup_payload?.result;
+}
+function previewIsManualContribution(preview) {
+  return preview?.resolution === "unknown";
+}
 function previewDialog(preview) {
   const product = preview.product || {};
   const source = preview.resolution === "grocy" ? "Existing Grocy product" : preview.resolution === "lookup" ? `Suggested by ${product.source || "Ultimate Lookup"}` : "Unknown product";
@@ -310,6 +316,7 @@ document.addEventListener("submit", async event => {
       quantity: formData.get("package_quantity").trim() || null,
       image_url: formData.get("image_url").trim() || null,
       description: formData.get("description").trim() || null,
+      catalog_contribution: previewIsManualContribution(activePreview),
       location_id: Number(formData.get("product_location_id")),
       qu_id: Number(formData.get("qu_id")),
     };
@@ -325,7 +332,7 @@ document.addEventListener("submit", async event => {
     return;
   }
   if (!event.target.matches(".review-form")) return;
-  event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); data.location_id = Number(data.location_id); data.qu_id = Number(data.qu_id); if (!data.image_url) delete data.image_url;
+  event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); data.location_id = Number(data.location_id); data.qu_id = Number(data.qu_id); data.catalog_contribution = reviewIsManualContribution(events.find(x => x.event_id === event.target.dataset.event)); if (!data.image_url) delete data.image_url;
   const button = event.target.querySelector('button[type="submit"]'); setButtonBusy(button, true, "Adding to Grocy...");
   try { await api(`/scan-events/${event.target.dataset.event}/confirm`, { method: "POST", body: JSON.stringify(data) }); closeDrawer(); await load(); } catch (error) { toast(error.message); }
   finally { setButtonBusy(button, false); }

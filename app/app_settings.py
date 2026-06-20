@@ -65,6 +65,26 @@ class CommunityCatalogDiff(BaseModel):
     files: list[str] = []
 
 
+class CommunityCatalogPendingProduct(BaseModel):
+    barcode: str
+    path: str
+    name: str | None = None
+    brand: str | None = None
+    quantity: str | None = None
+    has_image: bool = False
+    files: list[str] = []
+
+
+class CommunityCatalogPendingProducts(BaseModel):
+    configured: bool
+    pending_changes: bool
+    products: list[CommunityCatalogPendingProduct] = []
+
+
+class CommunityCatalogProductSelection(BaseModel):
+    barcodes: list[str] = []
+
+
 def default_community_catalog_settings() -> CommunityCatalogSettings:
     return CommunityCatalogSettings(
         enabled=settings.community_catalog_enabled,

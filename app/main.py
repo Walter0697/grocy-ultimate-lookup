@@ -8,13 +8,15 @@ from fastapi.staticfiles import StaticFiles
 from app.app_settings import (
     AppSettingsStore,
     CommunityCatalogDiff,
+    CommunityCatalogPendingProducts,
+    CommunityCatalogProductSelection,
     CommunityCatalogSettingsResponse,
     CommunityCatalogSettingsUpdate,
     CommunityCatalogStatus,
     public_community_catalog_settings,
 )
 from app.config import settings
-from app.community_catalog import exporter_from_settings
+from app.community_catalog import RuntimeCommunityCatalogExporter, exporter_from_settings
 from app.grocy import GrocyError
 from app.models import (
     ConfirmedProduct,
@@ -34,6 +36,7 @@ from app.scanner_service import ScannerService
 
 app = FastAPI(title="Grocy Ultimate Lookup", version="0.1.0")
 app_settings_store = AppSettingsStore(settings.app_settings_path)
+community_catalog_runtime = RuntimeCommunityCatalogExporter(app_settings_store)
 orchestrator = LookupOrchestrator()
 scanner = ScannerService(lookup=orchestrator)
 scanner_devices = ScannerDeviceRegistry()
@@ -144,6 +147,22 @@ async def get_community_catalog_diff() -> CommunityCatalogDiff:
     return CommunityCatalogDiff(configured=True, pending_changes=pending, status=status_text, files=files)
 
 
+@app.get("/settings/community-catalog/pending-products", response_model=CommunityCatalogPendingProducts)
+async def get_community_catalog_pending_products() -> CommunityCatalogPendingProducts:
+    current = app_settings_store.get_community_catalog()
+    if not current.repository_url:
+        return CommunityCatalogPendingProducts(configured=False, pending_changes=False)
+    try:
+        products = community_catalog_runtime.pending_products()
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return CommunityCatalogPendingProducts(
+        configured=True,
+        pending_changes=bool(products),
+        products=products,
+    )
+
+
 @app.post("/settings/community-catalog/push", response_model=CommunityCatalogDiff)
 async def push_community_catalog_changes() -> CommunityCatalogDiff:
     current = app_settings_store.get_community_catalog()
@@ -155,6 +174,17 @@ async def push_community_catalog_changes() -> CommunityCatalogDiff:
     return await get_community_catalog_diff()
 
 
+@app.post("/settings/community-catalog/push-products", response_model=CommunityCatalogPendingProducts)
+async def push_community_catalog_products(selection: CommunityCatalogProductSelection) -> CommunityCatalogPendingProducts:
+    current = app_settings_store.get_community_catalog()
+    if not current.repository_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Repository URL is not configured")
+    warnings = community_catalog_runtime.push_pending_products(selection.barcodes)
+    if warnings:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="; ".join(warnings))
+    return await get_community_catalog_pending_products()
+
+
 @app.post("/settings/community-catalog/discard", response_model=CommunityCatalogDiff)
 async def discard_community_catalog_changes() -> CommunityCatalogDiff:
     current = app_settings_store.get_community_catalog()
@@ -164,6 +194,17 @@ async def discard_community_catalog_changes() -> CommunityCatalogDiff:
     if warnings:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="; ".join(warnings))
     return await get_community_catalog_diff()
+
+
+@app.post("/settings/community-catalog/discard-products", response_model=CommunityCatalogPendingProducts)
+async def discard_community_catalog_products(selection: CommunityCatalogProductSelection) -> CommunityCatalogPendingProducts:
+    current = app_settings_store.get_community_catalog()
+    if not current.repository_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Repository URL is not configured")
+    warnings = community_catalog_runtime.discard_pending_products(selection.barcodes)
+    if warnings:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="; ".join(warnings))
+    return await get_community_catalog_pending_products()
 
 
 @app.get("/agent-search/{barcode}")

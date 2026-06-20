@@ -1,4 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
+const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;" })[c]);
+let pendingProducts = [];
 
 async function api(path, init) {
   const response = await fetch(path, { headers: { "Content-Type": "application/json" }, ...init });
@@ -87,6 +89,65 @@ function renderDiff(diff) {
   node.innerHTML = `Pending changes: <b>${diff.pending_changes ? "yes" : "no"}</b><ul>${files}</ul>`;
 }
 
+function selectedPendingBarcodes() {
+  return Array.from(document.querySelectorAll('.pending-product-card input[type="checkbox"]:checked')).map(input => input.value);
+}
+
+function renderPendingProducts(payload) {
+  pendingProducts = payload.products || [];
+  const list = $("#pending-products-list");
+  if (!payload.configured) {
+    list.innerHTML = `<div class="pending-empty">Repository URL is not configured.</div>`;
+  }
+  else if (!pendingProducts.length) {
+    list.innerHTML = `<div class="pending-empty">No manual catalog products are waiting for approval.</div>`;
+  }
+  else {
+    list.innerHTML = pendingProducts.map(product => {
+      const title = product.name || product.barcode;
+      const meta = [product.brand, product.quantity, product.has_image ? "image.jpg" : ""].filter(Boolean).join(" · ");
+      const files = product.files.map(file => `<li>${escapeHtml(file)}</li>`).join("");
+      return `<label class="pending-product-card">
+        <input type="checkbox" value="${escapeHtml(product.barcode)}" checked>
+        <span>
+          <strong>${escapeHtml(title)}</strong>
+          <em>${escapeHtml(product.barcode)}</em>
+          ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
+          <ul>${files}</ul>
+        </span>
+      </label>`;
+    }).join("");
+  }
+  updatePendingDialogActions();
+}
+
+function updatePendingDialogActions() {
+  const selected = selectedPendingBarcodes().length;
+  const hasProducts = pendingProducts.length > 0;
+  $("#push-selected-products").disabled = selected === 0;
+  $("#discard-selected-products").disabled = selected === 0;
+  $("#push-all-products").disabled = !hasProducts;
+  $("#discard-all-products").disabled = !hasProducts;
+}
+
+async function refreshPendingProducts() {
+  const payload = await api("/settings/community-catalog/pending-products");
+  renderPendingProducts(payload);
+  return payload;
+}
+
+async function runPendingAction(button, path, barcodes, busyLabel, doneMessage) {
+  if (!barcodes.length) return toast("Select at least one pending product");
+  setButtonBusy(button, true, busyLabel);
+  try {
+    renderPendingProducts(await api(path, { method: "POST", body: JSON.stringify({ barcodes }) }));
+    renderStatus(await api("/settings/community-catalog/test", { method: "POST" }));
+    toast(doneMessage);
+  }
+  catch (error) { toast(error.message); }
+  finally { setButtonBusy(button, false); }
+}
+
 async function load() {
   const settings = await api("/settings/community-catalog");
   fillForm(settings);
@@ -126,31 +187,34 @@ $("#show-token-help").addEventListener("click", () => {
 
 $("#review-community-catalog").addEventListener("click", async event => {
   setButtonBusy(event.target, true, "Loading...");
-  try { renderDiff(await api("/settings/community-catalog/diff")); }
-  catch (error) { toast(error.message); }
-  finally { setButtonBusy(event.target, false); }
-});
-
-$("#push-community-catalog").addEventListener("click", async event => {
-  setButtonBusy(event.target, true, "Pushing...");
   try {
-    renderDiff(await api("/settings/community-catalog/push", { method: "POST" }));
-    renderStatus(await api("/settings/community-catalog/test", { method: "POST" }));
-    toast("Pending catalog changes pushed");
+    await refreshPendingProducts();
+    $("#pending-products-dialog").showModal();
   }
   catch (error) { toast(error.message); }
   finally { setButtonBusy(event.target, false); }
 });
 
-$("#discard-community-catalog").addEventListener("click", async event => {
-  setButtonBusy(event.target, true, "Discarding...");
-  try {
-    renderDiff(await api("/settings/community-catalog/discard", { method: "POST" }));
-    renderStatus(await api("/settings/community-catalog/test", { method: "POST" }));
-    toast("Pending catalog changes discarded");
-  }
-  catch (error) { toast(error.message); }
-  finally { setButtonBusy(event.target, false); }
+$("#pending-products-list").addEventListener("change", event => {
+  if (event.target.matches('input[type="checkbox"]')) updatePendingDialogActions();
+});
+
+$("#push-selected-products").addEventListener("click", event => {
+  runPendingAction(event.target, "/settings/community-catalog/push-products", selectedPendingBarcodes(), "Pushing...", "Selected catalog products pushed");
+});
+
+$("#push-all-products").addEventListener("click", event => {
+  runPendingAction(event.target, "/settings/community-catalog/push-products", pendingProducts.map(product => product.barcode), "Pushing...", "All pending catalog products pushed");
+});
+
+$("#discard-selected-products").addEventListener("click", event => {
+  if (!confirm("Discard selected pending catalog products?")) return;
+  runPendingAction(event.target, "/settings/community-catalog/discard-products", selectedPendingBarcodes(), "Discarding...", "Selected catalog products discarded");
+});
+
+$("#discard-all-products").addEventListener("click", event => {
+  if (!confirm("Discard all pending catalog products?")) return;
+  runPendingAction(event.target, "/settings/community-catalog/discard-products", pendingProducts.map(product => product.barcode), "Discarding...", "All pending catalog products discarded");
 });
 
 load().catch(error => toast(error.message));

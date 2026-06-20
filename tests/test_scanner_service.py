@@ -259,6 +259,7 @@ def test_dashboard_confirm_uses_edited_product_before_applying_scan(tmp_path) ->
                     brand="Edited Brand",
                     quantity="12 oz",
                     image_url="http://host.docker.internal:9290/uploaded-images/edited-product.jpg",
+                    catalog_contribution=True,
                     location_id=4,
                     qu_id=7,
                 ),
@@ -276,6 +277,39 @@ def test_dashboard_confirm_uses_edited_product_before_applying_scan(tmp_path) ->
         str(catalog.exported[0][1].image_url)
         == "http://host.docker.internal:9290/uploaded-images/edited-product.jpg"
     )
+
+
+def test_dashboard_confirm_does_not_export_lookup_suggestion_to_catalog(tmp_path) -> None:
+    catalog = FakeCommunityCatalog()
+    scanner = service(
+        tmp_path,
+        FakeGrocy(),
+        FakeLookup(LookupResponse(barcode="123456", found=False)),
+        community_catalog=catalog,
+    )
+
+    event = run(
+        scanner.confirm_dashboard_scan(
+            DashboardScanConfirmation(
+                event_id="dashboard-lookup",
+                device_id="dashboard-manual",
+                barcode="123456",
+                mode="add",
+                quantity=1,
+                product=PendingProductConfirmation(
+                    name="Lookup Product",
+                    brand="Lookup Brand",
+                    quantity="12 oz",
+                    catalog_contribution=False,
+                    location_id=4,
+                    qu_id=7,
+                ),
+            )
+        )
+    )
+
+    assert event["status"] == "applied"
+    assert catalog.exported == []
 
 
 def test_dashboard_confirm_updates_existing_grocy_product_before_applying_scan(tmp_path) -> None:
@@ -454,6 +488,7 @@ def test_confirm_exports_user_confirmed_product_to_catalog(tmp_path) -> None:
                 name="Confirmed Product",
                 brand="Confirmed Brand",
                 quantity="500 mL",
+                catalog_contribution=True,
                 location_id=2,
                 qu_id=2,
             ),

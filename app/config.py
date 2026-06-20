@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     scanner_device_offline_after_seconds: int = Field(default=120, alias="SCANNER_DEVICE_OFFLINE_AFTER_SECONDS")
     community_catalog_enabled: bool = Field(default=False, alias="COMMUNITY_CATALOG_ENABLED")
     community_catalog_path: str = Field(default="/data/community-catalog", alias="COMMUNITY_CATALOG_PATH")
+    community_catalog_queue_path: str = Field(
+        default="/data/community-catalog-queue.sqlite3",
+        alias="COMMUNITY_CATALOG_QUEUE_PATH",
+    )
     community_catalog_workdir: str = Field(
         default="/data/community-catalog-workdir",
         alias="COMMUNITY_CATALOG_WORKDIR",

@@ -49,9 +49,7 @@
           <div class="auto-push-row">
             <label class="switch-row"><input name="auto_push" type="checkbox"><span>Auto push</span></label>
             <div id="pending-review-actions" class="settings-actions review-actions">
-              <button type="button" class="secondary" id="review-community-catalog">Review pending changes</button>
-              <button type="button" class="secondary" id="push-community-catalog">Push pending</button>
-              <button type="button" class="secondary danger" id="discard-community-catalog">Discard pending</button>
+              <button type="button" class="secondary" id="review-community-catalog">Review pending products</button>
             </div>
           </div>
           <div class="settings-pair">
@@ -85,6 +83,24 @@
         <li>Click <b>Generate token</b>, copy it, and paste it into the GitHub PAT field here.</li>
       </ol>
       <button type="submit">Close</button>
+    </form>
+  </dialog>
+  <dialog id="pending-products-dialog">
+    <form method="dialog" class="pending-products-panel">
+      <div class="dialog-title-row">
+        <div>
+          <p class="drawer-kicker">CATALOG REVIEW</p>
+          <h2>Pending products</h2>
+        </div>
+        <button type="submit" class="secondary">Close</button>
+      </div>
+      <div id="pending-products-list" class="pending-products-list"></div>
+      <div class="settings-actions pending-dialog-actions">
+        <button type="button" id="push-selected-products">Push selected</button>
+        <button type="button" class="secondary" id="push-all-products">Push all</button>
+        <button type="button" class="secondary danger" id="discard-selected-products">Discard selected</button>
+        <button type="button" class="secondary danger" id="discard-all-products">Discard all</button>
+      </div>
     </form>
   </dialog>
   <div id="toast"></div>
