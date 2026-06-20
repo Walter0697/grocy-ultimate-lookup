@@ -26,11 +26,33 @@
   </header>
 
   <main class="settings-main">
-    <section class="settings-section">
-      <div>
-        <p class="drawer-kicker">COMMUNITY CATALOG</p>
-        <h2>Confirmed product export</h2>
-      </div>
+    <details class="settings-section">
+      <summary class="settings-summary">
+        <span>
+          <p class="drawer-kicker">GITHUB ACCESS</p>
+          <h2>Catalog credentials</h2>
+        </span>
+      </summary>
+      <form id="github-access-form" class="settings-form">
+        <div class="settings-config">
+          <div class="field-action-row">
+            <label>GitHub PAT<input name="github_pat" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved token"></label>
+            <button type="button" class="secondary" id="show-token-help">PAT help</button>
+          </div>
+          <label>Saved token<input name="github_pat_status" disabled></label>
+        </div>
+        <div class="settings-actions">
+          <button type="submit">Save GitHub access</button>
+        </div>
+      </form>
+    </details>
+    <details class="settings-section">
+      <summary class="settings-summary">
+        <span>
+          <p class="drawer-kicker">COMMUNITY CATALOG</p>
+          <h2>Confirmed product export</h2>
+        </span>
+      </summary>
       <form id="community-catalog-form" class="settings-form">
         <label class="switch-row">
           <input name="enabled" type="checkbox">
@@ -41,10 +63,6 @@
             <label>Repository URL<input name="repository_url" placeholder="https://github.com/you/grocy-catalog.git"></label>
             <button type="button" class="secondary" id="test-community-catalog">Test checkout</button>
           </div>
-          <div class="field-action-row">
-            <label>GitHub PAT<input name="github_pat" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved token"></label>
-            <button type="button" class="secondary" id="show-token-help">PAT help</button>
-          </div>
           <label class="switch-row setting-row"><input name="export_images" type="checkbox"><span>Include product images</span></label>
           <div class="auto-push-row">
             <label class="switch-row"><input name="auto_push" type="checkbox"><span>Auto push</span></label>
@@ -54,7 +72,6 @@
           </div>
           <div class="settings-pair">
             <label>Branch<input name="branch" required></label>
-            <label>Saved token<input name="github_pat_status" disabled></label>
           </div>
           <div class="settings-pair">
             <label>Author name<input name="author_name"></label>
@@ -65,16 +82,57 @@
           <button type="submit">Save settings</button>
         </div>
       </form>
-    </section>
-    <section class="settings-section">
-      <div>
-        <p class="drawer-kicker">CATALOG LOOKUP</p>
-        <h2>Community catalog sources</h2>
+    </details>
+    <details class="settings-section">
+      <summary class="settings-summary">
+        <span>
+          <p class="drawer-kicker">CATALOG LOOKUP</p>
+          <h2>Community catalog sources</h2>
+        </span>
+      </summary>
+      <div id="catalog-source-list" class="catalog-source-list"></div>
+      <div class="settings-actions catalog-source-actions">
+        <button type="button" class="secondary" id="open-add-catalog-source">Add repository</button>
+        <button type="button" id="save-catalog-sources">Save list</button>
       </div>
-      <div class="settings-actions">
-        <button type="button" id="open-catalog-source-list">Community catalog list</button>
-      </div>
-    </section>
+    </details>
+    <details class="settings-section">
+      <summary class="settings-summary">
+        <span>
+          <p class="drawer-kicker">LOOKUP METHODS</p>
+          <h2>Search providers</h2>
+        </span>
+      </summary>
+      <form id="lookup-form" class="settings-form">
+        <div class="settings-config">
+          <div id="search-provider-list" class="search-provider-list"></div>
+          <div id="web-search-config" class="settings-config">
+            <div class="settings-pair">
+              <label>Search provider
+                <select name="web_search_provider">
+                  <option value="duckduckgo">DuckDuckGo</option>
+                  <option value="searxng">SearXNG</option>
+                </select>
+              </label>
+              <label>SearXNG URL<input name="searxng_base_url" placeholder="http://searxng:8080"></label>
+            </div>
+          </div>
+          <div id="llm-config" class="settings-config">
+            <div class="settings-pair">
+              <label>LLM base URL<input name="llm_base_url" placeholder="https://api.openai.com/v1"></label>
+              <label>LLM model<input name="llm_model" placeholder="gpt-4.1-mini"></label>
+            </div>
+            <div class="settings-pair">
+              <label>LLM API key<input name="llm_api_key" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved key"></label>
+              <label>Saved LLM key<input name="llm_api_key_status" disabled></label>
+            </div>
+          </div>
+        </div>
+        <div class="settings-actions">
+          <button type="submit">Save lookup methods</button>
+        </div>
+      </form>
+    </details>
   </main>
   <dialog id="token-help-dialog">
     <form method="dialog" class="token-help">
@@ -112,22 +170,6 @@
       </div>
     </form>
   </dialog>
-  <dialog id="catalog-sources-dialog">
-    <form method="dialog" class="pending-products-panel">
-      <div class="dialog-title-row">
-        <div>
-          <p class="drawer-kicker">LOOKUP SOURCES</p>
-          <h2>Community catalog list</h2>
-        </div>
-        <button type="submit" class="secondary">Close</button>
-      </div>
-      <div id="catalog-source-list" class="catalog-source-list"></div>
-      <div class="settings-actions pending-dialog-actions">
-        <button type="button" class="secondary" id="open-add-catalog-source">Add repository</button>
-        <button type="button" id="save-catalog-sources">Save list</button>
-      </div>
-    </form>
-  </dialog>
   <dialog id="add-catalog-source-dialog">
     <form method="dialog" class="pending-products-panel">
       <div class="dialog-title-row">
@@ -145,6 +187,7 @@
     </form>
   </dialog>
   <div id="toast"></div>
+  <script src="/static/vendor/sortable.min.js"></script>
   <script src="/static/settings.js"></script>
 </body>
 </html>

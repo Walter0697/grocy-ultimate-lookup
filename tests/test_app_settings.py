@@ -4,6 +4,9 @@ from app.app_settings import (
     CommunityCatalogSettingsUpdate,
     CommunityCatalogSource,
     CommunityCatalogSourceList,
+    LookupSettings,
+    LookupSettingsUpdate,
+    SearchProviderSetting,
 )
 from app.community_catalog import RuntimeCommunityCatalogExporter
 from app.models import ConfirmedProductRequest
@@ -188,3 +191,66 @@ def test_app_settings_store_persists_ordered_community_catalog_sources(tmp_path)
     assert [source.priority for source in reopened.sources] == [0, 1]
     assert all(source.id for source in reopened.sources)
     assert reopened.sources[0].enabled is False
+
+
+def test_app_settings_store_persists_lookup_settings_and_preserves_llm_key(tmp_path) -> None:
+    store = AppSettingsStore(
+        str(tmp_path / "settings.sqlite3"),
+        lookup_defaults=LookupSettings(enable_open_facts=True, enable_upcitemdb=True, enable_web_search=True),
+    )
+
+    first = store.update_lookup(
+        LookupSettingsUpdate(
+            enable_open_facts=False,
+            enable_upcitemdb=True,
+            enable_web_search=True,
+            web_search_provider="searxng",
+            searxng_base_url="http://searxng:8080",
+            enable_llm_fallback=True,
+            llm_base_url="http://ollama:11434/v1",
+            llm_api_key="secret-key",
+            llm_model="local-model",
+        )
+    )
+    second = store.update_lookup(
+        LookupSettingsUpdate(
+            enable_open_facts=True,
+            enable_upcitemdb=False,
+            enable_web_search=False,
+            web_search_provider="duckduckgo",
+            enable_llm_fallback=False,
+            llm_api_key=None,
+            llm_model=None,
+        )
+    )
+
+    assert first.llm_api_key == "secret-key"
+    assert second.llm_api_key == "secret-key"
+    assert second.enable_open_facts is True
+    assert second.enable_upcitemdb is False
+    assert second.enable_web_search is False
+
+
+def test_lookup_settings_persist_search_provider_order(tmp_path) -> None:
+    store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
+
+    saved = store.update_lookup(
+        LookupSettingsUpdate(
+            search_providers=[
+                SearchProviderSetting(id="web_search", enabled=True, priority=0),
+                SearchProviderSetting(id="upcitemdb", enabled=False, priority=1),
+                SearchProviderSetting(id="open_food_facts", enabled=True, priority=2),
+            ]
+        )
+    )
+    reopened = AppSettingsStore(str(tmp_path / "settings.sqlite3")).get_lookup()
+
+    assert [provider.id for provider in saved.search_providers[:3]] == [
+        "web_search",
+        "upcitemdb",
+        "open_food_facts",
+    ]
+    assert reopened.search_providers[1].enabled is False
+    assert any(provider.id == "grocy_current" for provider in reopened.search_providers)
+    assert any(provider.id == "community_catalog" for provider in reopened.search_providers)
+    assert any(provider.id == "codex_agent" for provider in reopened.search_providers)

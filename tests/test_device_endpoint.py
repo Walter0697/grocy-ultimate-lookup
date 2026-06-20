@@ -161,19 +161,53 @@ def test_settings_page_uses_pending_product_review_dialog() -> None:
     assert "/settings/community-catalog/discard-products" in settings_script
 
 
-def test_settings_page_includes_community_catalog_source_list_dialog() -> None:
+def test_settings_page_includes_inline_community_catalog_source_list() -> None:
     settings_html = (static_path / "settings.html").read_text()
     settings_script = (static_path / "settings.js").read_text()
 
-    assert 'id="open-catalog-source-list"' in settings_html
-    assert 'id="catalog-sources-dialog"' in settings_html
+    assert 'id="catalog-source-list"' in settings_html
+    assert 'id="catalog-sources-dialog"' not in settings_html
     assert 'id="add-catalog-source-dialog"' in settings_html
     assert 'id="open-add-catalog-source"' in settings_html
     assert "/settings/community-catalog-sources" in settings_script
-    assert "moveCatalogSource" in settings_script
+    assert "initCatalogSourceSortable" in settings_script
+    assert "catalog-source-grip" in settings_script
+    assert "source-toggle" in settings_script
     assert "source-remove" in settings_script
-    assert "updateCatalogSourceButtonLabel" in settings_script
-    assert "Community catalog list (${count} catalog" in settings_script
+    assert "source-up" not in settings_script
+    assert "source-down" not in settings_script
+    assert "updateCatalogSourceButtonLabel" not in settings_script
+
+
+def test_settings_page_has_shared_github_access_section() -> None:
+    settings_html = (static_path / "settings.html").read_text()
+    settings_script = (static_path / "settings.js").read_text()
+
+    assert 'id="github-access-form"' in settings_html
+    assert "Catalog credentials" in settings_html
+    assert "githubAccessFormData" in settings_script
+
+
+def test_settings_page_uses_sortable_search_provider_rows() -> None:
+    settings_html = (static_path / "settings.html").read_text()
+    settings_script = (static_path / "settings.js").read_text()
+
+    assert "/static/vendor/sortable.min.js" in settings_html
+    assert "Sortable.create" in settings_script
+    assert "Grocy current data" in settings_script
+    assert "Recommend first" in settings_script
+    assert "Ultimate Lookup cache" in settings_script
+    assert "Recommend second" in settings_script
+    assert "Community catalogs" in settings_script
+    assert "Recommend third" in settings_script
+    assert "Codex based final fallback" in settings_script
+    assert "Recommend last" in settings_script
+    assert "Set an LLM API key and model first" in settings_script
+    assert "Set up Codex auth/runtime first" in settings_script
+    assert ".search-provider-card:not(.is-unavailable)" in settings_script
+    assert 'filter: ".is-unavailable"' in settings_script
+    assert 'draggable="true"' not in settings_script
+    assert 'addEventListener("dragstart"' not in settings_script
 
 
 def test_delete_scan_event_removes_dashboard_review_item() -> None:

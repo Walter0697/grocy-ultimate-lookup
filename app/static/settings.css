@@ -3,12 +3,67 @@
   margin: 0 auto;
 }
 
+@supports (interpolate-size: allow-keywords) {
+  :root {
+    interpolate-size: allow-keywords;
+  }
+}
+
 .settings-section {
   border: 1px solid var(--line);
   background: #f8f4eb;
   padding: 22px;
   display: grid;
   gap: 20px;
+}
+
+.settings-section::details-content {
+  block-size: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    block-size .18s ease,
+    opacity .14s ease,
+    content-visibility .18s allow-discrete;
+}
+
+.settings-section[open]::details-content {
+  block-size: auto;
+  opacity: 1;
+}
+
+.settings-section:not([open]) {
+  gap: 0;
+}
+
+.settings-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.settings-summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-summary::after {
+  content: "+";
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--ink);
+  font: 700 18px "IBM Plex Mono";
+  flex: 0 0 auto;
+}
+
+.settings-section[open] .settings-summary::after {
+  content: "-";
 }
 
 .settings-section h2 {
@@ -38,7 +93,8 @@
   letter-spacing: .08em;
 }
 
-.settings-form input {
+.settings-form input,
+.settings-form select {
   border: 1px solid var(--line);
   background: white;
   color: var(--ink);
@@ -46,7 +102,8 @@
   min-width: 0;
 }
 
-.settings-form input:disabled {
+.settings-form input:disabled,
+.settings-form select:disabled {
   background: #eee7da;
   color: var(--muted);
 }
@@ -91,6 +148,10 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.catalog-source-actions {
+  margin-top: 10px;
 }
 
 .auto-push-row {
@@ -222,8 +283,11 @@ dialog::backdrop {
 .catalog-source-list {
   display: grid;
   gap: 10px;
-  max-height: min(48vh, 480px);
-  overflow: auto;
+}
+
+.search-provider-list {
+  display: grid;
+  gap: 10px;
 }
 
 .pending-empty {
@@ -275,15 +339,49 @@ dialog::backdrop {
   padding-top: 4px;
 }
 
-.catalog-source-card {
+.catalog-source-card,
+.search-provider-card {
   border: 1px solid var(--line);
   background: white;
-  padding: 12px;
+  padding: 10px 12px;
   display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 36px;
   gap: 10px;
+  align-items: center;
+  min-height: 48px;
+  cursor: default;
+  transition: border-color .14s ease, box-shadow .14s ease, opacity .14s ease;
 }
 
-.catalog-source-card label,
+.catalog-source-card {
+  grid-template-columns: 24px minmax(0, 1fr) 36px 36px;
+}
+
+.catalog-source-card.is-chosen,
+.search-provider-card.is-chosen {
+  border-color: var(--ink);
+  box-shadow: 0 8px 20px rgba(38, 31, 23, .12);
+}
+
+.catalog-source-card.is-dragging,
+.search-provider-card.is-dragging {
+  opacity: .55;
+}
+
+.search-provider-card.is-unavailable {
+  opacity: .42;
+  filter: grayscale(.65);
+}
+
+.search-provider-card.is-unavailable .search-provider-grip {
+  cursor: not-allowed;
+}
+
+.search-provider-card.is-unavailable .search-provider-toggle {
+  cursor: not-allowed;
+}
+
+.search-provider-card label,
 .pending-products-panel > label {
   display: grid;
   gap: 6px;
@@ -291,17 +389,81 @@ dialog::backdrop {
   letter-spacing: .08em;
 }
 
-.catalog-source-card input,
+.catalog-source-card strong,
+.search-provider-card strong {
+  font: 700 15px "DM Sans";
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.search-provider-label {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.search-provider-label small {
+  color: var(--muted);
+  font: 600 9px "IBM Plex Mono";
+  text-transform: uppercase;
+}
+
+.search-provider-grip {
+  width: 18px;
+  height: 22px;
+  background:
+    radial-gradient(circle, var(--muted) 1.6px, transparent 1.8px) 0 0 / 8px 8px;
+  opacity: .85;
+  cursor: grab;
+}
+
+.search-provider-grip:active {
+  cursor: grabbing;
+}
+
+.search-provider-toggle {
+  border: 1px solid var(--line);
+  background: #eee7da;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  position: relative;
+  cursor: pointer;
+}
+
+.search-provider-toggle::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 2px solid var(--muted);
+  border-radius: 999px;
+}
+
+.search-provider-toggle.is-enabled {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.search-provider-toggle.is-enabled::before {
+  border-color: white;
+  background: white;
+}
+
+.source-remove {
+  border: 1px solid var(--line);
+  background: white;
+  color: #9c3d2f;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font: 700 12px "IBM Plex Mono";
+  cursor: pointer;
+}
+
 .pending-products-panel > label input {
   border: 1px solid var(--line);
   padding: 10px 12px;
   min-width: 0;
-}
-
-.source-order-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .source-add-row {

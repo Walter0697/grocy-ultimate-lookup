@@ -98,6 +98,67 @@ class CommunityCatalogSourceList(BaseModel):
     sources: list[CommunityCatalogSource] = []
 
 
+DEFAULT_SEARCH_PROVIDER_ORDER = [
+    "grocy_current",
+    "ultimate_lookup_cache",
+    "community_catalog",
+    "open_food_facts",
+    "open_products_facts",
+    "open_beauty_facts",
+    "open_pet_food_facts",
+    "upcitemdb",
+    "web_search",
+    "agent_completed",
+    "llm_fallback",
+    "codex_agent",
+]
+
+
+class SearchProviderSetting(BaseModel):
+    id: str
+    enabled: bool = True
+    priority: int = 0
+
+
+class LookupSettings(BaseModel):
+    enable_open_facts: bool = True
+    enable_upcitemdb: bool = True
+    enable_web_search: bool = True
+    search_providers: list[SearchProviderSetting] = []
+    web_search_provider: str = "duckduckgo"
+    searxng_base_url: str | None = None
+    enable_llm_fallback: bool = False
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_api_key: str | None = None
+    llm_model: str | None = None
+
+
+class LookupSettingsResponse(BaseModel):
+    enable_open_facts: bool
+    enable_upcitemdb: bool
+    enable_web_search: bool
+    search_providers: list[SearchProviderSetting]
+    web_search_provider: str
+    searxng_base_url: str | None
+    enable_llm_fallback: bool
+    llm_base_url: str
+    llm_model: str | None
+    llm_api_key_set: bool
+
+
+class LookupSettingsUpdate(BaseModel):
+    enable_open_facts: bool = True
+    enable_upcitemdb: bool = True
+    enable_web_search: bool = True
+    search_providers: list[SearchProviderSetting] = []
+    web_search_provider: str = "duckduckgo"
+    searxng_base_url: str | None = None
+    enable_llm_fallback: bool = False
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_api_key: str | None = None
+    llm_model: str | None = None
+
+
 def default_community_catalog_settings() -> CommunityCatalogSettings:
     return CommunityCatalogSettings(
         enabled=settings.community_catalog_enabled,
@@ -116,6 +177,22 @@ def default_community_catalog_settings() -> CommunityCatalogSettings:
     )
 
 
+def default_lookup_settings() -> LookupSettings:
+    return normalize_lookup_settings(
+        LookupSettings(
+            enable_open_facts=settings.enable_open_facts,
+            enable_upcitemdb=settings.enable_upcitemdb,
+            enable_web_search=settings.enable_web_search,
+            web_search_provider=settings.web_search_provider,
+            searxng_base_url=settings.searxng_base_url,
+            enable_llm_fallback=settings.enable_llm_fallback,
+            llm_base_url=settings.llm_base_url,
+            llm_api_key=settings.llm_api_key,
+            llm_model=settings.llm_model,
+        )
+    )
+
+
 def public_community_catalog_settings(settings_value: CommunityCatalogSettings) -> CommunityCatalogSettingsResponse:
     return CommunityCatalogSettingsResponse(
         enabled=settings_value.enabled,
@@ -129,16 +206,82 @@ def public_community_catalog_settings(settings_value: CommunityCatalogSettings) 
     )
 
 
+def public_lookup_settings(settings_value: LookupSettings) -> LookupSettingsResponse:
+    settings_value = normalize_lookup_settings(settings_value)
+    return LookupSettingsResponse(
+        enable_open_facts=settings_value.enable_open_facts,
+        enable_upcitemdb=settings_value.enable_upcitemdb,
+        enable_web_search=settings_value.enable_web_search,
+        search_providers=settings_value.search_providers,
+        web_search_provider=settings_value.web_search_provider,
+        searxng_base_url=settings_value.searxng_base_url,
+        enable_llm_fallback=settings_value.enable_llm_fallback,
+        llm_base_url=settings_value.llm_base_url,
+        llm_model=settings_value.llm_model,
+        llm_api_key_set=bool(settings_value.llm_api_key),
+    )
+
+
+def normalize_lookup_settings(value: LookupSettings) -> LookupSettings:
+    known_ids = set(DEFAULT_SEARCH_PROVIDER_ORDER)
+    enabled_by_id = {provider.id: provider.enabled for provider in value.search_providers if provider.id in known_ids}
+    if not value.search_providers:
+        for provider_id in DEFAULT_SEARCH_PROVIDER_ORDER:
+            enabled_by_id[provider_id] = default_search_provider_enabled(provider_id, value)
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for provider in sorted(value.search_providers, key=lambda item: item.priority):
+        if provider.id in known_ids and provider.id not in seen:
+            ordered.append(provider.id)
+            seen.add(provider.id)
+    for provider_id in DEFAULT_SEARCH_PROVIDER_ORDER:
+        if provider_id not in seen:
+            ordered.append(provider_id)
+
+    normalized = [
+        SearchProviderSetting(
+            id=provider_id,
+            enabled=enabled_by_id.get(provider_id, default_search_provider_enabled(provider_id, value)),
+            priority=index,
+        )
+        for index, provider_id in enumerate(ordered)
+    ]
+    return value.model_copy(
+        update={
+            "search_providers": normalized,
+            "enable_open_facts": any(provider.enabled for provider in normalized if provider.id.startswith("open_")),
+            "enable_upcitemdb": any(provider.enabled for provider in normalized if provider.id == "upcitemdb"),
+            "enable_web_search": any(provider.enabled for provider in normalized if provider.id == "web_search"),
+            "enable_llm_fallback": any(provider.enabled for provider in normalized if provider.id == "llm_fallback"),
+        }
+    )
+
+
+def default_search_provider_enabled(provider_id: str, value: LookupSettings) -> bool:
+    if provider_id.startswith("open_"):
+        return value.enable_open_facts
+    if provider_id == "upcitemdb":
+        return value.enable_upcitemdb
+    if provider_id == "web_search":
+        return value.enable_web_search
+    if provider_id == "llm_fallback":
+        return value.enable_llm_fallback
+    return True
+
+
 class AppSettingsStore:
     def __init__(
         self,
         path: str,
         *,
         community_catalog_defaults: CommunityCatalogSettings | None = None,
+        lookup_defaults: LookupSettings | None = None,
     ) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.community_catalog_defaults = community_catalog_defaults or default_community_catalog_settings()
+        self.lookup_defaults = lookup_defaults or default_lookup_settings()
         self._init()
 
     def _connect(self) -> sqlite3.Connection:
@@ -189,6 +332,40 @@ class AppSettingsStore:
             }
         )
         return self.set_community_catalog(updated)
+
+    def get_lookup(self) -> LookupSettings:
+        payload = self._get_json("lookup")
+        if payload is None:
+            return normalize_lookup_settings(self.lookup_defaults)
+        merged = self.lookup_defaults.model_dump()
+        merged.update(payload)
+        return normalize_lookup_settings(LookupSettings.model_validate(merged))
+
+    def set_lookup(self, value: LookupSettings) -> LookupSettings:
+        self._set_json("lookup", value.model_dump(mode="json"))
+        return self.get_lookup()
+
+    def update_lookup(self, value: LookupSettingsUpdate) -> LookupSettings:
+        current = self.get_lookup()
+        llm_api_key = value.llm_api_key.strip() if value.llm_api_key else current.llm_api_key
+        provider = value.web_search_provider.strip().lower() or "duckduckgo"
+        if provider not in {"duckduckgo", "searxng"}:
+            provider = "duckduckgo"
+        updated = current.model_copy(
+            update={
+                "enable_open_facts": value.enable_open_facts,
+                "enable_upcitemdb": value.enable_upcitemdb,
+                "enable_web_search": value.enable_web_search,
+                "search_providers": normalize_lookup_settings(LookupSettings.model_validate(value.model_dump())).search_providers,
+                "web_search_provider": provider,
+                "searxng_base_url": value.searxng_base_url.strip() if value.searxng_base_url else None,
+                "enable_llm_fallback": value.enable_llm_fallback,
+                "llm_base_url": value.llm_base_url.strip() or "https://api.openai.com/v1",
+                "llm_api_key": llm_api_key,
+                "llm_model": value.llm_model.strip() if value.llm_model else None,
+            }
+        )
+        return self.set_lookup(updated)
 
     def community_catalog_status(self) -> CommunityCatalogStatus:
         current = self.get_community_catalog()

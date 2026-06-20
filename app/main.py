@@ -1,4 +1,5 @@
 from pathlib import Path
+import shutil
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile, status
@@ -14,7 +15,10 @@ from app.app_settings import (
     CommunityCatalogSettingsResponse,
     CommunityCatalogSettingsUpdate,
     CommunityCatalogStatus,
+    LookupSettingsResponse,
+    LookupSettingsUpdate,
     public_community_catalog_settings,
+    public_lookup_settings,
 )
 from app.config import settings
 from app.community_catalog import RuntimeCommunityCatalogExporter, exporter_from_settings
@@ -38,7 +42,7 @@ from app.scanner_service import ScannerService
 app = FastAPI(title="Grocy Ultimate Lookup", version="0.1.0")
 app_settings_store = AppSettingsStore(settings.app_settings_path)
 community_catalog_runtime = RuntimeCommunityCatalogExporter(app_settings_store)
-orchestrator = LookupOrchestrator()
+orchestrator = LookupOrchestrator(settings_store=app_settings_store)
 scanner = ScannerService(lookup=orchestrator)
 scanner_devices = ScannerDeviceRegistry()
 static_path = Path(__file__).parent / "static"
@@ -74,7 +78,7 @@ async def settings_page() -> HTMLResponse:
 
 def settings_page_html() -> str:
     html = (static_path / "settings.html").read_text()
-    for asset in ("styles.css", "settings.css", "settings.js"):
+    for asset in ("styles.css", "settings.css", "vendor/sortable.min.js", "settings.js"):
         version = str(int((static_path / asset).stat().st_mtime))
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
     return html
@@ -118,6 +122,28 @@ async def get_community_catalog_settings() -> CommunityCatalogSettingsResponse:
 @app.put("/settings/community-catalog", response_model=CommunityCatalogSettingsResponse)
 async def put_community_catalog_settings(product: CommunityCatalogSettingsUpdate) -> CommunityCatalogSettingsResponse:
     return public_community_catalog_settings(app_settings_store.update_community_catalog(product))
+
+
+@app.get("/settings/lookup", response_model=LookupSettingsResponse)
+async def get_lookup_settings() -> LookupSettingsResponse:
+    return public_lookup_settings(app_settings_store.get_lookup())
+
+
+@app.put("/settings/lookup", response_model=LookupSettingsResponse)
+async def put_lookup_settings(product: LookupSettingsUpdate) -> LookupSettingsResponse:
+    return public_lookup_settings(app_settings_store.update_lookup(product))
+
+
+@app.get("/settings/agent-search")
+async def get_agent_search_availability() -> dict[str, bool | str]:
+    auth_available = Path(settings.agent_search_auth_path).exists()
+    codex_available = shutil.which("codex") is not None
+    available = settings.enable_agent_search and auth_available and codex_available
+    return {
+        "available": available,
+        "enabled": settings.enable_agent_search,
+        "status": "Codex based search is available" if available else "Codex based search is unavailable",
+    }
 
 
 @app.get("/settings/community-catalog-sources", response_model=CommunityCatalogSourceList)

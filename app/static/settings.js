@@ -2,6 +2,33 @@ const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;" })[c]);
 let pendingProducts = [];
 let catalogSources = [];
+let searchProviders = [];
+let catalogSourceSortable = null;
+let searchProviderSortable = null;
+let unavailableSearchProviders = {};
+
+const SEARCH_PROVIDER_LABELS = {
+  grocy_current: "Grocy current data",
+  ultimate_lookup_cache: "Ultimate Lookup cache",
+  community_catalog: "Community catalogs",
+  open_food_facts: "Open Food Facts",
+  open_products_facts: "Open Products Facts",
+  open_beauty_facts: "Open Beauty Facts",
+  open_pet_food_facts: "Open Pet Food Facts",
+  upcitemdb: "UPCItemDB",
+  web_search: "Web search structured extraction",
+  agent_completed: "Completed Codex result cache",
+  llm_fallback: "LLM page extraction fallback",
+  codex_agent: "Codex based final fallback"
+};
+
+const SEARCH_PROVIDER_RECOMMENDATIONS = {
+  grocy_current: "Recommend first",
+  ultimate_lookup_cache: "Recommend second",
+  community_catalog: "Recommend third",
+  llm_fallback: "Recommend last",
+  codex_agent: "Recommend last"
+};
 
 async function api(path, init) {
   const response = await fetch(path, { headers: { "Content-Type": "application/json" }, ...init });
@@ -41,7 +68,7 @@ function formData() {
   return {
     enabled: form.enabled.checked,
     repository_url: form.repository_url.value.trim() || null,
-    github_pat: form.github_pat.value.trim() || null,
+    github_pat: null,
     branch: form.branch.value.trim() || "main",
     export_images: form.export_images.checked,
     auto_push: form.auto_push.checked,
@@ -50,18 +77,60 @@ function formData() {
   };
 }
 
+function githubAccessFormData() {
+  return {
+    ...formData(),
+    github_pat: $("#github-access-form").github_pat.value.trim() || null
+  };
+}
+
+function lookupFormData() {
+  const form = $("#lookup-form");
+  syncSearchProvidersFromDom();
+  return {
+    enable_open_facts: searchProviders.some(provider => provider.id.startsWith("open_") && provider.enabled),
+    enable_upcitemdb: searchProviders.some(provider => provider.id === "upcitemdb" && provider.enabled),
+    enable_web_search: searchProviders.some(provider => provider.id === "web_search" && provider.enabled),
+    search_providers: searchProviders,
+    web_search_provider: form.web_search_provider.value,
+    searxng_base_url: form.searxng_base_url.value.trim() || null,
+    enable_llm_fallback: searchProviders.some(provider => provider.id === "llm_fallback" && provider.enabled),
+    llm_base_url: form.llm_base_url.value.trim() || "https://api.openai.com/v1",
+    llm_api_key: form.llm_api_key.value.trim() || null,
+    llm_model: form.llm_model.value.trim() || null
+  };
+}
+
 function fillForm(settings) {
   const form = $("#community-catalog-form");
   form.enabled.checked = settings.enabled;
   form.repository_url.value = settings.repository_url || "";
-  form.github_pat.value = "";
-  form.github_pat_status.value = settings.github_pat_set ? "Saved" : "Not saved";
   form.branch.value = settings.branch || "main";
   form.export_images.checked = settings.export_images;
   form.auto_push.checked = settings.auto_push;
   form.author_name.value = settings.author_name || "";
   form.author_email.value = settings.author_email || "";
   updateCatalogConfigState();
+}
+
+function fillGithubAccessForm(settings) {
+  const form = $("#github-access-form");
+  form.github_pat.value = "";
+  form.github_pat_status.value = settings.github_pat_set ? "Saved" : "Not saved";
+}
+
+function fillLookupForm(settings) {
+  const form = $("#lookup-form");
+  searchProviders = settings.search_providers || [];
+  form.web_search_provider.value = settings.web_search_provider || "duckduckgo";
+  form.searxng_base_url.value = settings.searxng_base_url || "";
+  form.llm_base_url.value = settings.llm_base_url || "https://api.openai.com/v1";
+  form.llm_model.value = settings.llm_model || "";
+  form.llm_api_key.value = "";
+  form.llm_api_key_status.value = settings.llm_api_key_set ? "Saved" : "Not saved";
+  unavailableSearchProviders.llm_fallback = settings.llm_api_key_set && settings.llm_model ? null : "Set an LLM API key and model first";
+  renderSearchProviders();
+  updateLookupConfigState();
 }
 
 function updateCatalogConfigState() {
@@ -72,6 +141,110 @@ function updateCatalogConfigState() {
   reviewActions.querySelectorAll("button").forEach(button => {
     button.disabled = form.auto_push.checked;
   });
+}
+
+function updateLookupConfigState() {
+  const form = $("#lookup-form");
+  const webEnabled = searchProviders.some(provider => provider.id === "web_search" && provider.enabled && !unavailableSearchProviders[provider.id]);
+  $("#web-search-config").classList.toggle("is-dimmed", !webEnabled);
+  $("#web-search-config").querySelectorAll("input, select").forEach(input => {
+    input.disabled = !webEnabled;
+  });
+  $("#llm-config").classList.toggle("is-dimmed", !webEnabled);
+  $("#llm-config").querySelectorAll("input").forEach(input => {
+    input.disabled = !webEnabled;
+  });
+}
+
+function renderSearchProviders() {
+  const list = $("#search-provider-list");
+  if (!searchProviders.length) {
+    list.innerHTML = `<div class="pending-empty">No lookup providers configured.</div>`;
+    updateLookupConfigState();
+    return;
+  }
+  list.innerHTML = searchProviders.map((provider, index) => {
+    const recommendation = SEARCH_PROVIDER_RECOMMENDATIONS[provider.id];
+    const label = SEARCH_PROVIDER_LABELS[provider.id] || provider.id;
+    const unavailableReason = unavailableSearchProviders[provider.id];
+    const disabled = Boolean(unavailableReason);
+    const enabled = provider.enabled && !disabled;
+    return `<article
+      class="search-provider-card ${disabled ? "is-unavailable" : ""}"
+      data-index="${index}"
+      data-provider-id="${escapeHtml(provider.id)}"
+      title="${disabled ? escapeHtml(unavailableReason) : ""}"
+    >
+    <span class="search-provider-grip" aria-hidden="true"></span>
+    <span class="search-provider-label">
+      <strong>${escapeHtml(label)}</strong>
+      ${recommendation ? `<small>${escapeHtml(recommendation)}</small>` : ""}
+      ${disabled ? `<small>${escapeHtml(unavailableReason)}</small>` : ""}
+    </span>
+    <button
+      type="button"
+      class="search-provider-toggle ${enabled ? "is-enabled" : ""}"
+      aria-pressed="${enabled ? "true" : "false"}"
+      aria-label="${enabled ? "Disable" : "Enable"} ${escapeHtml(label)}"
+      title="${disabled ? unavailableReason : enabled ? "Enabled" : "Disabled"}"
+      ${disabled ? "disabled" : ""}
+    ></button>
+  </article>`;
+  }).join("");
+  initSearchProviderSortable();
+  updateLookupConfigState();
+}
+
+function syncSearchProvidersFromDom() {
+  searchProviders = Array.from(document.querySelectorAll(".search-provider-card")).map((card, index) => {
+    return {
+      id: card.dataset.providerId,
+      enabled: !card.classList.contains("is-unavailable")
+        && card.querySelector(".search-provider-toggle").getAttribute("aria-pressed") === "true",
+      priority: index
+    };
+  }).filter(provider => provider.id);
+}
+
+function updateSearchProviderIndexes() {
+  document.querySelectorAll(".search-provider-card").forEach((card, index) => {
+    card.dataset.index = String(index);
+  });
+}
+
+function initSearchProviderSortable() {
+  const list = $("#search-provider-list");
+  if (!list || typeof Sortable === "undefined") return;
+  if (searchProviderSortable) searchProviderSortable.destroy();
+  searchProviderSortable = Sortable.create(list, {
+    animation: 150,
+    handle: ".search-provider-grip",
+    draggable: ".search-provider-card:not(.is-unavailable)",
+    filter: ".is-unavailable",
+    ghostClass: "is-dragging",
+    chosenClass: "is-chosen",
+    dragClass: "is-drag-active",
+    onMove: event => {
+      return !event.dragged.classList.contains("is-unavailable");
+    },
+    onEnd: () => {
+      syncSearchProvidersFromDom();
+      updateSearchProviderIndexes();
+      updateLookupConfigState();
+    }
+  });
+}
+
+function setSearchProviderEnabled(index, enabled) {
+  syncSearchProvidersFromDom();
+  if (!searchProviders[index]) return;
+  searchProviders[index].enabled = enabled;
+  renderSearchProviders();
+}
+
+function renderAgentSearchAvailability(status) {
+  unavailableSearchProviders.codex_agent = status.available ? null : "Set up Codex auth/runtime first";
+  renderSearchProviders();
 }
 
 function renderStatus(status) {
@@ -133,55 +306,76 @@ function updatePendingDialogActions() {
 
 function renderCatalogSources() {
   const list = $("#catalog-source-list");
-  updateCatalogSourceButtonLabel();
   if (!catalogSources.length) {
     list.innerHTML = `<div class="pending-empty">No community catalogs saved yet.</div>`;
     return;
   }
-  list.innerHTML = catalogSources.map((source, index) => `<article class="catalog-source-card" data-index="${index}">
-    <label class="inline-option"><input type="checkbox" class="source-enabled" ${source.enabled ? "checked" : ""}> Enabled</label>
-    <label>Name<input class="source-name" value="${escapeHtml(source.name || "")}" placeholder="Optional label"></label>
-    <label>Repository URL<input class="source-url" value="${escapeHtml(source.repository_url)}"></label>
-    <div class="source-order-actions">
-      <button type="button" class="secondary source-up" ${index === 0 ? "disabled" : ""}>Move up</button>
-      <button type="button" class="secondary source-down" ${index === catalogSources.length - 1 ? "disabled" : ""}>Move down</button>
-      <button type="button" class="secondary danger source-remove">Remove</button>
-    </div>
-  </article>`).join("");
-}
-
-function updateCatalogSourceButtonLabel() {
-  const button = $("#open-catalog-source-list");
-  if (!button || button.classList.contains("busy-button")) return;
-  const count = catalogSources.length;
-  button.textContent = count ? `Community catalog list (${count} catalog${count === 1 ? "" : "s"} exist)` : "Community catalog list";
+  list.innerHTML = catalogSources.map((source, index) => {
+    const title = source.name || source.repository_url;
+    return `<article
+      class="catalog-source-card"
+      data-index="${index}"
+      data-source-id="${escapeHtml(source.id || "")}"
+      data-source-name="${escapeHtml(source.name || "")}"
+      data-source-url="${escapeHtml(source.repository_url)}"
+    >
+    <span class="catalog-source-grip search-provider-grip" aria-hidden="true"></span>
+    <span class="catalog-source-label search-provider-label">
+      <strong>${escapeHtml(title)}</strong>
+      ${source.name ? `<small>${escapeHtml(source.repository_url)}</small>` : ""}
+    </span>
+    <button
+      type="button"
+      class="source-toggle search-provider-toggle ${source.enabled ? "is-enabled" : ""}"
+      aria-pressed="${source.enabled ? "true" : "false"}"
+      aria-label="${source.enabled ? "Disable" : "Enable"} ${escapeHtml(title)}"
+      title="${source.enabled ? "Enabled" : "Disabled"}"
+    ></button>
+    <button type="button" class="source-remove" aria-label="Remove ${escapeHtml(title)}" title="Remove">X</button>
+  </article>`;
+  }).join("");
+  initCatalogSourceSortable();
 }
 
 function syncCatalogSourcesFromDom() {
   catalogSources = Array.from(document.querySelectorAll(".catalog-source-card")).map((card, index) => {
-    const existing = catalogSources[Number(card.dataset.index)] || {};
     return {
-      id: existing.id || null,
-      name: card.querySelector(".source-name").value.trim() || null,
-      repository_url: card.querySelector(".source-url").value.trim(),
-      enabled: card.querySelector(".source-enabled").checked,
+      id: card.dataset.sourceId || null,
+      name: card.dataset.sourceName || null,
+      repository_url: card.dataset.sourceUrl || "",
+      enabled: card.querySelector(".source-toggle").getAttribute("aria-pressed") === "true",
       priority: index
     };
   }).filter(source => source.repository_url);
 }
 
+function updateCatalogSourceIndexes() {
+  document.querySelectorAll(".catalog-source-card").forEach((card, index) => {
+    card.dataset.index = String(index);
+  });
+}
+
+function initCatalogSourceSortable() {
+  const list = $("#catalog-source-list");
+  if (!list || typeof Sortable === "undefined") return;
+  if (catalogSourceSortable) catalogSourceSortable.destroy();
+  catalogSourceSortable = Sortable.create(list, {
+    animation: 150,
+    handle: ".catalog-source-grip",
+    draggable: ".catalog-source-card",
+    ghostClass: "is-dragging",
+    chosenClass: "is-chosen",
+    dragClass: "is-drag-active",
+    onEnd: () => {
+      syncCatalogSourcesFromDom();
+      updateCatalogSourceIndexes();
+    }
+  });
+}
+
 async function loadCatalogSources() {
   const payload = await api("/settings/community-catalog-sources");
   catalogSources = payload.sources || [];
-  renderCatalogSources();
-  updateCatalogSourceButtonLabel();
-}
-
-function moveCatalogSource(index, direction) {
-  syncCatalogSourcesFromDom();
-  const next = index + direction;
-  if (next < 0 || next >= catalogSources.length) return;
-  [catalogSources[index], catalogSources[next]] = [catalogSources[next], catalogSources[index]];
   renderCatalogSources();
 }
 
@@ -205,7 +399,12 @@ async function runPendingAction(button, path, barcodes, busyLabel, doneMessage) 
 
 async function load() {
   const settings = await api("/settings/community-catalog");
+  const lookupSettings = await api("/settings/lookup");
+  const agentSearchStatus = await api("/settings/agent-search");
   fillForm(settings);
+  fillGithubAccessForm(settings);
+  fillLookupForm(lookupSettings);
+  renderAgentSearchAvailability(agentSearchStatus);
   await loadCatalogSources();
   renderStatus(await api("/settings/community-catalog/test", { method: "POST" }));
 }
@@ -215,7 +414,9 @@ $("#community-catalog-form").addEventListener("submit", async event => {
   const button = event.target.querySelector('button[type="submit"]');
   setButtonBusy(button, true, "Saving...");
   try {
-    fillForm(await api("/settings/community-catalog", { method: "PUT", body: JSON.stringify(formData()) }));
+    const saved = await api("/settings/community-catalog", { method: "PUT", body: JSON.stringify(formData()) });
+    fillForm(saved);
+    fillGithubAccessForm(saved);
     renderStatus(await api("/settings/community-catalog/test", { method: "POST" }));
     toast("Settings saved");
   }
@@ -225,6 +426,40 @@ $("#community-catalog-form").addEventListener("submit", async event => {
 
 $("#community-catalog-form").enabled.addEventListener("change", updateCatalogConfigState);
 $("#community-catalog-form").auto_push.addEventListener("change", updateCatalogConfigState);
+$("#search-provider-list").addEventListener("click", event => {
+  if (event.target.matches(".search-provider-toggle")) {
+    const card = event.target.closest(".search-provider-card");
+    const index = Number(card.dataset.index);
+    const enabled = event.target.getAttribute("aria-pressed") !== "true";
+    return setSearchProviderEnabled(index, enabled);
+  }
+});
+
+$("#github-access-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const button = event.target.querySelector('button[type="submit"]');
+  setButtonBusy(button, true, "Saving...");
+  try {
+    const saved = await api("/settings/community-catalog", { method: "PUT", body: JSON.stringify(githubAccessFormData()) });
+    fillForm(saved);
+    fillGithubAccessForm(saved);
+    toast("GitHub access saved");
+  }
+  catch (error) { toast(error.message); }
+  finally { setButtonBusy(button, false); }
+});
+
+$("#lookup-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const button = event.target.querySelector('button[type="submit"]');
+  setButtonBusy(button, true, "Saving...");
+  try {
+    fillLookupForm(await api("/settings/lookup", { method: "PUT", body: JSON.stringify(lookupFormData()) }));
+    toast("Lookup settings saved");
+  }
+  catch (error) { toast(error.message); }
+  finally { setButtonBusy(button, false); }
+});
 
 $("#test-community-catalog").addEventListener("click", async event => {
   setButtonBusy(event.target, true, "Testing...");
@@ -273,16 +508,6 @@ $("#discard-all-products").addEventListener("click", event => {
   runPendingAction(event.target, "/settings/community-catalog/discard-products", pendingProducts.map(product => product.barcode), "Discarding...", "All pending catalog products discarded");
 });
 
-$("#open-catalog-source-list").addEventListener("click", async event => {
-  setButtonBusy(event.target, true, "Loading...");
-  try {
-    await loadCatalogSources();
-    $("#catalog-sources-dialog").showModal();
-  }
-  catch (error) { toast(error.message); }
-  finally { setButtonBusy(event.target, false); }
-});
-
 $("#open-add-catalog-source").addEventListener("click", () => {
   syncCatalogSourcesFromDom();
   $("#new-source-name").value = "";
@@ -300,20 +525,22 @@ $("#add-catalog-source").addEventListener("click", () => {
   catalogSources.push({ id: null, name: nameInput.value.trim() || null, repository_url: repositoryUrl, enabled: true, priority: catalogSources.length });
   $("#add-catalog-source-dialog").close();
   renderCatalogSources();
-  updateCatalogSourceButtonLabel();
 });
 
 $("#catalog-source-list").addEventListener("click", event => {
   const card = event.target.closest(".catalog-source-card");
   if (!card) return;
   const index = Number(card.dataset.index);
-  if (event.target.matches(".source-up")) return moveCatalogSource(index, -1);
-  if (event.target.matches(".source-down")) return moveCatalogSource(index, 1);
+  if (event.target.matches(".source-toggle")) {
+    syncCatalogSourcesFromDom();
+    if (!catalogSources[index]) return;
+    catalogSources[index].enabled = event.target.getAttribute("aria-pressed") !== "true";
+    return renderCatalogSources();
+  }
   if (event.target.matches(".source-remove")) {
     syncCatalogSourcesFromDom();
     catalogSources.splice(index, 1);
     renderCatalogSources();
-    updateCatalogSourceButtonLabel();
   }
 });
 
@@ -324,7 +551,6 @@ $("#save-catalog-sources").addEventListener("click", async event => {
     const saved = await api("/settings/community-catalog-sources", { method: "PUT", body: JSON.stringify({ sources: catalogSources }) });
     catalogSources = saved.sources || [];
     renderCatalogSources();
-    updateCatalogSourceButtonLabel();
     toast("Community catalog list saved");
   }
   catch (error) { toast(error.message); }

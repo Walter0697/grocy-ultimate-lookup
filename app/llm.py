@@ -26,13 +26,24 @@ class LlmProvider(ABC):
 
 
 class OpenAiCompatibleLlmProvider(LlmProvider):
+    def __init__(
+        self,
+        *,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        self.base_url = base_url or settings.llm_base_url
+        self.api_key = api_key if api_key is not None else settings.llm_api_key
+        self.model = model if model is not None else settings.llm_model
+
     async def extract_product(self, barcode: str, page_url: str, page_text: str) -> LlmProductExtraction | None:
-        if not settings.llm_api_key or not settings.llm_model:
+        if not self.api_key or not self.model:
             return None
 
-        url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
+        url = f"{self.base_url.rstrip('/')}/chat/completions"
         payload = {
-            "model": settings.llm_model,
+            "model": self.model,
             "temperature": 0,
             "response_format": {"type": "json_object"},
             "messages": [
@@ -52,7 +63,7 @@ class OpenAiCompatibleLlmProvider(LlmProvider):
             ],
         }
         headers = {
-            "Authorization": f"Bearer {settings.llm_api_key}",
+            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "User-Agent": settings.lookup_user_agent,
         }
@@ -70,7 +81,20 @@ class OpenAiCompatibleLlmProvider(LlmProvider):
         return extracted
 
 
-def create_llm_provider() -> LlmProvider | None:
-    if not settings.enable_llm_fallback or not settings.llm_api_key or not settings.llm_model:
+def create_llm_provider(
+    *,
+    enabled: bool | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    model: str | None = None,
+) -> LlmProvider | None:
+    effective_enabled = settings.enable_llm_fallback if enabled is None else enabled
+    effective_api_key = settings.llm_api_key if api_key is None else api_key
+    effective_model = settings.llm_model if model is None else model
+    if not effective_enabled or not effective_api_key or not effective_model:
         return None
-    return OpenAiCompatibleLlmProvider()
+    return OpenAiCompatibleLlmProvider(
+        base_url=base_url or settings.llm_base_url,
+        api_key=effective_api_key,
+        model=effective_model,
+    )

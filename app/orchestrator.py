@@ -6,40 +6,75 @@ from app.adapters.open_facts import OpenFactsAdapter
 from app.adapters.upcitemdb import UpcItemDbAdapter
 from app.adapters.web_search import WebSearchAdapter, WebSearchLlmFallbackAdapter
 from app.agent_search import AgentSearchManager
-from app.app_settings import AppSettingsStore
+from app.app_settings import AppSettingsStore, LookupSettings, normalize_lookup_settings
 from app.cache import LookupCache
 from app.community_catalog import RuntimeCommunityCatalogExporter
 from app.config import settings
+from app.llm import create_llm_provider
 from app.local_store import LocalProductStore
 from app.models import ConfirmedProduct, ConfirmedProductRequest, LookupResponse, LookupResult
 
 logger = logging.getLogger(__name__)
 
 
-def default_adapters() -> list[LookupAdapter]:
+def default_adapters(lookup_settings: LookupSettings | None = None) -> list[LookupAdapter]:
+    lookup_settings = lookup_settings or AppSettingsStore(settings.app_settings_path).get_lookup()
+    lookup_settings = normalize_lookup_settings(lookup_settings)
     adapters: list[LookupAdapter] = []
-    adapters.append(CommunityCatalogAdapter())
-    if settings.enable_open_facts:
-        adapters.extend(
-            [
-                OpenFactsAdapter("open_food_facts", "world.openfoodfacts.org"),
-                OpenFactsAdapter("open_products_facts", "world.openproductsfacts.org"),
-                OpenFactsAdapter("open_beauty_facts", "world.openbeautyfacts.org"),
-                OpenFactsAdapter("open_pet_food_facts", "world.openpetfoodfacts.org"),
-            ]
+    for provider in lookup_settings.search_providers:
+        if not provider.enabled:
+            continue
+        adapter = adapter_for_search_provider(provider.id, lookup_settings)
+        if adapter is not None:
+            adapters.append(adapter)
+    return adapters
+
+
+def default_ai_adapters(lookup_settings: LookupSettings | None = None) -> list[LookupAdapter]:
+    lookup_settings = lookup_settings or AppSettingsStore(settings.app_settings_path).get_lookup()
+    lookup_settings = normalize_lookup_settings(lookup_settings)
+    adapters: list[LookupAdapter] = []
+    if lookup_settings.enable_web_search and lookup_settings.enable_llm_fallback:
+        llm_provider = create_llm_provider(
+            enabled=lookup_settings.enable_llm_fallback,
+            base_url=lookup_settings.llm_base_url,
+            api_key=lookup_settings.llm_api_key,
+            model=lookup_settings.llm_model,
         )
-    if settings.enable_upcitemdb:
-        adapters.append(UpcItemDbAdapter())
-    if settings.enable_web_search:
-        adapters.append(WebSearchAdapter(llm_provider=None))
+        if llm_provider is not None:
+            adapters.append(
+                WebSearchLlmFallbackAdapter(
+                    search_provider=create_web_search_provider(lookup_settings),
+                    llm_provider=llm_provider,
+                )
+            )
     return adapters
 
 
-def default_ai_adapters() -> list[LookupAdapter]:
-    adapters: list[LookupAdapter] = []
-    if settings.enable_web_search:
-        adapters.append(WebSearchLlmFallbackAdapter())
-    return adapters
+def create_web_search_provider(lookup_settings: LookupSettings):
+    from app.search.providers import DuckDuckGoSearchProvider, SearxngSearchProvider
+
+    if lookup_settings.web_search_provider == "searxng" and lookup_settings.searxng_base_url:
+        return SearxngSearchProvider(lookup_settings.searxng_base_url)
+    return DuckDuckGoSearchProvider()
+
+
+def adapter_for_search_provider(provider_id: str, lookup_settings: LookupSettings) -> LookupAdapter | None:
+    open_facts_hosts = {
+        "open_food_facts": "world.openfoodfacts.org",
+        "open_products_facts": "world.openproductsfacts.org",
+        "open_beauty_facts": "world.openbeautyfacts.org",
+        "open_pet_food_facts": "world.openpetfoodfacts.org",
+    }
+    if provider_id == "community_catalog":
+        return CommunityCatalogAdapter()
+    if provider_id in open_facts_hosts:
+        return OpenFactsAdapter(provider_id, open_facts_hosts[provider_id])
+    if provider_id == "upcitemdb":
+        return UpcItemDbAdapter()
+    if provider_id == "web_search":
+        return WebSearchAdapter(search_provider=create_web_search_provider(lookup_settings), llm_provider=None)
+    return None
 
 
 def default_community_catalog() -> RuntimeCommunityCatalogExporter:
@@ -53,12 +88,14 @@ class LookupOrchestrator:
         ai_adapters: list[LookupAdapter] | None = None,
         agent_search: AgentSearchManager | None = None,
         community_catalog=None,
+        settings_store: AppSettingsStore | None = None,
     ) -> None:
-        self.adapters = adapters or default_adapters()
+        self.adapters = adapters
+        self.settings_store = settings_store or AppSettingsStore(settings.app_settings_path)
         if ai_adapters is not None:
             self.ai_adapters = ai_adapters
         elif adapters is None:
-            self.ai_adapters = default_ai_adapters()
+            self.ai_adapters = None
         else:
             self.ai_adapters = []
         self.cache = LookupCache(settings.lookup_cache_path)
@@ -67,6 +104,10 @@ class LookupOrchestrator:
         self.community_catalog = community_catalog or default_community_catalog()
 
     async def lookup(self, barcode: str, use_cache: bool = True) -> LookupResponse:
+        lookup_settings = normalize_lookup_settings(self.settings_store.get_lookup())
+        if self.adapters is None:
+            return await self._lookup_configured_order(barcode, lookup_settings, use_cache)
+
         local_product = self.local_store.get(barcode)
         if local_product is not None:
             return LookupResponse(
@@ -87,7 +128,10 @@ class LookupOrchestrator:
                 )
 
         candidates: list[LookupResult] = []
-        for adapter in self.adapters:
+        normal_adapters = self.adapters
+        ai_adapters = self.ai_adapters if self.ai_adapters is not None else default_ai_adapters(lookup_settings)
+
+        for adapter in normal_adapters:
             result = await adapter.lookup(barcode)
             if result:
                 candidates.append(result)
@@ -101,7 +145,7 @@ class LookupOrchestrator:
         if agent_result is not None:
             candidates.append(agent_result)
 
-        for adapter in self.ai_adapters:
+        for adapter in ai_adapters:
             result = await adapter.lookup(barcode)
             if result:
                 candidates.append(result)
@@ -115,6 +159,85 @@ class LookupOrchestrator:
             )
 
         return self._complete_found_response(barcode, candidates)
+
+    async def _lookup_configured_order(
+        self,
+        barcode: str,
+        lookup_settings: LookupSettings,
+        use_cache: bool,
+    ) -> LookupResponse:
+        candidates: list[LookupResult] = []
+        codex_enabled = False
+
+        for provider in lookup_settings.search_providers:
+            if not provider.enabled:
+                continue
+
+            if provider.id == "grocy_current":
+                # Grocy data is resolved by ScannerService before lookup creation.
+                continue
+
+            if provider.id == "ultimate_lookup_cache":
+                local_product = self.local_store.get(barcode)
+                if local_product is not None:
+                    return LookupResponse(
+                        barcode=barcode,
+                        found=True,
+                        result=self.local_store.to_lookup_result(local_product),
+                        research_status=self.agent_research_status(barcode),
+                    )
+                if not use_cache:
+                    continue
+                cached = self.cache.get(barcode)
+                if cached:
+                    return LookupResponse(
+                        barcode=barcode,
+                        found=True,
+                        result=cached,
+                        research_status=self.agent_research_status(barcode),
+                    )
+                continue
+
+            if provider.id == "agent_completed":
+                agent_result = self.agent_search.store.get_result(barcode)
+                if agent_result is not None:
+                    candidates.append(agent_result)
+                    if should_defer_ai_fallback(agent_result):
+                        return self._complete_found_response(barcode, candidates)
+                continue
+
+            if provider.id == "llm_fallback":
+                for adapter in default_ai_adapters(lookup_settings):
+                    result = await adapter.lookup(barcode)
+                    if result:
+                        candidates.append(result)
+                        if should_defer_ai_fallback(result):
+                            return self._complete_found_response(barcode, candidates)
+                continue
+
+            if provider.id == "codex_agent":
+                codex_enabled = True
+                continue
+
+            adapter = adapter_for_search_provider(provider.id, lookup_settings)
+            if adapter is None:
+                continue
+            result = await adapter.lookup(barcode)
+            if result:
+                candidates.append(result)
+                if should_defer_ai_fallback(result):
+                    return self._complete_found_response(barcode, candidates)
+
+        if candidates:
+            return self._complete_found_response(barcode, candidates)
+
+        if codex_enabled:
+            self.agent_search.submit(barcode)
+        return LookupResponse(
+            barcode=barcode,
+            found=False,
+            research_status=self.agent_research_status(barcode),
+        )
 
     def _complete_found_response(self, barcode: str, candidates: list[LookupResult]) -> LookupResponse:
         response = self._found_response(barcode, candidates)

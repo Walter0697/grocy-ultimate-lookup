@@ -1,10 +1,11 @@
 import asyncio
 
 from app.cache import LookupCache
+from app.app_settings import AppSettingsStore, LookupSettings, SearchProviderSetting
 from app.community_catalog import CommunityCatalogExporter
 from app.local_store import LocalProductStore
 from app.models import ConfirmedProductRequest, LookupResult
-from app.orchestrator import LookupOrchestrator
+from app.orchestrator import LookupOrchestrator, default_adapters
 
 
 class FakeAdapter:
@@ -301,3 +302,76 @@ def test_lookup_returns_not_found_when_all_adapters_miss(tmp_path) -> None:
     assert response.result is None
     assert response.candidates == []
     assert orchestrator.agent_search.submitted == [("123", None)]
+
+
+def test_lookup_reads_runtime_lookup_settings_when_using_default_adapters(monkeypatch, tmp_path) -> None:
+    class RecordingOpenFactsAdapter:
+        def __init__(self, name: str, host: str) -> None:
+            self.name = name
+            self.host = host
+
+        async def lookup(self, barcode: str) -> LookupResult | None:
+            return make_result(self.name, 0.95)
+
+    store = AppSettingsStore(
+        str(tmp_path / "settings.sqlite3"),
+        lookup_defaults=LookupSettings(
+            enable_open_facts=False,
+            enable_upcitemdb=False,
+            enable_web_search=False,
+        ),
+    )
+    orchestrator = LookupOrchestrator(settings_store=store)
+    orchestrator.cache = LookupCache(str(tmp_path / "cache.sqlite3"))
+    orchestrator.local_store = LocalProductStore(str(tmp_path / "local.sqlite3"))
+    orchestrator.agent_search = FakeAgentSearch()
+    monkeypatch.setattr("app.orchestrator.OpenFactsAdapter", RecordingOpenFactsAdapter)
+
+    disabled = run(orchestrator.lookup("123", use_cache=False))
+    store.set_lookup(
+        LookupSettings(
+            enable_open_facts=True,
+            enable_upcitemdb=False,
+            enable_web_search=False,
+        )
+    )
+    enabled = run(orchestrator.lookup("123", use_cache=False))
+
+    assert disabled.found is False
+    assert enabled.found is True
+    assert enabled.result is not None
+    assert enabled.result.source == "open_food_facts"
+
+
+def test_default_adapters_follow_saved_search_provider_order(monkeypatch, tmp_path) -> None:
+    class RecordingOpenFactsAdapter:
+        def __init__(self, name: str, host: str) -> None:
+            self.name = name
+
+        async def lookup(self, barcode: str) -> LookupResult | None:
+            return None
+
+    class RecordingUpcItemDbAdapter:
+        name = "upcitemdb"
+
+        async def lookup(self, barcode: str) -> LookupResult | None:
+            return None
+
+    monkeypatch.setattr("app.orchestrator.OpenFactsAdapter", RecordingOpenFactsAdapter)
+    monkeypatch.setattr("app.orchestrator.UpcItemDbAdapter", RecordingUpcItemDbAdapter)
+
+    adapters = default_adapters(
+        LookupSettings(
+            search_providers=[
+                SearchProviderSetting(id="upcitemdb", enabled=True, priority=0),
+                SearchProviderSetting(id="open_food_facts", enabled=True, priority=1),
+                SearchProviderSetting(id="open_products_facts", enabled=False, priority=2),
+                SearchProviderSetting(id="web_search", enabled=False, priority=3),
+            ],
+        )
+    )
+
+    providers = [adapter.name for adapter in adapters]
+    assert providers[:2] == ["upcitemdb", "open_food_facts"]
+    assert "community_catalog" in providers
+    assert "open_products_facts" not in providers
