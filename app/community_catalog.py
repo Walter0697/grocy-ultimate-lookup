@@ -210,14 +210,20 @@ class CommunityCatalogExporter:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
             if (self.path / ".git").exists():
-                self.command_runner(
-                    self._git_command(["fetch", self.git_remote, self.git_branch]),
-                    cwd=self.path,
-                    env=self._git_env(),
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
+                try:
+                    self.command_runner(
+                        self._git_command(["fetch", self.git_remote, self.git_branch]),
+                        cwd=self.path,
+                        env=self._git_env(),
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                except subprocess.CalledProcessError as exc:
+                    if self._remote_branch_missing(exc):
+                        self._checkout_branch()
+                        return []
+                    raise
                 self.command_runner(
                     self._git_command(["reset", "--hard", f"{self.git_remote}/{self.git_branch}"]),
                     cwd=self.path,
@@ -298,6 +304,15 @@ class CommunityCatalogExporter:
             if detail:
                 return detail
         return str(exc)
+
+    def _remote_branch_missing(self, exc: subprocess.CalledProcessError) -> bool:
+        detail = self._git_error_message(exc).lower()
+        return (
+            "couldn't find remote ref" in detail
+            or "could not find remote ref" in detail
+            or "couldn't find remote branch" in detail
+            or "remote branch" in detail and "not found" in detail
+        )
 
     def pending_changes(self) -> tuple[bool, str, list[str]]:
         if not (self.path / ".git").exists():

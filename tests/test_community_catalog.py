@@ -7,9 +7,10 @@ from app.models import ConfirmedProductRequest
 
 
 class FakeGitRunner:
-    def __init__(self, *, fail_clone: bool = False) -> None:
+    def __init__(self, *, fail_clone: bool = False, fail_fetch_missing_branch: bool = False) -> None:
         self.commands = []
         self.fail_clone = fail_clone
+        self.fail_fetch_missing_branch = fail_fetch_missing_branch
 
     def __call__(self, command, **kwargs):
         self.commands.append((command, kwargs))
@@ -26,6 +27,12 @@ class FakeGitRunner:
             path = Path(destination)
             path.mkdir(parents=True, exist_ok=True)
             (path / ".git").mkdir()
+        if command[:2] == ["git", "fetch"] and self.fail_fetch_missing_branch:
+            raise subprocess.CalledProcessError(
+                128,
+                command,
+                stderr="fatal: couldn't find remote ref main",
+            )
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
 
@@ -166,6 +173,33 @@ def test_exporter_review_mode_syncs_and_leaves_product_uncommitted(tmp_path) -> 
     assert runner.commands[0][1]["env"]["GIT_CONFIG_VALUE_0"] == f"Authorization: Basic {expected_auth}"
     assert not any("commit" in command for command in commands)
     assert not any("push" in command for command in commands)
+
+
+def test_exporter_bootstraps_existing_empty_remote_checkout(tmp_path) -> None:
+    runner = FakeGitRunner(fail_fetch_missing_branch=True)
+    checkout = tmp_path / "checkout"
+    (checkout / ".git").mkdir(parents=True)
+    exporter = CommunityCatalogExporter(
+        path=checkout,
+        enabled=True,
+        repository_url="https://github.com/example/catalog.git",
+        branch="main",
+        auto_push=True,
+        command_runner=runner,
+    )
+
+    result = exporter.export_confirmed_product("627985000070", ConfirmedProductRequest(name="Manual Product"))
+
+    commands = [call[0] for call in runner.commands]
+    assert result.exported is True
+    assert result.warnings == ()
+    assert commands[0] == ["git", "fetch", "origin", "main"]
+    assert commands[1] == ["git", "checkout", "main"]
+    assert ["git", "add", "products/627/985/627985000070", "README.md"] in commands
+    assert ["git", "commit", "-m", "Add product 627985000070"] in commands
+    assert ["git", "push", "origin", "main"] in commands
+    assert (checkout / "README.md").read_text() == CATALOG_README
+    assert (checkout / "products" / "627" / "985" / "627985000070" / "product.json").exists()
 
 
 def test_disabled_exporter_does_not_write_files(tmp_path) -> None:
