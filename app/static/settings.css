@@ -283,14 +283,16 @@ dialog::backdrop {
   gap: 10px;
 }
 
-.catalog-source-card label {
+.catalog-source-card label,
+.pending-products-panel > label {
   display: grid;
   gap: 6px;
   font: 600 9px "IBM Plex Mono";
   letter-spacing: .08em;
 }
 
-.catalog-source-card input {
+.catalog-source-card input,
+.pending-products-panel > label input {
   border: 1px solid var(--line);
   padding: 10px 12px;
   min-width: 0;

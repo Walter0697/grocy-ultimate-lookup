@@ -122,12 +122,25 @@
         <button type="submit" class="secondary">Close</button>
       </div>
       <div id="catalog-source-list" class="catalog-source-list"></div>
-      <div class="field-action-row source-add-row">
-        <label>Catalog repository URL<input id="new-source-url" placeholder="https://github.com/someone/grocy-catalog.git"></label>
-        <button type="button" class="secondary" id="add-catalog-source">Add catalog</button>
-      </div>
       <div class="settings-actions pending-dialog-actions">
+        <button type="button" class="secondary" id="open-add-catalog-source">Add repository</button>
         <button type="button" id="save-catalog-sources">Save list</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="add-catalog-source-dialog">
+    <form method="dialog" class="pending-products-panel">
+      <div class="dialog-title-row">
+        <div>
+          <p class="drawer-kicker">ADD SOURCE</p>
+          <h2>Add repository</h2>
+        </div>
+        <button type="submit" class="secondary">Close</button>
+      </div>
+      <label>Catalog name<input id="new-source-name" placeholder="Optional label"></label>
+      <label>Catalog repository URL<input id="new-source-url" placeholder="https://github.com/someone/grocy-catalog.git"></label>
+      <div class="settings-actions pending-dialog-actions">
+        <button type="button" id="add-catalog-source">Add to list</button>
       </div>
     </form>
   </dialog>

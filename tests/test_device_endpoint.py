@@ -167,8 +167,11 @@ def test_settings_page_includes_community_catalog_source_list_dialog() -> None:
 
     assert 'id="open-catalog-source-list"' in settings_html
     assert 'id="catalog-sources-dialog"' in settings_html
+    assert 'id="add-catalog-source-dialog"' in settings_html
+    assert 'id="open-add-catalog-source"' in settings_html
     assert "/settings/community-catalog-sources" in settings_script
     assert "moveCatalogSource" in settings_script
+    assert "source-remove" in settings_script
 
 
 def test_delete_scan_event_removes_dashboard_review_item() -> None:

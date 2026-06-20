@@ -273,14 +273,22 @@ $("#open-catalog-source-list").addEventListener("click", async event => {
   finally { setButtonBusy(event.target, false); }
 });
 
+$("#open-add-catalog-source").addEventListener("click", () => {
+  syncCatalogSourcesFromDom();
+  $("#new-source-name").value = "";
+  $("#new-source-url").value = "";
+  $("#add-catalog-source-dialog").showModal();
+});
+
 $("#add-catalog-source").addEventListener("click", () => {
   syncCatalogSourcesFromDom();
-  const input = $("#new-source-url");
-  const repositoryUrl = input.value.trim();
+  const nameInput = $("#new-source-name");
+  const urlInput = $("#new-source-url");
+  const repositoryUrl = urlInput.value.trim();
   if (!repositoryUrl) return toast("Enter a catalog repository URL");
   if (catalogSources.some(source => source.repository_url.toLowerCase() === repositoryUrl.toLowerCase())) return toast("Catalog already exists");
-  catalogSources.push({ id: null, name: null, repository_url: repositoryUrl, enabled: true, priority: catalogSources.length });
-  input.value = "";
+  catalogSources.push({ id: null, name: nameInput.value.trim() || null, repository_url: repositoryUrl, enabled: true, priority: catalogSources.length });
+  $("#add-catalog-source-dialog").close();
   renderCatalogSources();
 });
 
