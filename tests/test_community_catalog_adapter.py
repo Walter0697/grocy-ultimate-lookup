@@ -4,6 +4,7 @@ import json
 import httpx
 
 from app.adapters.community_catalog import CommunityCatalogAdapter, parse_github_repository_url
+from app.config import settings
 from app.app_settings import (
     AppSettingsStore,
     CommunityCatalogSettings,
@@ -15,6 +16,17 @@ from app.app_settings import (
 def github_content_response(payload: dict) -> httpx.Response:
     content = base64.b64encode(json.dumps(payload).encode()).decode()
     return httpx.Response(200, json={"encoding": "base64", "content": content})
+
+
+def github_file_response(content: bytes = b"image") -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "type": "file",
+            "encoding": "base64",
+            "content": base64.b64encode(content).decode(),
+        },
+    )
 
 
 def store_with_source(tmp_path, *, github_pat: str | None) -> AppSettingsStore:
@@ -102,3 +114,67 @@ def test_community_catalog_adapter_omits_authorization_without_pat(tmp_path) -> 
     asyncio.run(run_lookup(tmp_path, github_pat=None, seen_requests=seen_requests))
 
     assert "Authorization" not in seen_requests[0].headers
+
+
+def test_community_catalog_adapter_copies_sibling_catalog_image_to_uploaded_images(tmp_path, monkeypatch) -> None:
+    import asyncio
+
+    monkeypatch.setattr(settings, "uploaded_images_base_url", "http://lookup.test/uploaded-images")
+    monkeypatch.setattr(settings, "uploaded_images_path", str(tmp_path / "uploaded-images"))
+    seen_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append(request)
+        if str(request.url).endswith("/product.json?ref=main"):
+            return github_content_response(
+                {
+                    "schema_version": 1,
+                    "barcode": "627985000070",
+                    "name": "Catalog Product",
+                    "image_url": "http://host.docker.internal:9290/uploaded-images/stale-local-image.jpg",
+                }
+            )
+        if str(request.url).endswith("/image.jpg?ref=main"):
+            return github_file_response(b"catalog-image")
+        return httpx.Response(404)
+
+    store = store_with_source(tmp_path, github_pat="secret-token")
+    source_id = store.get_community_catalog_sources().sources[0].id
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = CommunityCatalogAdapter(store, client=client)
+    try:
+        result = asyncio.run(adapter.lookup("627985000070"))
+    finally:
+        asyncio.run(client.aclose())
+
+    assert str(result.image_url) == f"http://lookup.test/uploaded-images/catalog-{source_id}-627985000070.jpg"
+    assert (tmp_path / "uploaded-images" / f"catalog-{source_id}-627985000070.jpg").read_bytes() == b"catalog-image"
+    assert len(seen_requests) == 2
+    assert seen_requests[1].headers["Authorization"] == "Bearer secret-token"
+
+
+def test_community_catalog_adapter_keeps_external_payload_image_url(tmp_path) -> None:
+    import asyncio
+
+    seen_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append(request)
+        return github_content_response(
+            {
+                "schema_version": 1,
+                "barcode": "627985000070",
+                "name": "Catalog Product",
+                "image_url": "https://cdn.example.test/product.jpg",
+            }
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = CommunityCatalogAdapter(store_with_source(tmp_path, github_pat=None), client=client)
+    try:
+        result = asyncio.run(adapter.lookup("627985000070"))
+    finally:
+        asyncio.run(client.aclose())
+
+    assert str(result.image_url) == "https://cdn.example.test/product.jpg"
+    assert len(seen_requests) == 1

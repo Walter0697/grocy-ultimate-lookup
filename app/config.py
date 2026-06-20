@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     app_settings_path: str = Field(default="/data/app-settings.sqlite3", alias="APP_SETTINGS_PATH")
     uploaded_images_path: str = Field(default="/data/uploaded-images", alias="UPLOADED_IMAGES_PATH")
     uploaded_images_base_url: str = Field(
-        default="http://host.docker.internal:9290/uploaded-images",
+        default="http://localhost:9290/uploaded-images",
         alias="UPLOADED_IMAGES_BASE_URL",
     )
     scanner_device_tokens: str = Field(default="", alias="SCANNER_DEVICE_TOKENS")
