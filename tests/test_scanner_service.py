@@ -207,6 +207,31 @@ def test_process_auto_creates_complete_trusted_lookup_result_for_scanner_path(tm
     assert len(grocy.operations) == 1
 
 
+def test_catalog_lookup_auto_create_does_not_export_back_to_own_catalog(tmp_path) -> None:
+    result = LookupResult(
+        barcode="123456",
+        name="Catalog Product",
+        image_url="https://example.test/catalog-product.jpg",
+        source="community_catalog",
+        confidence=0.95,
+    )
+    catalog = FakeCommunityCatalog()
+    grocy = FakeGrocy()
+    scanner = service(
+        tmp_path,
+        grocy,
+        FakeLookup(LookupResponse(barcode="123456", found=True, result=result)),
+        community_catalog=catalog,
+    )
+
+    event = run(scanner.process(request()))
+
+    assert event["status"] == "applied"
+    assert event["product_name"] == "Catalog Product"
+    assert len(grocy.created) == 1
+    assert catalog.exported == []
+
+
 def test_preview_does_not_auto_create_incomplete_or_uncertain_lookup_result(tmp_path) -> None:
     uncertain = LookupResult(
         barcode="123456",
