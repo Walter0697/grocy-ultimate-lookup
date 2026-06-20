@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     auto_create_min_confidence: float = Field(default=0.8, alias="AUTO_CREATE_MIN_CONFIDENCE")
     scan_events_path: str = Field(default="/data/scan-events.sqlite3", alias="SCAN_EVENTS_PATH")
     app_settings_path: str = Field(default="/data/app-settings.sqlite3", alias="APP_SETTINGS_PATH")
+    uploaded_images_path: str = Field(default="/data/uploaded-images", alias="UPLOADED_IMAGES_PATH")
+    uploaded_images_base_url: str = Field(
+        default="http://host.docker.internal:9290/uploaded-images",
+        alias="UPLOADED_IMAGES_BASE_URL",
+    )
     scanner_device_tokens: str = Field(default="", alias="SCANNER_DEVICE_TOKENS")
     scanner_device_offline_after_seconds: int = Field(default=120, alias="SCANNER_DEVICE_OFFLINE_AFTER_SECONDS")
     community_catalog_enabled: bool = Field(default=False, alias="COMMUNITY_CATALOG_ENABLED")

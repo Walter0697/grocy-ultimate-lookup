@@ -6,8 +6,8 @@ let activeFilter = "all";
 let activePreview = null;
 let dashboardSignature = "";
 
-async function api(path, init) {
-  const response = await fetch(path, { headers: { "Content-Type": "application/json" }, ...init });
+async function api(path, init, json = true) {
+  const response = await fetch(path, { headers: json ? { "Content-Type": "application/json" } : {}, ...init });
   if (!response.ok) {
     const body = await response.text();
     let message = response.statusText;
@@ -38,6 +38,34 @@ function setButtonBusy(button, busy, label) {
   button.disabled = busy;
   button.classList.toggle("busy-button", busy);
   button.textContent = busy ? label : button.dataset.label || button.textContent;
+}
+function imageContainerForForm(form) {
+  if (form.id === "preview-confirm-form") return $(".preview-photo");
+  if (form.classList.contains("review-form")) return $(".drawer-image");
+  return null;
+}
+async function uploadProductImage(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const form = input.closest("form");
+  const imageUrlInput = form.querySelector('input[name="image_url"]');
+  const overwrite = form.querySelector('input[name="overwrite_image"]')?.checked ?? true;
+  const body = new FormData();
+  body.append("file", file);
+  input.disabled = true;
+  try {
+    const uploaded = await api("/product-image-uploads", { method: "POST", body }, false);
+    input.dataset.uploadedImageUrl = uploaded.image_url;
+    input.dataset.uploadedPreviewUrl = uploaded.preview_url;
+    if (overwrite) {
+      imageUrlInput.value = uploaded.image_url;
+      const container = imageContainerForForm(form);
+      if (container) container.innerHTML = `<img src="${escapeHtml(uploaded.preview_url)}" alt="">`;
+    }
+    toast(overwrite ? "Image uploaded and selected." : "Image uploaded. Check Use uploaded image to apply it.");
+  }
+  catch (error) { toast(error.message); }
+  finally { input.disabled = false; }
 }
 function isLoading(event) { return event.status === "processing"; }
 function needsReview(event) { return ["pending", "researching", "failed"].includes(event.status); }
@@ -169,7 +197,7 @@ function reviewForm(event) {
     <p class="drawer-operation">Pending operation: <b>${event.mode.toUpperCase()} ${event.quantity}</b></p>
     <form class="review-form" data-event="${escapeHtml(event.event_id)}"><label>Product name<input name="name" value="${escapeHtml(event.product_name || "")}" required></label>
       <label>Brand<input name="brand" value="${escapeHtml(result.brand || "")}"></label><label>Package quantity<input name="quantity" value="${escapeHtml(result.quantity || "")}"></label>
-      <label>Image URL<input name="image_url" value="${escapeHtml(event.image_url || "")}"></label><label>Description<textarea name="description">${escapeHtml(description)}</textarea></label>
+      <label>Image URL<input name="image_url" value="${escapeHtml(event.image_url || "")}"></label><div class="image-upload-row"><label>Upload image<input type="file" name="image_upload" accept="image/*"></label><label class="inline-option"><input type="checkbox" name="overwrite_image" checked> Use uploaded image</label></div><label>Description<textarea name="description">${escapeHtml(description)}</textarea></label>
       <div class="form-pair"><label>Location<select name="location_id">${locations}</select></label><label>Quantity unit<select name="qu_id">${units}</select></label></div>
       <button type="submit">Create in Grocy + apply scan</button>${event.status !== "failed" ? `<button type="button" class="secondary refresh-event">Refresh lookup</button>` : ""}<button type="button" class="secondary danger delete-event">Dismiss from review</button></form>`;
 }
@@ -205,7 +233,7 @@ function previewDialog(preview) {
       <button type="submit" class="confirm-scan">Confirm Add 1</button>
       <fieldset class="product-edit-fields"><legend>Product</legend><label>Product name<input name="name" value="${escapeHtml(product.name || "")}" required></label>
         <label>Brand<input name="brand" value="${escapeHtml(product.brand || "")}"></label><label>Package quantity<input name="package_quantity" value="${escapeHtml(product.quantity || product.size || "")}"></label>
-        <label>Image URL<input name="image_url" value="${escapeHtml(product.image_url || "")}"></label><label>Description<textarea name="description">${escapeHtml(previewDescription(preview, product))}</textarea></label>
+        <label>Image URL<input name="image_url" value="${escapeHtml(product.image_url || "")}"></label><div class="image-upload-row"><label>Upload image<input type="file" name="image_upload" accept="image/*"></label><label class="inline-option"><input type="checkbox" name="overwrite_image" checked> Use uploaded image</label></div><label>Description<textarea name="description">${escapeHtml(previewDescription(preview, product))}</textarea></label>
         <div class="form-pair"><label>Default location<select name="product_location_id" required>${locationOptions}</select></label><label>Quantity unit<select name="qu_id" required>${unitOptions}</select></label></div></fieldset></form>`;
 }
 function updateConfirmLabel() {
@@ -256,6 +284,17 @@ document.addEventListener("click", async event => {
 });
 document.addEventListener("input", event => {
   if (event.target.matches("#custom-quantity")) { event.target.closest(".quantity-group").querySelectorAll(".choice").forEach(x => x.classList.toggle("selected", x.dataset.value === event.target.value)); updateConfirmLabel(); }
+});
+document.addEventListener("change", event => {
+  if (event.target.matches('input[name="image_upload"]')) return uploadProductImage(event.target);
+  if (event.target.matches('input[name="overwrite_image"]') && event.target.checked) {
+    const form = event.target.closest("form");
+    const upload = form.querySelector('input[name="image_upload"]');
+    if (!upload?.dataset.uploadedImageUrl) return;
+    form.querySelector('input[name="image_url"]').value = upload.dataset.uploadedImageUrl;
+    const container = imageContainerForForm(form);
+    if (container) container.innerHTML = `<img src="${escapeHtml(upload.dataset.uploadedPreviewUrl)}" alt="">`;
+  }
 });
 document.addEventListener("submit", async event => {
   if (event.target.matches("#preview-confirm-form")) {

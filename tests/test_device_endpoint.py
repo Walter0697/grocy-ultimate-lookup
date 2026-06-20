@@ -1,6 +1,8 @@
 import asyncio
+from io import BytesIO
 
 from fastapi import HTTPException
+from starlette.datastructures import Headers, UploadFile
 
 from app.config import settings
 from app.main import (
@@ -13,6 +15,8 @@ from app.main import (
     scanner,
     scanner_heartbeat,
     static_path,
+    upload_product_image,
+    uploaded_images_path,
     versioned_index_html,
 )
 from app.grocy import GrocyError
@@ -170,6 +174,35 @@ def test_delete_scan_event_returns_404_for_missing_event() -> None:
         assert exc.status_code == 404
     else:
         raise AssertionError("missing scan event delete did not return 404")
+
+
+def test_product_image_upload_returns_fetchable_image_url() -> None:
+    upload = UploadFile(
+        filename="product.jpg",
+        file=BytesIO(b"fake-jpeg"),
+        headers=Headers({"content-type": "image/jpeg"}),
+    )
+
+    response = run(upload_product_image(upload))
+
+    assert response["image_url"].startswith("http://lookup.test/uploaded-images/")
+    assert response["preview_url"].startswith("/uploaded-images/")
+    assert (uploaded_images_path / response["preview_url"].rsplit("/", 1)[1]).read_bytes() == b"fake-jpeg"
+
+
+def test_product_image_upload_rejects_non_images() -> None:
+    upload = UploadFile(
+        filename="product.txt",
+        file=BytesIO(b"not an image"),
+        headers=Headers({"content-type": "text/plain"}),
+    )
+
+    try:
+        run(upload_product_image(upload))
+    except HTTPException as exc:
+        assert exc.status_code == 400
+    else:
+        raise AssertionError("non-image upload was accepted")
 
 
 def test_dashboard_options_maps_grocy_errors_to_json_api_error(monkeypatch) -> None:

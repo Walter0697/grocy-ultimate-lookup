@@ -1,6 +1,7 @@
 from pathlib import Path
+from uuid import uuid4
 
-from fastapi import FastAPI, Header, HTTPException, Query, status
+from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -37,7 +38,10 @@ orchestrator = LookupOrchestrator()
 scanner = ScannerService(lookup=orchestrator)
 scanner_devices = ScannerDeviceRegistry()
 static_path = Path(__file__).parent / "static"
+uploaded_images_path = Path(settings.uploaded_images_path)
+uploaded_images_path.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_path), name="static")
+app.mount("/uploaded-images", StaticFiles(directory=uploaded_images_path), name="uploaded-images")
 
 
 @app.get("/", include_in_schema=False)
@@ -199,6 +203,32 @@ async def confirm_dashboard_scan(confirmation: DashboardScanConfirmation) -> dic
         return await scanner.confirm_dashboard_scan(confirmation)
     except GrocyError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@app.post("/product-image-uploads")
+async def upload_product_image(file: UploadFile = File(...)) -> dict[str, str]:
+    allowed_extensions = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+    }
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    suffix = allowed_extensions.get(content_type)
+    if suffix is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Upload must be a JPEG, PNG, WebP, or GIF image")
+
+    content = await file.read()
+    if len(content) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image upload must be 8 MB or smaller")
+
+    file_name = f"{uuid4().hex}{suffix}"
+    target = uploaded_images_path / file_name
+    target.write_bytes(content)
+    return {
+        "image_url": f"{settings.uploaded_images_base_url.rstrip('/')}/{file_name}",
+        "preview_url": f"/uploaded-images/{file_name}",
+    }
 
 
 @app.post("/scanner/scan", response_model=DeviceScanResponse)
