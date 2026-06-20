@@ -172,6 +172,8 @@ def test_settings_page_includes_community_catalog_source_list_dialog() -> None:
     assert "/settings/community-catalog-sources" in settings_script
     assert "moveCatalogSource" in settings_script
     assert "source-remove" in settings_script
+    assert "updateCatalogSourceButtonLabel" in settings_script
+    assert "Community catalog list (${count} catalog" in settings_script
 
 
 def test_delete_scan_event_removes_dashboard_review_item() -> None:

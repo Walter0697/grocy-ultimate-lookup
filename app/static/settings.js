@@ -133,6 +133,7 @@ function updatePendingDialogActions() {
 
 function renderCatalogSources() {
   const list = $("#catalog-source-list");
+  updateCatalogSourceButtonLabel();
   if (!catalogSources.length) {
     list.innerHTML = `<div class="pending-empty">No community catalogs saved yet.</div>`;
     return;
@@ -147,6 +148,13 @@ function renderCatalogSources() {
       <button type="button" class="secondary danger source-remove">Remove</button>
     </div>
   </article>`).join("");
+}
+
+function updateCatalogSourceButtonLabel() {
+  const button = $("#open-catalog-source-list");
+  if (!button || button.classList.contains("busy-button")) return;
+  const count = catalogSources.length;
+  button.textContent = count ? `Community catalog list (${count} catalog${count === 1 ? "" : "s"} exist)` : "Community catalog list";
 }
 
 function syncCatalogSourcesFromDom() {
@@ -166,6 +174,7 @@ async function loadCatalogSources() {
   const payload = await api("/settings/community-catalog-sources");
   catalogSources = payload.sources || [];
   renderCatalogSources();
+  updateCatalogSourceButtonLabel();
 }
 
 function moveCatalogSource(index, direction) {
@@ -197,6 +206,7 @@ async function runPendingAction(button, path, barcodes, busyLabel, doneMessage) 
 async function load() {
   const settings = await api("/settings/community-catalog");
   fillForm(settings);
+  await loadCatalogSources();
   renderStatus(await api("/settings/community-catalog/test", { method: "POST" }));
 }
 
@@ -290,6 +300,7 @@ $("#add-catalog-source").addEventListener("click", () => {
   catalogSources.push({ id: null, name: nameInput.value.trim() || null, repository_url: repositoryUrl, enabled: true, priority: catalogSources.length });
   $("#add-catalog-source-dialog").close();
   renderCatalogSources();
+  updateCatalogSourceButtonLabel();
 });
 
 $("#catalog-source-list").addEventListener("click", event => {
@@ -302,6 +313,7 @@ $("#catalog-source-list").addEventListener("click", event => {
     syncCatalogSourcesFromDom();
     catalogSources.splice(index, 1);
     renderCatalogSources();
+    updateCatalogSourceButtonLabel();
   }
 });
 
@@ -312,6 +324,7 @@ $("#save-catalog-sources").addEventListener("click", async event => {
     const saved = await api("/settings/community-catalog-sources", { method: "PUT", body: JSON.stringify({ sources: catalogSources }) });
     catalogSources = saved.sources || [];
     renderCatalogSources();
+    updateCatalogSourceButtonLabel();
     toast("Community catalog list saved");
   }
   catch (error) { toast(error.message); }
