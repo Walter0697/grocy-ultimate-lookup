@@ -21,6 +21,23 @@ def test_store_persists_scan_location(tmp_path) -> None:
     assert event["location_id"] == 7
 
 
+def test_store_deletes_scan_event(tmp_path) -> None:
+    store = ScanEventStore(str(tmp_path / "events.sqlite3"))
+    store.create(
+        ScanEventRequest(
+            event_id="event-1",
+            device_id="kitchen-pi",
+            barcode="123",
+            mode="add",
+            quantity=2,
+        )
+    )
+
+    assert store.delete("event-1") is True
+    assert store.get("event-1") is None
+    assert store.delete("event-1") is False
+
+
 def test_store_migrates_existing_database_with_location_column(tmp_path) -> None:
     path = tmp_path / "events.sqlite3"
     with sqlite3.connect(path) as db:

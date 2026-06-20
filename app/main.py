@@ -258,6 +258,13 @@ async def get_scan_event(event_id: str) -> dict:
     return event
 
 
+@app.delete("/scan-events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_scan_event(event_id: str) -> None:
+    deleted = scanner.store.delete(event_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan event not found")
+
+
 @app.post("/scan-events/{event_id}/refresh")
 async def refresh_scan_event(event_id: str) -> dict:
     try:

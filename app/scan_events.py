@@ -101,6 +101,11 @@ class ScanEventStore:
             raise RuntimeError("Scan event disappeared")
         return result
 
+    def delete(self, event_id: str) -> bool:
+        with self._connect() as db:
+            cursor = db.execute("DELETE FROM scan_events WHERE event_id = ?", (event_id,))
+        return cursor.rowcount > 0
+
     def _row(self, row: sqlite3.Row) -> dict:
         result = dict(row)
         result["lookup_payload"] = json.loads(result["lookup_payload"]) if result["lookup_payload"] else None

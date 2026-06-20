@@ -7,6 +7,7 @@ from app.main import (
     app,
     create_device_scan,
     dashboard_options,
+    delete_scan_event,
     list_scanner_devices,
     preview_scan,
     scanner,
@@ -15,7 +16,7 @@ from app.main import (
     versioned_index_html,
 )
 from app.grocy import GrocyError
-from app.models import DeviceHeartbeatRequest, DeviceScanRequest
+from app.models import DeviceHeartbeatRequest, DeviceScanRequest, ScanEventRequest
 
 
 def run(coro):
@@ -141,6 +142,34 @@ def test_dashboard_links_to_settings_page() -> None:
     assert '<a class="settings-button" href="/settings">Settings</a>' in index
     assert 'id="community-catalog-form"' in settings_html
     assert "/settings/community-catalog" in settings_script
+
+
+def test_delete_scan_event_removes_dashboard_review_item() -> None:
+    scanner.store.delete("delete-endpoint-event")
+    event, created = scanner.store.create(
+        ScanEventRequest(
+            event_id="delete-endpoint-event",
+            device_id="dashboard-manual",
+            barcode="123456",
+            mode="add",
+            quantity=1,
+        )
+    )
+    assert created is True
+    assert event["event_id"] == "delete-endpoint-event"
+
+    run(delete_scan_event("delete-endpoint-event"))
+
+    assert scanner.store.get("delete-endpoint-event") is None
+
+
+def test_delete_scan_event_returns_404_for_missing_event() -> None:
+    try:
+        run(delete_scan_event("missing-delete-event"))
+    except HTTPException as exc:
+        assert exc.status_code == 404
+    else:
+        raise AssertionError("missing scan event delete did not return 404")
 
 
 def test_dashboard_options_maps_grocy_errors_to_json_api_error(monkeypatch) -> None:

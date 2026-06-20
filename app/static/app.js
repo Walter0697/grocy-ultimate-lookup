@@ -171,7 +171,7 @@ function reviewForm(event) {
       <label>Brand<input name="brand" value="${escapeHtml(result.brand || "")}"></label><label>Package quantity<input name="quantity" value="${escapeHtml(result.quantity || "")}"></label>
       <label>Image URL<input name="image_url" value="${escapeHtml(event.image_url || "")}"></label><label>Description<textarea name="description">${escapeHtml(description)}</textarea></label>
       <div class="form-pair"><label>Location<select name="location_id">${locations}</select></label><label>Quantity unit<select name="qu_id">${units}</select></label></div>
-      <button type="submit">Create in Grocy + apply scan</button>${event.status !== "failed" ? `<button type="button" class="secondary refresh-event">Refresh lookup</button>` : ""}</form>`;
+      <button type="submit">Create in Grocy + apply scan</button>${event.status !== "failed" ? `<button type="button" class="secondary refresh-event">Refresh lookup</button>` : ""}<button type="button" class="secondary danger delete-event">Dismiss from review</button></form>`;
 }
 function openDrawer(eventId) {
   const event = events.find(x => x.event_id === eventId);
@@ -248,6 +248,10 @@ document.addEventListener("click", async event => {
   if (event.target.matches("#close-drawer") || event.target.matches("#drawer-backdrop")) return closeDrawer();
   if (event.target.matches(".refresh-event")) {
     try { await api(`/scan-events/${event.target.closest("form").dataset.event}/refresh`, { method: "POST" }); closeDrawer(); await load(); } catch (error) { toast(error.message); }
+  }
+  if (event.target.matches(".delete-event")) {
+    if (!confirm("Remove this scan from Needs review?")) return;
+    try { await api(`/scan-events/${event.target.closest("form").dataset.event}`, { method: "DELETE" }); closeDrawer(); await load(); } catch (error) { toast(error.message); }
   }
 });
 document.addEventListener("input", event => {
