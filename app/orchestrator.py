@@ -1,6 +1,7 @@
 import logging
 
 from app.adapters.base import LookupAdapter
+from app.adapters.community_catalog import CommunityCatalogAdapter
 from app.adapters.open_facts import OpenFactsAdapter
 from app.adapters.upcitemdb import UpcItemDbAdapter
 from app.adapters.web_search import WebSearchAdapter
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 def default_adapters() -> list[LookupAdapter]:
     adapters: list[LookupAdapter] = []
+    adapters.append(CommunityCatalogAdapter())
     if settings.enable_open_facts:
         adapters.extend(
             [
