@@ -111,8 +111,8 @@
 - [v] Add pending unknown-product review queue.
 - [v] Add Grocy product creation and stock writeback after confirmation.
 - [v] Preserve and apply the original pending stock operation after confirmation.
-- [ ] Add scanner device authentication.
-- [ ] Add device heartbeat and online/offline status.
+- [v] Add scanner device authentication.
+- [v] Add device heartbeat and online/offline status.
 - [v] Add device-friendly scanner endpoint with server-generated event IDs.
 - [v] Build Raspberry Pi scanner client prototype.
 - [v] Add keyboard scanner simulator for mode, quantity, and location controls.
@@ -120,3 +120,55 @@
 - [ ] Evaluate ESP32 scanner client.
 - [v] Support scanner workflows outside the Grocy UI.
 - [v] Reuse the same lookup core for Grocy plugin and external app paths.
+
+## Phase 7: Release Hygiene and Operational Visibility
+
+- [ ] Define semantic versioning policy for the lookup service.
+- [ ] Store the app version in one source of truth.
+- [ ] Add `GET /version` with version, git commit, build time, and image tag when available.
+- [ ] Show version and short commit in the dashboard UI.
+- [ ] Show version and short commit in the settings UI.
+- [ ] Include scanner client version in heartbeat payloads and device status.
+- [ ] Tag Docker images with semantic versions in CI/CD.
+- [ ] Document release and tagging flow.
+
+## Phase 8: Community Catalog Federation
+
+- [v] Export manually confirmed products to GitHub catalog repositories.
+- [v] Initialize catalog repositories with a README on first product push.
+- [v] Support auto-push and manual pending-review push flows.
+- [v] Store pending manual catalog products in SQLite for review mode.
+- [v] Include uploaded and external product images in catalog folders when enabled.
+- [v] Read community catalog source repositories as lookup providers.
+- [v] Use the saved GitHub PAT for private catalog source reads.
+- [v] Let users add, remove, enable, disable, and reorder community catalog sources.
+- [v] Serve catalog sibling images through the lookup service instead of returning internal source URLs.
+- [v] Document why community catalogs complement, rather than compete with, Open Facts databases.
+- [ ] Add catalog validation command or endpoint.
+- [ ] Add catalog source health/status checks.
+- [ ] Add conflict UI when multiple catalogs return different products for the same barcode.
+- [ ] Add optional public/community catalog index.
+- [ ] Add catalog metadata for region, store, language, and category scope.
+
+## Phase 9: Configurable Lookup Strategy
+
+- [v] Add SQLite-backed lookup settings.
+- [v] Add settings page sections for credentials, export, catalog sources, and lookup methods.
+- [v] Reorder lookup providers with animated drag-and-drop.
+- [v] Include Grocy current data, Ultimate Lookup cache, community catalogs, Open Facts, UPCItemDB, web search, LLM fallback, and Codex fallback in the provider list.
+- [v] Disable and lock unavailable LLM and Codex provider rows.
+- [v] Configure LLM base URL, API key, and model from the settings UI.
+- [v] Configure GitHub catalog credentials from the settings UI.
+- [ ] Add import/export for settings backup.
+- [ ] Add reset-to-defaults for provider order.
+- [ ] Add per-provider status and last-error visibility.
+
+## Phase 10: Open Database Contribution Bridge
+
+- [ ] Add optional catalog fields that map cleanly to Open Facts schemas, such as category, country, language, labels, ingredients, and packaging.
+- [ ] Detect catalog records that are eligible for Open Food Facts, Open Products Facts, Open Beauty Facts, or Open Pet Food Facts contribution.
+- [ ] Add an upstream contribution preview UI with missing-field warnings.
+- [ ] Map catalog `product.json` records into target open database payloads.
+- [ ] Require user approval before any upstream contribution.
+- [ ] Store upstream contribution status and target database links in catalog metadata.
+- [ ] Add guardrails to avoid blindly pushing partial or context-specific records into public databases.
