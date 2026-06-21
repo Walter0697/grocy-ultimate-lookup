@@ -28,6 +28,8 @@ Products are stored by barcode under the `products/` directory. Each product fol
 
 This catalog can be produced by connecting your own product scanning workflow to Grocy Ultimate Lookup and confirming products as you scan them.
 
+This catalog is not meant to compete with Open Food Facts, Open Products Facts, Open Beauty Facts, or other open product databases. It is a Grocy-ready bridge for products that are missing, ambiguous, regional, or better represented by a community-specific catalog. Future Grocy Ultimate Lookup versions may help review catalog records for contribution back to open databases without blindly polluting public data.
+
 See [Grocy Ultimate Lookup](https://github.com/Walter0697/grocy-ultimate-lookup) for how the catalog format works and how to run the lookup service.
 """
 

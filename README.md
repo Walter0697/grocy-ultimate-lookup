@@ -193,6 +193,23 @@ This is intended for a federated catalog flow: each user can keep their own
 GitHub repository of confirmed products, and future versions can read other
 people's repositories as reference catalogs.
 
+The community catalog is not intended to compete with Open Food Facts, Open
+Products Facts, Open Beauty Facts, or similar public databases. Those projects
+are the right place for public product data when they already have the fields
+and coverage needed for a barcode. Grocy Ultimate Lookup adds a catalog layer
+because real household scanning still has gaps: sparse non-food coverage,
+regional products, retailer-specific items, duplicate or ambiguous barcodes,
+and Grocy-specific naming/image preferences.
+
+Catalogs are therefore a scanner-ready bridge. A user can keep a personal or
+community catalog for the stores and regions they actually shop in, while still
+using Open Facts and other providers first when they have a reliable match. In
+the future, catalog records can also become a review queue for contributing
+cleaner data upstream to open product databases, with user approval and quality
+checks so public databases are not polluted.
+
+For the longer rationale, see `docs/community-catalog-positioning.md`.
+
 Open `http://localhost:9290/settings` to configure export from the web UI.
 Settings are saved in SQLite at `APP_SETTINGS_PATH` and take effect without a
 container restart. Environment variables remain defaults for first startup:
