@@ -29,16 +29,27 @@ jobs:
           python -m pip install -e .
 
       - name: Run tests
+        id: pytest
         shell: bash
         run: |
           set -o pipefail
           PYTHONPATH=. python -m pytest -vv 2>&1 | tee pytest-output.log
 
+      - name: Summarize pytest failure
+        id: pytest_failure
+        if: failure() && steps.pytest.conclusion == 'failure'
+        shell: bash
+        run: |
+          summary="$(grep -E '^(E   |ERROR|FAILED|ImportError|ModuleNotFoundError|PermissionError|AssertionError|.+Error:)' pytest-output.log | head -n 1 || true)"
+          summary="${summary:-$(tail -n 1 pytest-output.log)}"
+          summary="$(printf '%s' "$summary" | tr -c '[:alnum:] ._=-' '-' | cut -c 1-80)"
+          echo "summary=${summary:-pytest-failed}" >> "$GITHUB_OUTPUT"
+
       - name: Upload pytest output
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: pytest-output
+          name: pytest-output-${{ steps.pytest_failure.outputs.summary || 'unknown' }}
           path: pytest-output.log
 
   docker-build:
