@@ -36,7 +36,14 @@ class CommunityCatalogAdapter(LookupAdapter):
 
     async def lookup(self, barcode: str) -> LookupResult | None:
         sources = self.settings_store.get_community_catalog_sources().sources
-        enabled_sources = sorted((source for source in sources if source.enabled), key=lambda source: source.priority)
+        enabled_sources = sorted(
+            (
+                source
+                for source in sources
+                if source.enabled and source.validation_status in {None, "valid", "valid_with_warnings"}
+            ),
+            key=lambda source: source.priority,
+        )
         if not enabled_sources:
             return None
 

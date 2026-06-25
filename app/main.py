@@ -11,6 +11,7 @@ from app.app_settings import (
     CommunityCatalogDiff,
     CommunityCatalogPendingProducts,
     CommunityCatalogProductSelection,
+    CommunityCatalogSource,
     CommunityCatalogSourceList,
     CommunityCatalogSettingsResponse,
     CommunityCatalogSettingsUpdate,
@@ -21,7 +22,7 @@ from app.app_settings import (
     public_lookup_settings,
 )
 from app.config import settings
-from app.community_catalog import RuntimeCommunityCatalogExporter, exporter_from_settings
+from app.community_catalog import CommunityCatalogSourceRegistry, RuntimeCommunityCatalogExporter, exporter_from_settings
 from app.grocy import GrocyError
 from app.models import (
     ConfirmedProduct,
@@ -42,6 +43,7 @@ from app.scanner_service import ScannerService
 app = FastAPI(title="Grocy Ultimate Lookup", version="0.1.0")
 app_settings_store = AppSettingsStore(settings.app_settings_path)
 community_catalog_runtime = RuntimeCommunityCatalogExporter(app_settings_store)
+catalog_source_registry = CommunityCatalogSourceRegistry(app_settings_store)
 orchestrator = LookupOrchestrator(settings_store=app_settings_store)
 scanner = ScannerService(lookup=orchestrator)
 scanner_devices = ScannerDeviceRegistry()
@@ -148,12 +150,25 @@ async def get_agent_search_availability() -> dict[str, bool | str]:
 
 @app.get("/settings/community-catalog-sources", response_model=CommunityCatalogSourceList)
 async def get_community_catalog_sources() -> CommunityCatalogSourceList:
-    return app_settings_store.get_community_catalog_sources()
+    return catalog_source_registry.get_sources()
 
 
 @app.put("/settings/community-catalog-sources", response_model=CommunityCatalogSourceList)
 async def put_community_catalog_sources(sources: CommunityCatalogSourceList) -> CommunityCatalogSourceList:
-    return app_settings_store.set_community_catalog_sources(sources)
+    try:
+        return catalog_source_registry.validate_and_store_sources(sources)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@app.post("/settings/community-catalog-sources/{source_id}/refresh", response_model=CommunityCatalogSource)
+async def refresh_community_catalog_source(source_id: str) -> CommunityCatalogSource:
+    try:
+        return catalog_source_registry.refresh_source(source_id)
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = status.HTTP_404_NOT_FOUND if detail == "Catalog source not found" else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=status_code, detail=detail)
 
 
 @app.post("/settings/community-catalog/test", response_model=CommunityCatalogStatus)

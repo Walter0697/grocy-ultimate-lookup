@@ -1,9 +1,21 @@
 import json
+import textwrap
 import subprocess
 from base64 import b64encode
+from datetime import UTC, datetime
 
-from app.community_catalog import CATALOG_README, CommunityCatalogExporter, RuntimeCommunityCatalogExporter, catalog_product_dir
+from app.community_catalog import (
+    CATALOG_MANIFEST,
+    CATALOG_README,
+    CATALOG_TYPE,
+    CatalogValidationResult,
+    CommunityCatalogExporter,
+    CommunityCatalogSourceRegistry,
+    RuntimeCommunityCatalogExporter,
+    catalog_product_dir,
+)
 from app.community_catalog_queue import CommunityCatalogQueue
+from app.app_settings import AppSettingsStore, CommunityCatalogSettings, CommunityCatalogSource, CommunityCatalogSourceList
 from app.models import ConfirmedProductRequest
 
 
@@ -138,11 +150,12 @@ def test_exporter_clones_writes_commits_and_pushes_with_pat(tmp_path) -> None:
     expected_auth = b64encode(b"x-access-token:secret-token").decode()
     assert clone_env["GIT_CONFIG_VALUE_0"] == f"Authorization: Basic {expected_auth}"
     assert "secret-token" not in clone_env["GIT_CONFIG_VALUE_0"]
-    assert ["git", "add", "products/627/985/627985000070", "README.md"] in commands
+    assert ["git", "add", "products/627/985/627985000070", "README.md", CATALOG_MANIFEST] in commands
     assert ["git", "commit", "-m", "Add product 627985000070"] in commands
     assert ["git", "push", "origin", "catalog"] in commands
     assert (checkout / "products" / "627" / "985" / "627985000070" / "product.json").exists()
     assert (checkout / "README.md").read_text() == CATALOG_README
+    assert json.loads((checkout / CATALOG_MANIFEST).read_text())["type"] == CATALOG_TYPE
 
 
 def test_exporter_checkout_failure_reports_git_stderr(tmp_path) -> None:
@@ -182,7 +195,7 @@ def test_exporter_does_not_replace_existing_catalog_readme(tmp_path) -> None:
     exporter.export_confirmed_product("627985000070", ConfirmedProductRequest(name="Manual Product"))
 
     commands = [call[0] for call in runner.commands]
-    assert ["git", "add", "products/627/985/627985000070"] in commands
+    assert ["git", "add", "products/627/985/627985000070", CATALOG_MANIFEST] in commands
     assert not any(command == ["git", "add", "products/627/985/627985000070", "README.md"] for command in commands)
     assert (checkout / "README.md").read_text() == "Existing catalog readme\n"
 
@@ -211,6 +224,48 @@ def test_exporter_review_mode_syncs_and_leaves_product_uncommitted(tmp_path) -> 
     assert runner.commands[0][1]["env"]["GIT_CONFIG_VALUE_0"] == f"Authorization: Basic {expected_auth}"
     assert not any("commit" in command for command in commands)
     assert not any("push" in command for command in commands)
+
+
+def test_exporter_reclones_when_existing_checkout_remote_differs_from_settings(tmp_path) -> None:
+    runner = FakeGitRunner()
+    checkout = tmp_path / "checkout"
+    git_dir = checkout / ".git"
+    git_dir.mkdir(parents=True)
+    (git_dir / "config").write_text(
+        textwrap.dedent(
+            """
+            [remote "origin"]
+                url = https://github.com/example/old-catalog.git
+                fetch = +refs/heads/*:refs/remotes/origin/*
+            [branch "main"]
+                remote = origin
+                merge = refs/heads/main
+            """
+        ).strip()
+        + "\n"
+    )
+    exporter = CommunityCatalogExporter(
+        path=checkout,
+        enabled=True,
+        repository_url="https://github.com/example/new-catalog.git",
+        branch="main",
+        auto_push=False,
+        command_runner=runner,
+    )
+
+    result = exporter.export_confirmed_product("627985000070", ConfirmedProductRequest(name="Manual Product"))
+
+    commands = [call[0] for call in runner.commands]
+    assert result.exported is True
+    assert commands[0] == [
+        "git",
+        "clone",
+        "https://github.com/example/new-catalog.git",
+        str(checkout),
+    ]
+    assert commands[1] == ["git", "checkout", "main"]
+    assert ["git", "fetch", "origin", "main"] not in commands
+    assert ["git", "reset", "--hard", "origin/main"] not in commands
 
 
 def test_exporter_lists_pending_products_from_git_status(tmp_path) -> None:
@@ -372,12 +427,142 @@ def test_exporter_bootstraps_existing_empty_remote_checkout(tmp_path) -> None:
     assert commands[0] == ["git", "fetch", "origin", "main"]
     assert commands[1] == ["git", "clone", "https://github.com/example/catalog.git", str(checkout)]
     assert commands[2] == ["git", "checkout", "main"]
-    assert ["git", "add", "products/627/985/627985000070", "README.md"] in commands
+    assert ["git", "add", "products/627/985/627985000070", "README.md", CATALOG_MANIFEST] in commands
     assert ["git", "commit", "-m", "Add product 627985000070"] in commands
     assert ["git", "push", "origin", "main"] in commands
     assert (checkout / "README.md").read_text() == CATALOG_README
+    assert json.loads((checkout / CATALOG_MANIFEST).read_text())["type"] == CATALOG_TYPE
     assert (checkout / "products" / "627" / "985" / "627985000070" / "product.json").exists()
     assert not stale_product.exists()
+
+
+def test_source_registry_validates_catalog_manifest_and_counts_products(tmp_path) -> None:
+    store = AppSettingsStore(
+        str(tmp_path / "settings.sqlite3"),
+        community_catalog_defaults=CommunityCatalogSettings(
+            enabled=True,
+            repository_url="https://github.com/example/export.git",
+            github_pat="secret-token",
+            branch="main",
+            workdir=str(tmp_path / "workdir" / "export"),
+            path=str(tmp_path / "catalog"),
+            export_images=True,
+            auto_commit=False,
+            auto_push=False,
+            git_remote="origin",
+            git_branch="main",
+            author_name="Walter",
+            author_email="walter@example.test",
+        ),
+    )
+    source = CommunityCatalogSource(id="source-1", repository_url="https://github.com/example/source.git")
+    checkout = tmp_path / "workdir" / "community-catalog-sources" / "source-1"
+    (checkout / ".git").mkdir(parents=True)
+    (checkout / CATALOG_MANIFEST).write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "type": CATALOG_TYPE,
+                "owner": "Alice",
+                "description": "Regional pantry catalog",
+            }
+        )
+    )
+    (checkout / "products" / "627" / "985" / "627985000070").mkdir(parents=True)
+    (checkout / "products" / "627" / "985" / "627985000070" / "product.json").write_text(json.dumps({"name": "One"}))
+    (checkout / "products" / "799" / "253" / "799253441424").mkdir(parents=True)
+    (checkout / "products" / "799" / "253" / "799253441424" / "product.json").write_text(json.dumps({"name": "Two"}))
+
+    registry = CommunityCatalogSourceRegistry(store, command_runner=FakeGitRunner())
+
+    result = registry.validate_source(source)
+
+    assert result.status == "valid"
+    assert result.owner == "Alice"
+    assert result.description == "Regional pantry catalog"
+    assert result.product_count == 2
+
+
+def test_source_registry_rejects_missing_catalog_manifest(tmp_path) -> None:
+    store = AppSettingsStore(
+        str(tmp_path / "settings.sqlite3"),
+        community_catalog_defaults=CommunityCatalogSettings(
+            enabled=True,
+            repository_url="https://github.com/example/export.git",
+            github_pat="secret-token",
+            branch="main",
+            workdir=str(tmp_path / "workdir" / "export"),
+            path=str(tmp_path / "catalog"),
+            export_images=True,
+            auto_commit=False,
+            auto_push=False,
+            git_remote="origin",
+            git_branch="main",
+            author_name="Walter",
+            author_email="walter@example.test",
+        ),
+    )
+    source = CommunityCatalogSource(id="source-1", repository_url="https://github.com/example/source.git")
+    checkout = tmp_path / "workdir" / "community-catalog-sources" / "source-1"
+    (checkout / ".git").mkdir(parents=True)
+    (checkout / "products").mkdir(parents=True)
+
+    registry = CommunityCatalogSourceRegistry(store, command_runner=FakeGitRunner())
+
+    result = registry.validate_source(source)
+
+    assert result.status == "invalid_manifest"
+    assert result.message == "catalog.json is required"
+
+
+def test_source_registry_keeps_fresh_cached_status_without_revalidation(tmp_path) -> None:
+    store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
+    source = CommunityCatalogSource(
+        id="source-1",
+        repository_url="https://github.com/example/source.git",
+        validation_status="valid",
+        validation_message="Catalog source is ready",
+        last_checked=datetime.now(UTC).isoformat(),
+    )
+    store.set_community_catalog_sources(CommunityCatalogSourceList(sources=[source]))
+    registry = CommunityCatalogSourceRegistry(store, command_runner=FakeGitRunner())
+
+    def fail_validate(_source):
+        raise AssertionError("validate_source should not run for fresh cache")
+
+    registry.validate_source = fail_validate  # type: ignore[method-assign]
+
+    result = registry.get_sources()
+
+    assert result.sources[0].validation_status == "valid"
+
+
+def test_source_registry_refreshes_stale_cached_status(tmp_path) -> None:
+    store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
+    source = CommunityCatalogSource(
+        id="source-1",
+        repository_url="https://github.com/example/source.git",
+        validation_status="checkout_failed",
+        validation_message="old failure",
+        last_checked="2000-01-01T00:00:00+00:00",
+    )
+    store.set_community_catalog_sources(CommunityCatalogSourceList(sources=[source]))
+    registry = CommunityCatalogSourceRegistry(store, command_runner=FakeGitRunner())
+
+    registry.validate_source = lambda _source: CatalogValidationResult(  # type: ignore[method-assign]
+        status="valid",
+        message="Catalog source is ready",
+        owner="Walter",
+        product_count=2,
+        last_checked=datetime.now(UTC).isoformat(),
+        last_successful_check=datetime.now(UTC).isoformat(),
+    )
+
+    result = registry.get_sources()
+
+    assert result.sources[0].validation_status == "valid"
+    assert result.sources[0].owner == "Walter"
+    assert result.sources[0].product_count == 2
 
 
 def test_disabled_exporter_does_not_write_files(tmp_path) -> None:

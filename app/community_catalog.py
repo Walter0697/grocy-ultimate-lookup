@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import configparser
 import json
 import logging
 import os
@@ -8,17 +9,22 @@ import subprocess
 import urllib.request
 from base64 import b64encode
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 from urllib.parse import unquote, urlparse
 
+from app.app_settings import CommunityCatalogSource, CommunityCatalogSourceList
 from app.config import settings
 from app.models import ConfirmedProductRequest
 
 logger = logging.getLogger(__name__)
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
+CATALOG_SCHEMA_VERSION = 1
+CATALOG_TYPE = "grocy-community-catalog"
+CATALOG_MANIFEST = "catalog.json"
+SOURCE_STATUS_TTL = timedelta(minutes=10)
 
 CATALOG_README = """# Grocy Community Catalog
 
@@ -39,6 +45,20 @@ class CommunityCatalogExportResult:
     exported: bool
     product_json_path: Path | None = None
     warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class CatalogValidationResult:
+    status: str
+    message: str
+    owner: str | None = None
+    description: str | None = None
+    product_count: int | None = None
+    warnings: tuple[str, ...] = ()
+    last_checked: str | None = None
+    last_successful_check: str | None = None
+    last_failed_check: str | None = None
+    last_error: str | None = None
 
 
 def catalog_product_dir(barcode: str) -> Path:
@@ -138,6 +158,19 @@ class CommunityCatalogExporter:
         readme_path.write_text(CATALOG_README)
         return True
 
+    def _ensure_catalog_manifest(self) -> bool:
+        manifest_path = self.path / CATALOG_MANIFEST
+        if manifest_path.exists():
+            return False
+        payload = {
+            "schema_version": CATALOG_SCHEMA_VERSION,
+            "type": CATALOG_TYPE,
+        }
+        if self.author_name:
+            payload["owner"] = self.author_name
+        manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        return True
+
     def _product_payload(
         self,
         barcode: str,
@@ -222,6 +255,8 @@ class CommunityCatalogExporter:
         commit_paths: list[Path | str] = [relative_product_dir]
         if self.repository_url and self._ensure_readme():
             commit_paths.append("README.md")
+        if self.repository_url and self._ensure_catalog_manifest():
+            commit_paths.append(CATALOG_MANIFEST)
         commit_message = f"Add product {barcode}"
         env = self._git_env(self._git_author_env())
         warnings.extend(self._commit_paths(commit_paths, commit_message, env=env))
@@ -281,6 +316,11 @@ class CommunityCatalogExporter:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
             if (self.path / ".git").exists():
+                checkout_remote_url = self._checkout_remote_url()
+                if checkout_remote_url and checkout_remote_url != self.repository_url:
+                    shutil.rmtree(self.path)
+                    self._clone_checkout()
+                    return []
                 try:
                     self.command_runner(
                         self._git_command(["fetch", self.git_remote, self.git_branch]),
@@ -351,6 +391,17 @@ class CommunityCatalogExporter:
 
     def _git_command(self, args: list[str]) -> list[str]:
         return ["git", *args]
+
+    def _checkout_remote_url(self) -> str | None:
+        config_path = self.path / ".git" / "config"
+        if not config_path.exists():
+            return None
+        parser = configparser.ConfigParser()
+        parser.read(config_path)
+        section = f'remote "{self.git_remote}"'
+        if not parser.has_option(section, "url"):
+            return None
+        return parser.get(section, "url").strip()
 
     def _git_env(self, base: dict[str, str] | None = None) -> dict[str, str] | None:
         if not self.github_pat:
@@ -448,6 +499,8 @@ class CommunityCatalogExporter:
         commit_paths: list[Path | str] = ["products"]
         if self.repository_url and self._ensure_readme():
             commit_paths.append("README.md")
+        if self.repository_url and self._ensure_catalog_manifest():
+            commit_paths.append(CATALOG_MANIFEST)
         warnings = self._commit_paths(commit_paths, "Add confirmed products", env=self._git_env(self._git_author_env()))
         if warnings:
             return warnings
@@ -468,6 +521,8 @@ class CommunityCatalogExporter:
         commit_paths: list[Path | str] = list(paths)
         if self.repository_url and self._ensure_readme():
             commit_paths.append("README.md")
+        if self.repository_url and self._ensure_catalog_manifest():
+            commit_paths.append(CATALOG_MANIFEST)
         warnings = self._commit_paths(commit_paths, message, env=self._git_env(self._git_author_env()))
         if warnings:
             return warnings
@@ -641,6 +696,189 @@ class RuntimeCommunityCatalogExporter:
     @staticmethod
     def _public_pending_item(item: dict) -> dict:
         return {key: value for key, value in item.items() if key not in {"product", "local_image_path"}}
+
+
+class CommunityCatalogSourceRegistry:
+    def __init__(self, settings_store, *, command_runner: CommandRunner | None = None) -> None:
+        self.settings_store = settings_store
+        self.command_runner = command_runner or subprocess.run
+
+    def get_sources(self) -> CommunityCatalogSourceList:
+        saved = self.settings_store.get_community_catalog_sources()
+        refreshed = [self._refresh_source_if_stale(source) for source in saved.sources]
+        result = CommunityCatalogSourceList(sources=refreshed)
+        self.settings_store.set_community_catalog_sources(result)
+        return result
+
+    def validate_and_store_sources(self, value: CommunityCatalogSourceList) -> CommunityCatalogSourceList:
+        validated = [self._validated_source(source, reject_invalid=True) for source in value.sources]
+        return self.settings_store.set_community_catalog_sources(CommunityCatalogSourceList(sources=validated))
+
+    def refresh_source(self, source_id: str) -> CommunityCatalogSource:
+        saved = self.settings_store.get_community_catalog_sources()
+        refreshed: list[CommunityCatalogSource] = []
+        selected: CommunityCatalogSource | None = None
+        for source in saved.sources:
+            if source.id == source_id:
+                source = self._validated_source(source)
+                selected = source
+            refreshed.append(source)
+        self.settings_store.set_community_catalog_sources(CommunityCatalogSourceList(sources=refreshed))
+        if selected is None:
+            raise ValueError("Catalog source not found")
+        return selected
+
+    def _refresh_source_if_stale(self, source: CommunityCatalogSource) -> CommunityCatalogSource:
+        if self._is_stale(source):
+            return self._validated_source(source)
+        return source
+
+    def _validated_source(self, source: CommunityCatalogSource, *, reject_invalid: bool = False) -> CommunityCatalogSource:
+        result = self.validate_source(source)
+        if reject_invalid and result.status == "invalid":
+            raise ValueError(result.message)
+        return source.model_copy(
+            update={
+                "owner": result.owner,
+                "description": result.description,
+                "product_count": result.product_count,
+                "validation_status": result.status,
+                "validation_message": result.message,
+                "warnings": list(result.warnings),
+                "last_checked": result.last_checked,
+                "last_successful_check": result.last_successful_check,
+                "last_failed_check": result.last_failed_check,
+                "last_error": result.last_error,
+            }
+        )
+
+    def validate_source(self, source: CommunityCatalogSource) -> CatalogValidationResult:
+        checkout = self._checkout_path(source)
+        current = self.settings_store.get_community_catalog()
+        exporter = CommunityCatalogExporter(
+            path=checkout,
+            enabled=True,
+            repository_url=source.repository_url,
+            github_pat=current.github_pat,
+            branch="main",
+            author_name=current.author_name,
+            author_email=current.author_email,
+            command_runner=self.command_runner,
+        )
+        warnings = exporter.sync_checkout()
+        checked_at = datetime.now(UTC).isoformat()
+        if warnings:
+            message = "; ".join(warnings)
+            return CatalogValidationResult(
+                status=self._status_for_sync_error(message),
+                message=message,
+                last_checked=checked_at,
+                last_failed_check=checked_at,
+                last_error=message,
+            )
+        manifest_path = checkout / CATALOG_MANIFEST
+        if not manifest_path.exists():
+            return CatalogValidationResult(
+                status="invalid_manifest",
+                message=f"{CATALOG_MANIFEST} is required",
+                last_checked=checked_at,
+                last_failed_check=checked_at,
+                last_error=f"{CATALOG_MANIFEST} is required",
+            )
+        try:
+            manifest = json.loads(manifest_path.read_text())
+        except Exception as exc:
+            message = f"{CATALOG_MANIFEST} is not valid JSON: {exc}"
+            return CatalogValidationResult(
+                status="invalid_manifest",
+                message=message,
+                last_checked=checked_at,
+                last_failed_check=checked_at,
+                last_error=message,
+            )
+        if manifest.get("type") != CATALOG_TYPE:
+            message = f"{CATALOG_MANIFEST} type must be {CATALOG_TYPE}"
+            return CatalogValidationResult(
+                status="invalid_manifest",
+                message=message,
+                last_checked=checked_at,
+                last_failed_check=checked_at,
+                last_error=message,
+            )
+        if manifest.get("schema_version") != CATALOG_SCHEMA_VERSION:
+            message = f"{CATALOG_MANIFEST} schema_version must be {CATALOG_SCHEMA_VERSION}"
+            return CatalogValidationResult(
+                status="invalid_manifest",
+                message=message,
+                last_checked=checked_at,
+                last_failed_check=checked_at,
+                last_error=message,
+            )
+        products_dir = checkout / "products"
+        if not products_dir.is_dir():
+            message = "products directory is missing"
+            return CatalogValidationResult(
+                status="invalid_manifest",
+                message=message,
+                owner=self._text_value(manifest.get("owner")),
+                description=self._text_value(manifest.get("description")),
+                last_checked=checked_at,
+                last_failed_check=checked_at,
+                last_error=message,
+            )
+        product_count = len(list(products_dir.glob("*/*/*/product.json")))
+        warning_list: list[str] = []
+        status = "valid"
+        message = "Catalog source is ready"
+        if product_count == 0:
+            status = "valid_with_warnings"
+            message = "Catalog source is empty"
+            warning_list.append("No product.json files found under products/")
+        return CatalogValidationResult(
+            status=status,
+            message=message,
+            owner=self._text_value(manifest.get("owner")),
+            description=self._text_value(manifest.get("description")),
+            product_count=product_count,
+            warnings=tuple(warning_list),
+            last_checked=checked_at,
+            last_successful_check=checked_at,
+        )
+
+    def _checkout_root(self) -> Path:
+        current = self.settings_store.get_community_catalog()
+        return Path(current.workdir).parent / "community-catalog-sources"
+
+    def _checkout_path(self, source: CommunityCatalogSource) -> Path:
+        source_id = source.id or "".join(char if char.isalnum() else "-" for char in source.repository_url.lower()).strip("-")
+        return self._checkout_root() / (source_id or "source")
+
+    @staticmethod
+    def _text_value(value) -> str | None:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return None
+
+    @staticmethod
+    def _status_for_sync_error(message: str) -> str:
+        detail = message.lower()
+        if "authentication failed" in detail or "not found" in detail and "repository" in detail:
+            return "invalid_auth"
+        if "could not resolve host" in detail or "timed out" in detail or "connection" in detail:
+            return "unreachable"
+        return "checkout_failed"
+
+    @staticmethod
+    def _is_stale(source: CommunityCatalogSource) -> bool:
+        if not source.last_checked:
+            return True
+        try:
+            checked_at = datetime.fromisoformat(source.last_checked)
+        except ValueError:
+            return True
+        if checked_at.tzinfo is None:
+            checked_at = checked_at.replace(tzinfo=UTC)
+        return datetime.now(UTC) - checked_at >= SOURCE_STATUS_TTL
 
 
 def exporter_from_settings(current, *, command_runner: CommandRunner | None = None) -> CommunityCatalogExporter:

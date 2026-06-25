@@ -8,6 +8,7 @@ from app.app_settings import (
     CommunityCatalogSourceList,
     LookupSettingsUpdate,
 )
+from fastapi import HTTPException
 from app.main import (
     get_community_catalog_sources,
     get_community_catalog_settings,
@@ -16,6 +17,7 @@ from app.main import (
     put_community_catalog_sources,
     put_community_catalog_settings,
     put_lookup_settings,
+    refresh_community_catalog_source,
     settings_page_html,
     test_community_catalog_settings as check_community_catalog_settings,
 )
@@ -80,6 +82,31 @@ def test_community_catalog_sources_endpoint_reads_and_saves(monkeypatch, tmp_pat
     store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
     monkeypatch.setattr("app.main.app_settings_store", store)
 
+    class Registry:
+        def get_sources(self):
+            return store.get_community_catalog_sources()
+
+        def validate_and_store_sources(self, sources):
+            enriched = CommunityCatalogSourceList(
+                sources=[
+                    source.model_copy(
+                        update={
+                            "owner": "Walter",
+                            "description": "Test catalog",
+                            "product_count": 3,
+                            "validation_status": "valid",
+                            "validation_message": "Catalog source is ready",
+                            "warnings": [],
+                            "last_checked": "2026-06-25T05:00:00+00:00",
+                        }
+                    )
+                    for source in sources.sources
+                ]
+            )
+            return store.set_community_catalog_sources(enriched)
+
+    monkeypatch.setattr("app.main.catalog_source_registry", Registry())
+
     saved = run(
         put_community_catalog_sources(
             CommunityCatalogSourceList(
@@ -97,6 +124,68 @@ def test_community_catalog_sources_endpoint_reads_and_saves(monkeypatch, tmp_pat
     assert len(saved.sources) == 1
     assert saved.sources[0].id
     assert loaded.sources[0].repository_url == "https://github.com/example/catalog.git"
+    assert loaded.sources[0].owner == "Walter"
+    assert loaded.sources[0].product_count == 3
+    assert loaded.sources[0].validation_status == "valid"
+
+
+def test_community_catalog_sources_endpoint_rejects_invalid_source(monkeypatch, tmp_path) -> None:
+    store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
+    monkeypatch.setattr("app.main.app_settings_store", store)
+
+    class Registry:
+        def get_sources(self):
+            return store.get_community_catalog_sources()
+
+        def validate_and_store_sources(self, sources):
+            raise ValueError("catalog.json is required")
+
+    monkeypatch.setattr("app.main.catalog_source_registry", Registry())
+
+    try:
+        run(
+            put_community_catalog_sources(
+                CommunityCatalogSourceList(
+                    sources=[CommunityCatalogSource(repository_url="https://github.com/example/catalog.git")]
+                )
+            )
+        )
+        raise AssertionError("expected HTTPException")
+    except HTTPException as exc:
+        assert exc.status_code == 400
+        assert exc.detail == "catalog.json is required"
+
+
+def test_community_catalog_source_refresh_endpoint(monkeypatch, tmp_path) -> None:
+    store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
+    monkeypatch.setattr("app.main.app_settings_store", store)
+
+    class Registry:
+        def get_sources(self):
+            return store.get_community_catalog_sources()
+
+        def validate_and_store_sources(self, sources):
+            return store.set_community_catalog_sources(sources)
+
+        def refresh_source(self, source_id):
+            return CommunityCatalogSource(
+                id=source_id,
+                repository_url="https://github.com/example/catalog.git",
+                validation_status="valid_with_warnings",
+                validation_message="Catalog source is empty",
+                product_count=0,
+                warnings=["No product.json files found under products/"],
+                last_checked="2026-06-25T05:10:00+00:00",
+                last_successful_check="2026-06-25T05:10:00+00:00",
+            )
+
+    monkeypatch.setattr("app.main.catalog_source_registry", Registry())
+
+    refreshed = run(refresh_community_catalog_source("source-1"))
+
+    assert refreshed.id == "source-1"
+    assert refreshed.validation_status == "valid_with_warnings"
+    assert refreshed.product_count == 0
 
 
 def test_lookup_settings_endpoint_reads_and_saves_without_exposing_api_key(monkeypatch, tmp_path) -> None:

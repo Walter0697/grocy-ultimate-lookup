@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 from uuid import uuid4
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.config import settings
 
@@ -92,6 +92,16 @@ class CommunityCatalogSource(BaseModel):
     repository_url: str
     enabled: bool = True
     priority: int = 0
+    owner: str | None = None
+    description: str | None = None
+    product_count: int | None = None
+    validation_status: str | None = None
+    validation_message: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    last_checked: str | None = None
+    last_successful_check: str | None = None
+    last_failed_check: str | None = None
+    last_error: str | None = None
 
 
 class CommunityCatalogSourceList(BaseModel):
@@ -421,6 +431,16 @@ class AppSettingsStore:
                     repository_url=repository_url,
                     enabled=source.enabled,
                     priority=index,
+                    owner=source.owner,
+                    description=source.description,
+                    product_count=source.product_count,
+                    validation_status=source.validation_status,
+                    validation_message=source.validation_message,
+                    warnings=list(source.warnings),
+                    last_checked=source.last_checked,
+                    last_successful_check=source.last_successful_check,
+                    last_failed_check=source.last_failed_check,
+                    last_error=source.last_error,
                 )
             )
         saved = CommunityCatalogSourceList(sources=normalized)

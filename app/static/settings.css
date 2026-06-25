@@ -354,13 +354,23 @@ dialog::backdrop {
 }
 
 .catalog-source-card {
-  grid-template-columns: 24px minmax(0, 1fr) 36px 36px;
+  grid-template-columns: 24px minmax(0, 1fr) auto 36px 36px;
 }
 
 .catalog-source-card.is-chosen,
 .search-provider-card.is-chosen {
   border-color: var(--ink);
   box-shadow: 0 8px 20px rgba(38, 31, 23, .12);
+}
+
+.catalog-source-card.is-warning {
+  border-color: var(--yellow);
+  background: #fff6db;
+}
+
+.catalog-source-card.is-invalid {
+  border-color: var(--red);
+  background: #f8dfdb;
 }
 
 .catalog-source-card.is-dragging,
@@ -406,6 +416,14 @@ dialog::backdrop {
   color: var(--muted);
   font: 600 9px "IBM Plex Mono";
   text-transform: uppercase;
+}
+
+.catalog-source-status {
+  color: var(--ink) !important;
+}
+
+.catalog-source-warning {
+  color: var(--red) !important;
 }
 
 .search-provider-grip {

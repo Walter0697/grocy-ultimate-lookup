@@ -178,3 +178,66 @@ def test_community_catalog_adapter_keeps_external_payload_image_url(tmp_path) ->
 
     assert str(result.image_url) == "https://cdn.example.test/product.jpg"
     assert len(seen_requests) == 1
+
+
+def test_community_catalog_adapter_skips_invalid_sources(tmp_path) -> None:
+    import asyncio
+
+    store = AppSettingsStore(
+        str(tmp_path / "settings.sqlite3"),
+        community_catalog_defaults=CommunityCatalogSettings(
+            enabled=True,
+            repository_url="https://github.com/example/my-catalog.git",
+            github_pat=None,
+            branch="main",
+            workdir=str(tmp_path / "workdir"),
+            path=str(tmp_path / "catalog"),
+            export_images=True,
+            auto_commit=False,
+            auto_push=False,
+            git_remote="origin",
+            git_branch="main",
+            author_name=None,
+            author_email=None,
+        ),
+    )
+    store.set_community_catalog_sources(
+        CommunityCatalogSourceList(
+            sources=[
+                CommunityCatalogSource(
+                    name="Invalid catalog",
+                    repository_url="https://github.com/example/invalid-catalog.git",
+                    enabled=True,
+                    validation_status="invalid",
+                ),
+                CommunityCatalogSource(
+                    name="Valid catalog",
+                    repository_url="https://github.com/example/valid-catalog.git",
+                    enabled=True,
+                    validation_status="valid",
+                ),
+            ]
+        )
+    )
+    seen_requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append(str(request.url))
+        return github_content_response(
+            {
+                "schema_version": 1,
+                "barcode": "627985000070",
+                "name": "Catalog Product",
+            }
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = CommunityCatalogAdapter(store, client=client)
+    try:
+        result = asyncio.run(adapter.lookup("627985000070"))
+    finally:
+        asyncio.run(client.aclose())
+
+    assert result is not None
+    assert all("/repos/example/valid-catalog/" in request for request in seen_requests)
+    assert all("/repos/example/invalid-catalog/" not in request for request in seen_requests)

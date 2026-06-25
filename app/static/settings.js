@@ -312,8 +312,14 @@ function renderCatalogSources() {
   }
   list.innerHTML = catalogSources.map((source, index) => {
     const title = source.name || source.repository_url;
+    const summary = [source.owner, source.product_count != null ? `${source.product_count} products` : null].filter(Boolean).join(" · ");
+    const warnings = (source.warnings || []).map(warning => `<small class="catalog-source-warning">${escapeHtml(warning)}</small>`).join("");
+    const statusClass = source.validation_status && source.validation_status !== "valid" && source.validation_status !== "valid_with_warnings"
+      ? "is-invalid"
+      : source.validation_status === "valid_with_warnings" ? "is-warning" : "";
+    const checks = [source.last_successful_check ? `Last good: ${source.last_successful_check}` : null, source.last_failed_check ? `Last failed: ${source.last_failed_check}` : null].filter(Boolean).join(" · ");
     return `<article
-      class="catalog-source-card"
+      class="catalog-source-card ${statusClass}"
       data-index="${index}"
       data-source-id="${escapeHtml(source.id || "")}"
       data-source-name="${escapeHtml(source.name || "")}"
@@ -323,7 +329,15 @@ function renderCatalogSources() {
     <span class="catalog-source-label search-provider-label">
       <strong>${escapeHtml(title)}</strong>
       ${source.name ? `<small>${escapeHtml(source.repository_url)}</small>` : ""}
+      ${source.description ? `<small>${escapeHtml(source.description)}</small>` : ""}
+      ${summary ? `<small>${escapeHtml(summary)}</small>` : ""}
+      ${source.validation_message ? `<small class="catalog-source-status">${escapeHtml(source.validation_message)}</small>` : ""}
+      ${source.last_checked ? `<small>Last checked: ${escapeHtml(source.last_checked)}</small>` : ""}
+      ${checks ? `<small>${escapeHtml(checks)}</small>` : ""}
+      ${source.last_error ? `<small class="catalog-source-warning">${escapeHtml(source.last_error)}</small>` : ""}
+      ${warnings}
     </span>
+    <button type="button" class="secondary source-refresh" title="Recheck source">↻</button>
     <button
       type="button"
       class="source-toggle search-provider-toggle ${source.enabled ? "is-enabled" : ""}"
@@ -377,6 +391,21 @@ async function loadCatalogSources() {
   const payload = await api("/settings/community-catalog-sources");
   catalogSources = payload.sources || [];
   renderCatalogSources();
+}
+
+async function refreshCatalogSource(button, index) {
+  syncCatalogSourcesFromDom();
+  const source = catalogSources[index];
+  if (!source?.id) return toast("Save the source list before rechecking.");
+  setButtonBusy(button, true, "Checking...");
+  try {
+    const refreshed = await api(`/settings/community-catalog-sources/${encodeURIComponent(source.id)}/refresh`, { method: "POST" });
+    catalogSources[index] = refreshed;
+    renderCatalogSources();
+    toast("Catalog source refreshed");
+  }
+  catch (error) { toast(error.message); }
+  finally { setButtonBusy(button, false); }
 }
 
 async function refreshPendingProducts() {
@@ -531,6 +560,7 @@ $("#catalog-source-list").addEventListener("click", event => {
   const card = event.target.closest(".catalog-source-card");
   if (!card) return;
   const index = Number(card.dataset.index);
+  if (event.target.matches(".source-refresh")) return refreshCatalogSource(event.target, index);
   if (event.target.matches(".source-toggle")) {
     syncCatalogSourcesFromDom();
     if (!catalogSources[index]) return;
