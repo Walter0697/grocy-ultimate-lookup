@@ -12,6 +12,7 @@ from app.main import (
     delete_scan_event,
     list_scanner_devices,
     preview_scan,
+    seed_grocy_units,
     scanner,
     scanner_heartbeat,
     static_path,
@@ -215,6 +216,30 @@ def test_settings_page_uses_sortable_search_provider_rows() -> None:
     assert 'filter: ".is-unavailable"' in settings_script
     assert 'draggable="true"' not in settings_script
     assert 'addEventListener("dragstart"' not in settings_script
+
+
+def test_seed_grocy_units_returns_added_existing_and_failed(monkeypatch) -> None:
+    async def fake_get_objects(entity):
+        assert entity == "quantity_units"
+        return [{"name": "piece"}]
+
+    created = []
+
+    async def fake_create_quantity_unit(name):
+        created.append(name)
+        if name == "bag":
+            raise RuntimeError("boom")
+        return {"created_object_id": 1}
+
+    monkeypatch.setattr(scanner.grocy, "get_objects", fake_get_objects)
+    monkeypatch.setattr(scanner.grocy, "create_quantity_unit", fake_create_quantity_unit)
+    monkeypatch.setattr("app.main.COMMON_GROCY_UNITS", ["piece", "box", "bag"])
+
+    result = run(seed_grocy_units())
+
+    assert result["added"] == ["box"]
+    assert result["already_exists"] == ["piece"]
+    assert result["failed"] == [{"name": "bag", "error": "boom"}]
 
 
 def test_delete_scan_event_removes_dashboard_review_item() -> None:

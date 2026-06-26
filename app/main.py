@@ -27,6 +27,7 @@ from app.app_settings import (
 from app.config import settings
 from app.community_catalog import CommunityCatalogSourceRegistry, RuntimeCommunityCatalogExporter, exporter_from_settings
 from app.grocy import GrocyError
+from app.grocy_units import COMMON_GROCY_UNITS, seed_units
 from app.models import (
     ConfirmedProduct,
     ConfirmedProductRequest,
@@ -193,6 +194,14 @@ async def get_agent_search_availability() -> dict[str, bool | str]:
         "enabled": settings.enable_agent_search,
         "status": "Codex based search is available" if available else "Codex based search is unavailable",
     }
+
+
+@app.post("/settings/grocy-units/seed")
+async def seed_grocy_units() -> dict:
+    try:
+        return await seed_units(scanner.grocy, COMMON_GROCY_UNITS)
+    except GrocyError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
 @app.get("/settings/community-catalog-sources", response_model=CommunityCatalogSourceList)
