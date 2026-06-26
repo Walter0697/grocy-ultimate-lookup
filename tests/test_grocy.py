@@ -1,6 +1,7 @@
 import asyncio
 
 from app.grocy import GrocyClient
+from app.grocy_units import COMMON_GROCY_UNITS, missing_unit_names
 from app.models import ScanEventRequest
 
 
@@ -48,3 +49,12 @@ def test_picture_file_name_is_unique_per_upload() -> None:
     assert second.startswith("066200032500-")
     assert second.endswith(".jpg")
     assert first != second
+
+
+def test_missing_unit_names_uses_case_insensitive_trimmed_match() -> None:
+    existing = [{"name": " Box "}, {"name": "piece"}]
+
+    missing = missing_unit_names(existing, ["box", "bag", "piece"])
+
+    assert COMMON_GROCY_UNITS
+    assert missing == ["bag"]
