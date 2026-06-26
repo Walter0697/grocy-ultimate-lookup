@@ -186,6 +186,12 @@ the product name, description, image, location, and quantity unit. Confirmation
 creates the product and barcode in Grocy, saves the confirmed lookup locally,
 and applies the original pending stock operation.
 
+When confirming a new product, the dashboard can also set Grocy's purchase to
+stock conversion. This is intended for cases like scanning one bag that should
+add multiple stock units, for example one scanned package adding 12 boxes. The
+conversion is stored in Grocy and existing Grocy products keep using whatever
+Grocy already has configured. Later conversion edits belong in Grocy.
+
 ## Community Catalog Export
 
 Manual product confirmations can also be exported as portable JSON records.
@@ -213,6 +219,10 @@ For the longer rationale, see `docs/community-catalog-positioning.md`.
 Open `http://localhost:9290/settings` to configure export from the web UI.
 Settings are saved in SQLite at `APP_SETTINGS_PATH` and take effect without a
 container restart. Environment variables remain defaults for first startup:
+
+Grocy units are authoritative. The Settings page can seed a shared built-in
+unit list into Grocy, and later scan confirmation reuses those seeded Grocy
+units instead of maintaining a separate app-specific unit catalog.
 
 ```text
 COMMUNITY_CATALOG_ENABLED=true
