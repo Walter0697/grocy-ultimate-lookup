@@ -36,6 +36,9 @@ class GrocyClient:
     async def get_objects(self, entity: str) -> list[dict]:
         return await self._request("GET", f"/objects/{entity}")
 
+    async def create_quantity_unit(self, name: str) -> dict:
+        return await self._request("POST", "/objects/quantity_units", json={"name": name})
+
     async def apply_stock_operation(self, product_id: int, event: ScanEventRequest) -> dict:
         if event.mode == "add":
             payload = {"amount": event.quantity, "transaction_type": "purchase", "note": event.event_id}

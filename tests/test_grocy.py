@@ -58,3 +58,14 @@ def test_missing_unit_names_uses_case_insensitive_trimmed_match() -> None:
 
     assert COMMON_GROCY_UNITS
     assert missing == ["bag"]
+
+
+def test_create_quantity_unit_posts_name() -> None:
+    client = RecordingGrocyClient()
+
+    run(client.create_quantity_unit("bag"))
+
+    method, path, kwargs = client.requests[0]
+    assert method == "POST"
+    assert path == "/objects/quantity_units"
+    assert kwargs["json"] == {"name": "bag"}
