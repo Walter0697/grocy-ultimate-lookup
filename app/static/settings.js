@@ -300,6 +300,10 @@ function renderDiff(diff) {
   node.innerHTML = `Pending changes: <b>${diff.pending_changes ? "yes" : "no"}</b><ul>${files}</ul>`;
 }
 
+function renderGrocyUnitsResult(result) {
+  $("#grocy-units-result").innerHTML = `Added: <b>${result.added.length}</b><br>Already existed: <b>${result.already_exists.length}</b><br>Failed: <b>${result.failed.length}</b>`;
+}
+
 function selectedPendingBarcodes() {
   return Array.from(document.querySelectorAll('.pending-product-card input[type="checkbox"]:checked')).map(input => input.value);
 }
@@ -555,6 +559,21 @@ $("#lookup-form").addEventListener("submit", async event => {
   }
   catch (error) { toast(error.message); }
   finally { setButtonBusy(button, false); }
+});
+
+$("#seed-grocy-units").addEventListener("click", async event => {
+  setButtonBusy(event.target, true, "Seeding...");
+  try {
+    const result = await api("/settings/grocy-units/seed", { method: "POST" });
+    renderGrocyUnitsResult(result);
+    toast("Grocy units seeded");
+  }
+  catch (error) {
+    toast(error.message);
+  }
+  finally {
+    setButtonBusy(event.target, false);
+  }
 });
 
 $("#test-community-catalog").addEventListener("click", async event => {

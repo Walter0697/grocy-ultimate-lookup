@@ -146,6 +146,17 @@ def test_dashboard_static_includes_scanner_device_status_panel() -> None:
     assert "scanner_devices" in script
 
 
+def test_dashboard_static_includes_inline_conversion_fields_for_new_products() -> None:
+    script = (static_path / "app.js").read_text()
+
+    assert "Stock unit" in script
+    assert "Per scan" in script
+    assert "Scanned package" in script
+    assert 'name="qu_id_stock"' in script
+    assert 'name="qu_id_purchase"' in script
+    assert 'name="qu_factor_purchase_to_stock"' in script
+
+
 def test_dashboard_links_to_settings_page() -> None:
     index = (static_path / "index.html").read_text()
     settings_html = (static_path / "settings.html").read_text()
@@ -216,6 +227,16 @@ def test_settings_page_uses_sortable_search_provider_rows() -> None:
     assert 'filter: ".is-unavailable"' in settings_script
     assert 'draggable="true"' not in settings_script
     assert 'addEventListener("dragstart"' not in settings_script
+
+
+def test_settings_page_includes_grocy_units_seed_section() -> None:
+    settings_html = (static_path / "settings.html").read_text()
+    settings_script = (static_path / "settings.js").read_text()
+
+    assert "Grocy Units" in settings_html
+    assert 'id="seed-grocy-units"' in settings_html
+    assert 'id="grocy-units-result"' in settings_html
+    assert "/settings/grocy-units/seed" in settings_script
 
 
 def test_seed_grocy_units_returns_added_existing_and_failed(monkeypatch) -> None:

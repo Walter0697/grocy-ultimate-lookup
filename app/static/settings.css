@@ -77,6 +77,12 @@
   gap: 14px;
 }
 
+.settings-note {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .settings-config {
   transition: opacity .16s ease, filter .16s ease;
 }
@@ -224,6 +230,19 @@
 }
 
 .settings-status b {
+  color: var(--ink);
+}
+
+.settings-status-card {
+  border: 1px dashed var(--line);
+  background: var(--paper);
+  padding: 14px;
+  font: 600 10px "IBM Plex Mono";
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.settings-status-card b {
   color: var(--ink);
 }
 
