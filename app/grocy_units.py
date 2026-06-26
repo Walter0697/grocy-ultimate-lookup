@@ -28,7 +28,8 @@ def missing_unit_names(existing_units: list[dict], seed_units: list[str]) -> lis
 
 
 async def seed_units(grocy_client, seed_units: list[str] | None = None) -> dict:
-    seed_units = seed_units or COMMON_GROCY_UNITS
+    if seed_units is None:
+        seed_units = COMMON_GROCY_UNITS
     existing_units = await grocy_client.get_objects("quantity_units")
     missing = missing_unit_names(existing_units, seed_units)
     existing_names = {

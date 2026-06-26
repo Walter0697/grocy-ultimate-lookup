@@ -233,7 +233,7 @@ def test_seed_grocy_units_returns_added_existing_and_failed(monkeypatch) -> None
 
     monkeypatch.setattr(scanner.grocy, "get_objects", fake_get_objects)
     monkeypatch.setattr(scanner.grocy, "create_quantity_unit", fake_create_quantity_unit)
-    monkeypatch.setattr("app.main.COMMON_GROCY_UNITS", ["piece", "box", "bag"])
+    monkeypatch.setattr("app.grocy_units.COMMON_GROCY_UNITS", ["piece", "box", "bag"])
 
     result = run(seed_grocy_units())
 
