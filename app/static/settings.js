@@ -6,6 +6,8 @@ let searchProviders = [];
 let catalogSourceSortable = null;
 let searchProviderSortable = null;
 let unavailableSearchProviders = {};
+let metadataLoaded = false;
+let metadataAvailable = false;
 
 const SEARCH_PROVIDER_LABELS = {
   grocy_current: "Grocy current data",
@@ -101,6 +103,22 @@ function lookupFormData() {
   };
 }
 
+function parseCommaList(value) {
+  return value.split(",").map(item => item.trim()).filter(Boolean);
+}
+
+function metadataFormData() {
+  const form = $("#catalog-metadata-form");
+  return {
+    owner: form.catalog_owner.value.trim() || null,
+    description: form.catalog_description.value.trim() || null,
+    region: form.catalog_region.value.trim() || null,
+    stores: parseCommaList(form.catalog_stores.value),
+    languages: parseCommaList(form.catalog_languages.value),
+    categories: parseCommaList(form.catalog_categories.value)
+  };
+}
+
 function fillForm(settings) {
   const form = $("#community-catalog-form");
   form.enabled.checked = settings.enabled;
@@ -111,6 +129,25 @@ function fillForm(settings) {
   form.author_name.value = settings.author_name || "";
   form.author_email.value = settings.author_email || "";
   updateCatalogConfigState();
+}
+
+function fillMetadataForm(settings) {
+  const form = $("#catalog-metadata-form");
+  form.catalog_owner.value = settings.owner || "";
+  form.catalog_description.value = settings.description || "";
+  form.catalog_region.value = settings.region || "";
+  form.catalog_stores.value = (settings.stores || []).join(", ");
+  form.catalog_languages.value = (settings.languages || []).join(", ");
+  form.catalog_categories.value = (settings.categories || []).join(", ");
+}
+
+function updateMetadataFormState() {
+  const form = $("#catalog-metadata-form");
+  const enabled = metadataAvailable && metadataLoaded;
+  form.querySelectorAll("input, textarea, button").forEach(node => {
+    node.disabled = !enabled;
+  });
+  form.classList.toggle("is-dimmed", !enabled);
 }
 
 function fillGithubAccessForm(settings) {
@@ -431,6 +468,16 @@ async function load() {
   const lookupSettings = await api("/settings/lookup");
   const agentSearchStatus = await api("/settings/agent-search");
   fillForm(settings);
+  metadataAvailable = Boolean(settings.repository_url);
+  metadataLoaded = false;
+  fillMetadataForm({ owner: null, description: null, region: null, stores: [], languages: [], categories: [] });
+  updateMetadataFormState();
+  if (metadataAvailable) {
+    const metadata = await api("/settings/community-catalog/metadata");
+    fillMetadataForm(metadata);
+    metadataLoaded = true;
+    updateMetadataFormState();
+  }
   fillGithubAccessForm(settings);
   fillLookupForm(lookupSettings);
   renderAgentSearchAvailability(agentSearchStatus);
@@ -446,6 +493,16 @@ $("#community-catalog-form").addEventListener("submit", async event => {
     const saved = await api("/settings/community-catalog", { method: "PUT", body: JSON.stringify(formData()) });
     fillForm(saved);
     fillGithubAccessForm(saved);
+    metadataAvailable = Boolean(saved.repository_url);
+    metadataLoaded = false;
+    updateMetadataFormState();
+    if (metadataAvailable) {
+      fillMetadataForm(await api("/settings/community-catalog/metadata"));
+      metadataLoaded = true;
+    } else {
+      fillMetadataForm({ owner: null, description: null, region: null, stores: [], languages: [], categories: [] });
+    }
+    updateMetadataFormState();
     renderStatus(await api("/settings/community-catalog/test", { method: "POST" }));
     toast("Settings saved");
   }
@@ -472,6 +529,16 @@ $("#github-access-form").addEventListener("submit", async event => {
     const saved = await api("/settings/community-catalog", { method: "PUT", body: JSON.stringify(githubAccessFormData()) });
     fillForm(saved);
     fillGithubAccessForm(saved);
+    metadataAvailable = Boolean(saved.repository_url);
+    metadataLoaded = false;
+    updateMetadataFormState();
+    if (metadataAvailable) {
+      fillMetadataForm(await api("/settings/community-catalog/metadata"));
+      metadataLoaded = true;
+    } else {
+      fillMetadataForm({ owner: null, description: null, region: null, stores: [], languages: [], categories: [] });
+    }
+    updateMetadataFormState();
     toast("GitHub access saved");
   }
   catch (error) { toast(error.message); }
@@ -493,12 +560,41 @@ $("#lookup-form").addEventListener("submit", async event => {
 $("#test-community-catalog").addEventListener("click", async event => {
   setButtonBusy(event.target, true, "Testing...");
   try {
-    fillForm(await api("/settings/community-catalog", { method: "PUT", body: JSON.stringify(formData()) }));
+    const saved = await api("/settings/community-catalog", { method: "PUT", body: JSON.stringify(formData()) });
+    fillForm(saved);
+    fillGithubAccessForm(saved);
     renderStatus(await api("/settings/community-catalog/sync", { method: "POST" }));
+    metadataAvailable = Boolean(saved.repository_url);
+    metadataLoaded = false;
+    updateMetadataFormState();
+    if (metadataAvailable) {
+      fillMetadataForm(await api("/settings/community-catalog/metadata"));
+      metadataLoaded = true;
+    } else {
+      fillMetadataForm({ owner: null, description: null, region: null, stores: [], languages: [], categories: [] });
+    }
+    updateMetadataFormState();
     toast("Catalog checkout is ready");
   }
   catch (error) { toast(error.message); }
   finally { setButtonBusy(event.target, false); }
+});
+
+$("#catalog-metadata-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  if (!metadataAvailable) return toast("Configure a catalog repository first");
+  if (!metadataLoaded) return toast("Catalog metadata is still loading");
+  const button = event.target.querySelector('button[type="submit"]');
+  setButtonBusy(button, true, "Saving...");
+  try {
+    const saved = await api("/settings/community-catalog/metadata", { method: "PUT", body: JSON.stringify(metadataFormData()) });
+    fillMetadataForm(saved);
+    metadataLoaded = true;
+    updateMetadataFormState();
+    toast("Catalog metadata saved");
+  }
+  catch (error) { toast(error.message); }
+  finally { setButtonBusy(button, false); }
 });
 
 $("#show-token-help").addEventListener("click", () => {

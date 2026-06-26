@@ -94,18 +94,26 @@
 }
 
 .settings-form input,
-.settings-form select {
+.settings-form select,
+.settings-form textarea {
   border: 1px solid var(--line);
   background: white;
   color: var(--ink);
   padding: 11px 13px;
   min-width: 0;
+  font: inherit;
 }
 
 .settings-form input:disabled,
-.settings-form select:disabled {
+.settings-form select:disabled,
+.settings-form textarea:disabled {
   background: #eee7da;
   color: var(--muted);
+}
+
+.settings-form textarea {
+  resize: vertical;
+  min-height: 90px;
 }
 
 .field-action-row {

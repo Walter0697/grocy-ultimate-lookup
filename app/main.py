@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.app_settings import (
     AppSettingsStore,
     CommunityCatalogDiff,
+    CommunityCatalogMetadata,
     CommunityCatalogPendingProducts,
     CommunityCatalogProductSelection,
     CommunityCatalogSource,
@@ -126,6 +127,34 @@ async def put_community_catalog_settings(product: CommunityCatalogSettingsUpdate
     return public_community_catalog_settings(app_settings_store.update_community_catalog(product))
 
 
+@app.get("/settings/community-catalog/metadata", response_model=CommunityCatalogMetadata)
+async def get_community_catalog_metadata() -> CommunityCatalogMetadata:
+    current = app_settings_store.get_community_catalog()
+    if not current.repository_url:
+        return CommunityCatalogMetadata()
+    exporter = exporter_from_settings(current)
+    warnings = exporter.sync_checkout()
+    if warnings:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="; ".join(warnings))
+    return exporter.read_catalog_metadata()
+
+
+@app.put("/settings/community-catalog/metadata", response_model=CommunityCatalogMetadata)
+async def put_community_catalog_metadata(metadata: CommunityCatalogMetadata) -> CommunityCatalogMetadata:
+    current = app_settings_store.get_community_catalog()
+    if not current.repository_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Repository URL is not configured")
+    exporter = exporter_from_settings(current)
+    warnings = exporter.sync_checkout()
+    if warnings:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="; ".join(warnings))
+    if exporter.write_catalog_metadata(metadata):
+        warnings = exporter.commit_and_push_paths(["catalog.json"], "Update catalog metadata")
+        if warnings:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="; ".join(warnings))
+    return exporter.read_catalog_metadata()
+
+
 @app.get("/settings/lookup", response_model=LookupSettingsResponse)
 async def get_lookup_settings() -> LookupSettingsResponse:
     return public_lookup_settings(app_settings_store.get_lookup())
@@ -181,7 +210,8 @@ async def sync_community_catalog_checkout() -> CommunityCatalogStatus:
     current = app_settings_store.get_community_catalog()
     if not current.repository_url:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Repository URL is not configured")
-    warnings = exporter_from_settings(current).sync_checkout()
+    exporter = exporter_from_settings(current)
+    warnings = exporter.sync_checkout()
     if warnings:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="; ".join(warnings))
     return app_settings_store.community_catalog_status()

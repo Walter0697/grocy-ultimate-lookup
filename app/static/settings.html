@@ -86,6 +86,31 @@
     <details class="settings-section">
       <summary class="settings-summary">
         <span>
+          <p class="drawer-kicker">CATALOG MANIFEST</p>
+          <h2>Export catalog metadata</h2>
+        </span>
+      </summary>
+      <form id="catalog-metadata-form" class="settings-form">
+        <div class="settings-config">
+          <div class="settings-pair">
+            <label>Catalog owner<input name="catalog_owner" placeholder="Walter Cheng"></label>
+            <label>Region<input name="catalog_region" placeholder="Hong Kong"></label>
+          </div>
+          <label>Description<textarea name="catalog_description" rows="3" placeholder="Regional household products for local supermarket runs"></textarea></label>
+          <div class="settings-pair">
+            <label>Stores<input name="catalog_stores" placeholder="Wellcome, ParknShop"></label>
+            <label>Languages<input name="catalog_languages" placeholder="en, zh-Hant"></label>
+          </div>
+          <label>Categories<input name="catalog_categories" placeholder="groceries, household"></label>
+        </div>
+        <div class="settings-actions">
+          <button type="submit">Save metadata</button>
+        </div>
+      </form>
+    </details>
+    <details class="settings-section">
+      <summary class="settings-summary">
+        <span>
           <p class="drawer-kicker">CATALOG LOOKUP</p>
           <h2>Community catalog sources</h2>
         </span>

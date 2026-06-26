@@ -15,7 +15,7 @@ from app.community_catalog import (
     catalog_product_dir,
 )
 from app.community_catalog_queue import CommunityCatalogQueue
-from app.app_settings import AppSettingsStore, CommunityCatalogSettings, CommunityCatalogSource, CommunityCatalogSourceList
+from app.app_settings import AppSettingsStore, CommunityCatalogMetadata, CommunityCatalogSettings, CommunityCatalogSource, CommunityCatalogSourceList
 from app.models import ConfirmedProductRequest
 
 
@@ -198,6 +198,65 @@ def test_exporter_does_not_replace_existing_catalog_readme(tmp_path) -> None:
     assert ["git", "add", "products/627/985/627985000070", CATALOG_MANIFEST] in commands
     assert not any(command == ["git", "add", "products/627/985/627985000070", "README.md"] for command in commands)
     assert (checkout / "README.md").read_text() == "Existing catalog readme\n"
+
+
+def test_exporter_sync_catalog_metadata_creates_manifest_in_existing_checkout(tmp_path) -> None:
+    checkout = tmp_path / "checkout"
+    (checkout / ".git").mkdir(parents=True)
+    exporter = CommunityCatalogExporter(path=checkout, enabled=True, repository_url="https://github.com/example/catalog.git")
+
+    changed = exporter.sync_catalog_metadata(
+        CommunityCatalogMetadata(
+            owner="Walter Cheng",
+            description="Regional household products",
+            region="Hong Kong",
+            stores=["Wellcome", "ParknShop"],
+            languages=["en", "zh-Hant"],
+            categories=["groceries", "household"],
+        )
+    )
+
+    manifest = json.loads((checkout / CATALOG_MANIFEST).read_text())
+    assert changed is True
+    assert manifest["owner"] == "Walter Cheng"
+    assert manifest["description"] == "Regional household products"
+    assert manifest["region"] == "Hong Kong"
+    assert manifest["stores"] == ["Wellcome", "ParknShop"]
+    assert manifest["languages"] == ["en", "zh-Hant"]
+    assert manifest["categories"] == ["groceries", "household"]
+
+
+def test_commit_and_push_paths_preserves_existing_catalog_metadata(tmp_path) -> None:
+    runner = FakeGitRunner()
+    checkout = tmp_path / "checkout"
+    (checkout / ".git").mkdir(parents=True)
+    exporter = CommunityCatalogExporter(
+        path=checkout,
+        enabled=True,
+        repository_url="https://github.com/example/catalog.git",
+        command_runner=runner,
+    )
+    exporter.write_catalog_metadata(
+        CommunityCatalogMetadata(
+            owner="Walter Cheng",
+            description="Regional household products",
+            region="Hong Kong",
+            stores=["Wellcome", "ParknShop"],
+            languages=["en", "zh-Hant"],
+            categories=["groceries", "household"],
+        )
+    )
+
+    warnings = exporter.commit_and_push_paths(["catalog.json"], "Update catalog metadata")
+
+    manifest = json.loads((checkout / CATALOG_MANIFEST).read_text())
+    assert warnings == []
+    assert manifest["owner"] == "Walter Cheng"
+    assert manifest["description"] == "Regional household products"
+    assert manifest["region"] == "Hong Kong"
+    assert manifest["stores"] == ["Wellcome", "ParknShop"]
+    assert manifest["languages"] == ["en", "zh-Hant"]
+    assert manifest["categories"] == ["groceries", "household"]
 
 
 def test_exporter_review_mode_syncs_and_leaves_product_uncommitted(tmp_path) -> None:

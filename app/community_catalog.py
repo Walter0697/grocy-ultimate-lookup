@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import unquote, urlparse
 
-from app.app_settings import CommunityCatalogSource, CommunityCatalogSourceList
+from app.app_settings import CommunityCatalogMetadata, CommunityCatalogSource, CommunityCatalogSourceList
 from app.config import settings
 from app.models import ConfirmedProductRequest
 
@@ -158,18 +158,65 @@ class CommunityCatalogExporter:
         readme_path.write_text(CATALOG_README)
         return True
 
-    def _ensure_catalog_manifest(self) -> bool:
+    def _ensure_catalog_manifest_exists(self) -> bool:
         manifest_path = self.path / CATALOG_MANIFEST
         if manifest_path.exists():
             return False
+        manifest_path.write_text(self._manifest_text())
+        return True
+
+    def _manifest_text(self, metadata: CommunityCatalogMetadata | None = None) -> str:
+        metadata = metadata or CommunityCatalogMetadata()
         payload = {
             "schema_version": CATALOG_SCHEMA_VERSION,
             "type": CATALOG_TYPE,
         }
-        if self.author_name:
-            payload["owner"] = self.author_name
-        manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        if metadata.owner:
+            payload["owner"] = metadata.owner
+        if metadata.description:
+            payload["description"] = metadata.description
+        if metadata.region:
+            payload["region"] = metadata.region
+        if metadata.stores:
+            payload["stores"] = metadata.stores
+        if metadata.languages:
+            payload["languages"] = metadata.languages
+        if metadata.categories:
+            payload["categories"] = metadata.categories
+        return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+    def _ensure_catalog_manifest(self, metadata: CommunityCatalogMetadata | None = None) -> bool:
+        manifest_path = self.path / CATALOG_MANIFEST
+        new_text = self._manifest_text(metadata)
+        if manifest_path.exists() and manifest_path.read_text() == new_text:
+            return False
+        manifest_path.write_text(new_text)
         return True
+
+    def sync_catalog_metadata(self, metadata: CommunityCatalogMetadata | None = None) -> bool:
+        self.path.mkdir(parents=True, exist_ok=True)
+        return self._ensure_catalog_manifest(metadata)
+
+    def read_catalog_metadata(self) -> CommunityCatalogMetadata:
+        manifest_path = self.path / CATALOG_MANIFEST
+        if not manifest_path.exists():
+            return CommunityCatalogMetadata()
+        try:
+            payload = json.loads(manifest_path.read_text())
+        except Exception:
+            return CommunityCatalogMetadata()
+        return CommunityCatalogMetadata(
+            owner=self._text_value(payload.get("owner")),
+            description=self._text_value(payload.get("description")),
+            region=self._text_value(payload.get("region")),
+            stores=self._text_list(payload.get("stores")),
+            languages=self._text_list(payload.get("languages")),
+            categories=self._text_list(payload.get("categories")),
+        )
+
+    def write_catalog_metadata(self, metadata: CommunityCatalogMetadata) -> bool:
+        self.path.mkdir(parents=True, exist_ok=True)
+        return self._ensure_catalog_manifest(metadata)
 
     def _product_payload(
         self,
@@ -255,7 +302,7 @@ class CommunityCatalogExporter:
         commit_paths: list[Path | str] = [relative_product_dir]
         if self.repository_url and self._ensure_readme():
             commit_paths.append("README.md")
-        if self.repository_url and self._ensure_catalog_manifest():
+        if self.repository_url and self._ensure_catalog_manifest_exists():
             commit_paths.append(CATALOG_MANIFEST)
         commit_message = f"Add product {barcode}"
         env = self._git_env(self._git_author_env())
@@ -422,6 +469,30 @@ class CommunityCatalogExporter:
     def _command_label(self, command: list[str]) -> str:
         return " ".join("<redacted>" if self.github_pat and self.github_pat in part else part for part in command)
 
+    @staticmethod
+    def _text_value(value: object) -> str | None:
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return None
+
+    @classmethod
+    def _text_list(cls, value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            text = cls._text_value(item)
+            if not text:
+                continue
+            dedupe_key = text.casefold()
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            cleaned.append(text)
+        return cleaned
+
     def _git_error_message(self, exc: Exception) -> str:
         if isinstance(exc, subprocess.CalledProcessError):
             stderr = (exc.stderr or "").strip()
@@ -499,7 +570,7 @@ class CommunityCatalogExporter:
         commit_paths: list[Path | str] = ["products"]
         if self.repository_url and self._ensure_readme():
             commit_paths.append("README.md")
-        if self.repository_url and self._ensure_catalog_manifest():
+        if self.repository_url and self._ensure_catalog_manifest_exists():
             commit_paths.append(CATALOG_MANIFEST)
         warnings = self._commit_paths(commit_paths, "Add confirmed products", env=self._git_env(self._git_author_env()))
         if warnings:
@@ -521,7 +592,7 @@ class CommunityCatalogExporter:
         commit_paths: list[Path | str] = list(paths)
         if self.repository_url and self._ensure_readme():
             commit_paths.append("README.md")
-        if self.repository_url and self._ensure_catalog_manifest():
+        if self.repository_url and self._ensure_catalog_manifest_exists():
             commit_paths.append(CATALOG_MANIFEST)
         warnings = self._commit_paths(commit_paths, message, env=self._git_env(self._git_author_env()))
         if warnings:

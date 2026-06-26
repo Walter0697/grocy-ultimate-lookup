@@ -2,6 +2,7 @@ import asyncio
 
 from app.app_settings import (
     AppSettingsStore,
+    CommunityCatalogMetadata,
     CommunityCatalogSettings,
     CommunityCatalogSettingsUpdate,
     CommunityCatalogSource,
@@ -10,10 +11,12 @@ from app.app_settings import (
 )
 from fastapi import HTTPException
 from app.main import (
+    get_community_catalog_metadata,
     get_community_catalog_sources,
     get_community_catalog_settings,
     get_agent_search_availability,
     get_lookup_settings,
+    put_community_catalog_metadata,
     put_community_catalog_sources,
     put_community_catalog_settings,
     put_lookup_settings,
@@ -60,6 +63,78 @@ def test_community_catalog_settings_endpoint_reads_and_saves(monkeypatch, tmp_pa
     assert loaded.github_pat_set is True
     assert loaded.repository_url == "https://github.com/example/catalog.git"
     assert not hasattr(loaded, "github_pat")
+
+
+def test_community_catalog_metadata_endpoint_reads_empty_when_manifest_missing(monkeypatch, tmp_path) -> None:
+    store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
+    monkeypatch.setattr("app.main.app_settings_store", store)
+
+    class Exporter:
+        def read_catalog_metadata(self):
+            return CommunityCatalogMetadata()
+
+    monkeypatch.setattr("app.main.exporter_from_settings", lambda current: Exporter())
+
+    loaded = run(get_community_catalog_metadata())
+
+    assert loaded == CommunityCatalogMetadata()
+
+
+def test_community_catalog_metadata_endpoint_saves_and_pushes(monkeypatch, tmp_path) -> None:
+    store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
+    store.update_community_catalog(
+        CommunityCatalogSettingsUpdate(
+            enabled=True,
+            repository_url="https://github.com/example/catalog.git",
+            github_pat="secret-token",
+            branch="main",
+            export_images=True,
+            auto_push=True,
+        )
+    )
+    monkeypatch.setattr("app.main.app_settings_store", store)
+    calls: list[str] = []
+
+    class Exporter:
+        last_metadata = CommunityCatalogMetadata()
+
+        def sync_checkout(self):
+            calls.append("sync_checkout")
+            return []
+
+        def write_catalog_metadata(self, metadata):
+            self.last_metadata = metadata
+            calls.append(f"write:{metadata.model_dump()}")
+            return True
+
+        def read_catalog_metadata(self):
+            return self.last_metadata
+
+        def commit_and_push_paths(self, paths, message):
+            calls.append(f"commit_and_push:{paths}:{message}")
+            return []
+
+    monkeypatch.setattr("app.main.exporter_from_settings", lambda current: Exporter())
+
+    saved = run(
+        put_community_catalog_metadata(
+            CommunityCatalogMetadata(
+                owner="Walter Cheng",
+                description="Regional household products",
+                region="Hong Kong",
+                stores=["Wellcome", "ParknShop"],
+                languages=["en", "zh-Hant"],
+                categories=["groceries", "household"],
+            )
+        )
+    )
+
+    assert saved.owner == "Walter Cheng"
+    assert calls == [
+        "sync_checkout",
+        "write:{'owner': 'Walter Cheng', 'description': 'Regional household products', 'region': 'Hong Kong', 'stores': ['Wellcome', 'ParknShop'], 'languages': ['en', 'zh-Hant'], 'categories': ['groceries', 'household']}",
+        "commit_and_push:['catalog.json']:Update catalog metadata",
+    ]
 
 
 def test_community_catalog_settings_test_reports_path_status(monkeypatch, tmp_path) -> None:

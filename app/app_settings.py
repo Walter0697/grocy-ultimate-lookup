@@ -59,6 +59,15 @@ class CommunityCatalogSettingsUpdate(BaseModel):
     author_email: str | None = None
 
 
+class CommunityCatalogMetadata(BaseModel):
+    owner: str | None = None
+    description: str | None = None
+    region: str | None = None
+    stores: list[str] = Field(default_factory=list)
+    languages: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+
+
 class CommunityCatalogDiff(BaseModel):
     configured: bool
     pending_changes: bool
@@ -105,7 +114,7 @@ class CommunityCatalogSource(BaseModel):
 
 
 class CommunityCatalogSourceList(BaseModel):
-    sources: list[CommunityCatalogSource] = []
+    sources: list[CommunityCatalogSource] = Field(default_factory=list)
 
 
 DEFAULT_SEARCH_PROVIDER_ORDER = [
@@ -134,7 +143,7 @@ class LookupSettings(BaseModel):
     enable_open_facts: bool = True
     enable_upcitemdb: bool = True
     enable_web_search: bool = True
-    search_providers: list[SearchProviderSetting] = []
+    search_providers: list[SearchProviderSetting] = Field(default_factory=list)
     web_search_provider: str = "duckduckgo"
     searxng_base_url: str | None = None
     enable_llm_fallback: bool = False
