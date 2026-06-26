@@ -38,6 +38,13 @@ def test_settings_page_includes_settings_script() -> None:
     assert "/static/vendor/sortable.min.js?v=" in html
 
 
+def test_settings_page_renders_subtle_app_version_badge() -> None:
+    html = settings_page_html()
+
+    assert 'class="app-version-badge"' in html
+    assert ">v0.0.1<" in html
+
+
 def test_community_catalog_settings_endpoint_reads_and_saves(monkeypatch, tmp_path) -> None:
     store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
     monkeypatch.setattr("app.main.app_settings_store", store)

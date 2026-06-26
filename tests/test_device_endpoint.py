@@ -129,6 +129,13 @@ def test_dashboard_uses_versioned_local_assets() -> None:
     assert "/static/scan-dialog.css?v=" in response
 
 
+def test_dashboard_renders_subtle_app_version_badge() -> None:
+    response = versioned_index_html()
+
+    assert 'class="app-version-badge"' in response
+    assert ">v0.0.1<" in response
+
+
 def test_dashboard_static_includes_scanner_device_status_panel() -> None:
     index = (static_path / "index.html").read_text()
     script = (static_path / "app.js").read_text()

@@ -124,12 +124,12 @@
 ## Phase 7: Release Hygiene and Operational Visibility
 
 - [ ] Define semantic versioning policy for the lookup service.
-- [ ] Store the app version in one source of truth.
+- [v] Store the app version in one source of truth.
 - [ ] Add `GET /version` with version, git commit, build time, and image tag when available.
 - [ ] Show version and short commit in the dashboard UI.
 - [ ] Show version and short commit in the settings UI.
-- [ ] Include scanner client version in heartbeat payloads and device status.
-- [ ] Tag Docker images with semantic versions in CI/CD.
+- [v] Include scanner client version in heartbeat payloads and device status.
+- [v] Tag Docker images with semantic versions in CI/CD.
 - [ ] Document release and tagging flow.
 
 ## Phase 8: Community Catalog Federation
@@ -144,11 +144,11 @@
 - [v] Let users add, remove, enable, disable, and reorder community catalog sources.
 - [v] Serve catalog sibling images through the lookup service instead of returning internal source URLs.
 - [v] Document why community catalogs complement, rather than compete with, Open Facts databases.
-- [ ] Add catalog validation command or endpoint.
-- [ ] Add catalog source health/status checks.
+- [v] Add catalog validation command or endpoint.
+- [v] Add catalog source health/status checks.
 - [ ] Add conflict UI when multiple catalogs return different products for the same barcode.
 - [ ] Add optional public/community catalog index.
-- [ ] Add catalog metadata for region, store, language, and category scope.
+- [v] Add catalog metadata for region, store, language, and category scope.
 
 ## Phase 9: Configurable Lookup Strategy
 

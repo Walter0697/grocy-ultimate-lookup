@@ -80,6 +80,7 @@ def versioned_index_html() -> str:
     for asset in ("styles.css", "scan-dialog.css", "app.js"):
         version = str(int((static_path / asset).stat().st_mtime))
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
+    html = html.replace("{{APP_VERSION_BADGE}}", render_app_version_badge())
     return html
 
 
@@ -96,7 +97,12 @@ def settings_page_html() -> str:
     for asset in ("styles.css", "settings.css", "vendor/sortable.min.js", "settings.js"):
         version = str(int((static_path / asset).stat().st_mtime))
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
+    html = html.replace("{{APP_VERSION_BADGE}}", render_app_version_badge())
     return html
+
+
+def render_app_version_badge() -> str:
+    return f'<div class="app-version-badge">v{get_app_version()}</div>'
 
 
 @app.get("/health")
