@@ -28,3 +28,25 @@ def test_dockerignore_excludes_local_runtime_artifacts() -> None:
     assert ".venv" in patterns
     assert "data" in patterns
     assert "__pycache__" in patterns
+
+
+def test_release_please_workflow_exists_and_targets_main() -> None:
+    workflow = Path(".github/workflows/release-please.yml").read_text()
+
+    assert "name: Release Please" in workflow
+    assert "googleapis/release-please-action" in workflow
+    assert "branches:" in workflow
+    assert "- main" in workflow
+
+
+def test_cd_workflow_publishes_versioned_images_from_release() -> None:
+    workflow = Path(".github/workflows/cd.yml").read_text()
+
+    assert "on:" in workflow
+    assert "release:" in workflow
+    assert "types:" in workflow
+    assert "- published" in workflow
+    assert "docker/metadata-action" in workflow
+    assert "type=semver,pattern={{version}}" in workflow
+    assert "workflow_run:" not in workflow
+    assert "github.event.workflow_run.head_sha" not in workflow

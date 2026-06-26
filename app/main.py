@@ -1,6 +1,8 @@
 from pathlib import Path
 import shutil
+import tomllib
 from uuid import uuid4
+from importlib.metadata import PackageNotFoundError, version as package_version
 
 from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import HTMLResponse
@@ -41,7 +43,17 @@ from app.orchestrator import LookupOrchestrator
 from app.scanner_devices import ScannerDeviceRegistry, expected_device_token
 from app.scanner_service import ScannerService
 
-app = FastAPI(title="Grocy Ultimate Lookup", version="0.1.0")
+
+def get_app_version() -> str:
+    try:
+        return package_version("grocy-ultimate-lookup")
+    except PackageNotFoundError:
+        pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+        data = tomllib.loads(pyproject.read_text())
+        return str(data["project"]["version"])
+
+
+app = FastAPI(title="Grocy Ultimate Lookup", version=get_app_version())
 app_settings_store = AppSettingsStore(settings.app_settings_path)
 community_catalog_runtime = RuntimeCommunityCatalogExporter(app_settings_store)
 catalog_source_registry = CommunityCatalogSourceRegistry(app_settings_store)

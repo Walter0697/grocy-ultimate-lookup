@@ -1,6 +1,6 @@
 [project]
 name = "grocy-ultimate-lookup"
-version = "0.1.0"
+version = "0.0.1"
 description = "Multi-source barcode lookup service for Grocy"
 requires-python = ">=3.12"
 dependencies = [
