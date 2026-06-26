@@ -221,11 +221,21 @@ def test_settings_page_uses_sortable_search_provider_rows() -> None:
 def test_settings_page_includes_grocy_units_seed_section() -> None:
     settings_html = (static_path / "settings.html").read_text()
     settings_script = (static_path / "settings.js").read_text()
+    settings_css = (static_path / "settings.css").read_text()
 
     assert "Grocy Units" in settings_html
     assert 'id="seed-grocy-units"' in settings_html
     assert 'id="grocy-units-result"' in settings_html
+    assert 'class="settings-status"' in settings_html
     assert "/settings/grocy-units/seed" in settings_script
+    assert "renderGrocyUnitsList(result.added" in settings_script
+    assert "renderGrocyUnitsList(result.already_exists" in settings_script
+    assert "renderGrocyUnitsList(result.failed" in settings_script
+    assert "item.name" in settings_script
+    assert "item.error" in settings_script
+    assert 'const seedGrocyUnitsButton = $("#seed-grocy-units")' in settings_script
+    assert "setButtonBusy(button, true, \"Seeding...\")" in settings_script
+    assert ".settings-status-card" not in settings_css
 
 
 def test_seed_grocy_units_returns_added_existing_and_failed(monkeypatch) -> None:

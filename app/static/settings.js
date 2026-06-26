@@ -300,8 +300,13 @@ function renderDiff(diff) {
   node.innerHTML = `Pending changes: <b>${diff.pending_changes ? "yes" : "no"}</b><ul>${files}</ul>`;
 }
 
+function renderGrocyUnitsList(items, renderItem, emptyLabel) {
+  if (!items.length) return emptyLabel;
+  return `<ul>${items.map(renderItem).join("")}</ul>`;
+}
+
 function renderGrocyUnitsResult(result) {
-  $("#grocy-units-result").innerHTML = `Added: <b>${result.added.length}</b><br>Already existed: <b>${result.already_exists.length}</b><br>Failed: <b>${result.failed.length}</b>`;
+  $("#grocy-units-result").innerHTML = `Added: <b>${result.added.length}</b>${renderGrocyUnitsList(result.added, item => `<li>${escapeHtml(item)}</li>`, " none")}<br>Already existed: <b>${result.already_exists.length}</b>${renderGrocyUnitsList(result.already_exists, item => `<li>${escapeHtml(item)}</li>`, " none")}<br>Failed: <b>${result.failed.length}</b>${renderGrocyUnitsList(result.failed, item => `<li>${escapeHtml(item.name)}: ${escapeHtml(item.error)}</li>`, " none")}`;
 }
 
 function selectedPendingBarcodes() {
@@ -561,18 +566,21 @@ $("#lookup-form").addEventListener("submit", async event => {
   finally { setButtonBusy(button, false); }
 });
 
-$("#seed-grocy-units").addEventListener("click", async event => {
-  setButtonBusy(event.target, true, "Seeding...");
+const seedGrocyUnitsButton = $("#seed-grocy-units");
+
+seedGrocyUnitsButton.addEventListener("click", async () => {
+  const button = seedGrocyUnitsButton;
+  setButtonBusy(button, true, "Seeding...");
   try {
     const result = await api("/settings/grocy-units/seed", { method: "POST" });
     renderGrocyUnitsResult(result);
-    toast("Grocy units seeded");
+    toast(result.failed.length ? `Grocy units seeded with ${result.failed.length} failure(s)` : "Grocy units seeded");
   }
   catch (error) {
     toast(error.message);
   }
   finally {
-    setButtonBusy(event.target, false);
+    setButtonBusy(button, false);
   }
 });
 

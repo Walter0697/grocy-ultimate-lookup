@@ -233,19 +233,6 @@
   color: var(--ink);
 }
 
-.settings-status-card {
-  border: 1px dashed var(--line);
-  background: var(--paper);
-  padding: 14px;
-  font: 600 10px "IBM Plex Mono";
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
-
-.settings-status-card b {
-  color: var(--ink);
-}
-
 .diff-status ul {
   margin: 10px 0 0;
   padding-left: 18px;
