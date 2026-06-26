@@ -32,11 +32,20 @@ def test_dockerignore_excludes_local_runtime_artifacts() -> None:
 
 def test_release_please_workflow_exists_and_targets_main() -> None:
     workflow = Path(".github/workflows/release-please.yml").read_text()
+    config = Path("release-please-config.json").read_text()
+    manifest = Path(".release-please-manifest.json").read_text()
 
     assert "name: Release Please" in workflow
     assert "googleapis/release-please-action" in workflow
     assert "branches:" in workflow
     assert "- main" in workflow
+    assert "config-file: release-please-config.json" in workflow
+    assert "manifest-file: .release-please-manifest.json" in workflow
+    assert "command:" not in workflow
+    assert '"release-type": "python"' in config
+    assert '"packages"' in config
+    assert '"."' in manifest
+    assert '"0.0.1"' in manifest
 
 
 def test_cd_workflow_publishes_versioned_images_from_release() -> None:
