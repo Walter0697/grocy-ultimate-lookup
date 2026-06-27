@@ -1,5 +1,6 @@
 import asyncio
 
+from app.main import get_app_version
 from app.app_settings import (
     AppSettingsStore,
     CommunityCatalogMetadata,
@@ -42,7 +43,7 @@ def test_settings_page_renders_subtle_app_version_badge() -> None:
     html = settings_page_html()
 
     assert 'class="app-version-badge"' in html
-    assert ">v0.0.1<" in html
+    assert f">v{get_app_version()}<" in html
 
 
 def test_community_catalog_settings_endpoint_reads_and_saves(monkeypatch, tmp_path) -> None:

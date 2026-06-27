@@ -2,6 +2,11 @@ import tomllib
 from pathlib import Path
 
 
+def project_version() -> str:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text())
+    return pyproject["project"]["version"]
+
+
 def test_pyproject_packages_only_app_package() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text())
 
@@ -45,7 +50,7 @@ def test_release_please_workflow_exists_and_targets_main() -> None:
     assert '"release-type": "python"' in config
     assert '"packages"' in config
     assert '"."' in manifest
-    assert '"0.0.1"' in manifest
+    assert f'"{project_version()}"' in manifest
 
 
 def test_cd_workflow_publishes_versioned_images_from_release() -> None:

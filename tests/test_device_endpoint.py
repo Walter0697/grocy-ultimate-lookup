@@ -16,6 +16,7 @@ from app.main import (
     scanner,
     scanner_heartbeat,
     static_path,
+    get_app_version,
     upload_product_image,
     uploaded_images_path,
     versioned_index_html,
@@ -134,7 +135,7 @@ def test_dashboard_renders_subtle_app_version_badge() -> None:
     response = versioned_index_html()
 
     assert 'class="app-version-badge"' in response
-    assert ">v0.0.1<" in response
+    assert f">v{get_app_version()}<" in response
 
 
 def test_dashboard_static_includes_scanner_device_status_panel() -> None:
