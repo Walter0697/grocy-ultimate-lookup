@@ -27,7 +27,7 @@ Options:
   --device-id ID       Scanner device ID. Default: kitchen-pi.
   --state-file PATH    Shared scanner state file. Default: /var/lib/grocy-scanner/state.json.
   --config PATH        GPIO button JSON config. Default: /etc/grocy-scanner/scanner-buttons.json.
-  --scanner-tty PATH   TTY used by keyboard-wedge scanner. Default: /dev/tty1.
+  --scanner-tty PATH   Fallback TTY if auto device detection finds no scanner. Default: /dev/tty1.
   --token TOKEN        Optional scanner token sent as X-Scanner-Token.
   --user USER          Service user. Default: root.
   --dry-run            Print generated files and commands without installing.
@@ -79,7 +79,7 @@ StandardInput=tty
 TTYPath=${scanner_tty}
 TTYReset=no
 TTYVHangup=no
-ExecStart=${python_bin} ${install_dir}/scripts/device_scanner.py --server ${server} --device-id ${device_id}${token_arg} --state-file ${state_file}
+ExecStart=${python_bin} ${install_dir}/scripts/device_scanner.py --server ${server} --device-id ${device_id}${token_arg} --input-mode auto --scanner-device auto --state-file ${state_file}
 Restart=always
 RestartSec=3
 

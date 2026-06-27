@@ -64,14 +64,21 @@ python3 scripts/device_scanner.py \
   --server http://localhost:9290 \
   --device-id kitchen-pi \
   --token secret-token \
+  --input-mode auto \
+  --scanner-device auto \
   --state-file /tmp/grocy-scanner-state.json
 ```
 
-Most USB barcode scanners act like keyboards and send Enter after the barcode,
-so the script can run as a stdin loop. With `--state-file`, the scanner reloads
-mode, quantity, and location from JSON before every barcode. This lets buttons
-or a separate control process update behavior without restarting the scanner.
-The scanner script sends a heartbeat at startup and after successful scans.
+On Linux, `--input-mode auto` first tries to bind a likely scanner from
+`/dev/input/by-id` or `/dev/input/event*` so the scanner can feed the script
+without stealing your normal keyboard. If auto-detection finds nothing, the
+script falls back to the existing stdin loop. Use `--list-input-devices` to
+inspect candidates, or pass a specific event device with `--scanner-device`.
+
+With `--state-file`, the scanner reloads mode, quantity, and location from JSON
+before every barcode. This lets buttons or a separate control process update
+behavior without restarting the scanner. The scanner script sends a heartbeat
+at startup and after successful scans.
 
 Update the scanner state from another terminal:
 

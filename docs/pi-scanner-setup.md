@@ -144,6 +144,8 @@ python3 scripts/device_scanner.py \
   --server http://localhost:9290 \
   --device-id kitchen-pi \
   --token secret-token \
+  --input-mode auto \
+  --scanner-device auto \
   --state-file /var/lib/grocy-scanner/state.json
 ```
 
@@ -156,6 +158,25 @@ python3 scripts/gpio_state_controller.py \
 ```
 
 For local testing, replace the second command with `--stdin`.
+
+To see what Linux scanner candidates the host can see:
+
+```bash
+python3 scripts/device_scanner.py --list-input-devices
+```
+
+If auto-detection picks the wrong device, rerun with an explicit path from
+`/dev/input/by-id/...`:
+
+```bash
+python3 scripts/device_scanner.py \
+  --server http://localhost:9290 \
+  --device-id kitchen-pi \
+  --token secret-token \
+  --input-mode evdev \
+  --scanner-device /dev/input/by-id/usb-Honeywell_Xenon-event-kbd \
+  --state-file /var/lib/grocy-scanner/state.json
+```
 
 ## Install As Linux Services
 
@@ -243,18 +264,22 @@ Stop both services:
 sudo systemctl stop grocy-device-scanner.service grocy-gpio-state-controller.service
 ```
 
-## Barcode Scanner TTY
+## Barcode Scanner Input
 
-Most USB barcode scanners act like keyboards. The service installer points
-`grocy-device-scanner.service` at a Linux TTY with `TTYPath=/dev/tty1`.
+`device_scanner.py` now prefers Linux input-event binding when possible. In
+`--input-mode auto`, it:
+
+- scans `/dev/input/by-id` and `/dev/input/event*`
+- prefers devices whose metadata looks scanner-like
+- binds the best match directly so your normal keyboard can still be used
+- falls back to the original TTY/stdin loop if no likely scanner is found
 
 If scans do not appear in the service logs:
 
+- run `python3 scripts/device_scanner.py --list-input-devices`
 - confirm the scanner sends Enter after each barcode
-- confirm the scanner is typing into the configured TTY
-- try a different `--scanner-tty`, such as `/dev/tty2`
-- run `device_scanner.py` manually first to verify the scanner behavior
+- rerun with `--input-mode evdev --scanner-device /dev/input/by-id/...`
+- if direct device binding is not available, fall back to `--scanner-tty /dev/tty1` or another TTY
 
-This TTY approach is a practical starting point. A later hardware revision may
-replace it with an evdev-based scanner reader if the keyboard-wedge behavior is
-not reliable under systemd.
+Direct `/dev/input/by-id/...` binding is the most reliable option because the
+stable symlink survives better than raw `eventN` numbering across reboots.

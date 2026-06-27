@@ -32,4 +32,6 @@ def test_pi_service_installer_dry_run_outputs_both_units() -> None:
     assert "--device-id kitchen-pi" in result.stdout
     assert "--token secret-token" in result.stdout
     assert "--server http://lookup.local:9290" in result.stdout
+    assert "--input-mode auto" in result.stdout
+    assert "--scanner-device auto" in result.stdout
     assert "TTYPath=/dev/tty1" in result.stdout
