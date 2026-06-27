@@ -146,7 +146,6 @@
 - [v] Document why community catalogs complement, rather than compete with, Open Facts databases.
 - [v] Add catalog validation command or endpoint.
 - [v] Add catalog source health/status checks.
-- [ ] Add conflict UI when multiple catalogs return different products for the same barcode.
 - [ ] Add optional public/community catalog index.
 - [v] Add catalog metadata for region, store, language, and category scope.
 
@@ -159,9 +158,6 @@
 - [v] Disable and lock unavailable LLM and Codex provider rows.
 - [v] Configure LLM base URL, API key, and model from the settings UI.
 - [v] Configure GitHub catalog credentials from the settings UI.
-- [ ] Add import/export for settings backup.
-- [ ] Add reset-to-defaults for provider order.
-- [ ] Add per-provider status and last-error visibility.
 
 ## Phase 10: Open Database Contribution Bridge
 
