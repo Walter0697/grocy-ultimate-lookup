@@ -198,7 +198,7 @@ function reviewForm(event) {
     <form class="review-form" data-event="${escapeHtml(event.event_id)}"><label>Product name<input name="name" value="${escapeHtml(event.product_name || "")}" required></label>
       <label>Brand<input name="brand" value="${escapeHtml(result.brand || "")}"></label><label>Package quantity<input name="quantity" value="${escapeHtml(result.quantity || "")}"></label>
       <label>Image URL<input name="image_url" value="${escapeHtml(event.image_url || "")}"></label><div class="image-upload-row"><label>Upload image<input type="file" name="image_upload" accept="image/*"></label><label class="inline-option"><input type="checkbox" name="overwrite_image" checked> Use uploaded image</label></div><label>Description<textarea name="description">${escapeHtml(description)}</textarea></label>
-      <div class="form-pair"><label>Location<select name="location_id">${locations}</select></label><label>Quantity unit<select name="qu_id">${units}</select></label></div>
+      <div class="form-pair"><label>Location<select name="location_id">${locations}</select></label><span></span></div>${conversionRow(units)}
       <button type="submit">Create in Grocy + apply scan</button>${event.status !== "failed" ? `<button type="button" class="secondary refresh-event">Refresh lookup</button>` : ""}<button type="button" class="secondary danger delete-event">Dismiss from review</button></form>`;
 }
 function openDrawer(eventId) {
@@ -224,12 +224,24 @@ function reviewIsManualContribution(event) {
 function previewIsManualContribution(preview) {
   return preview?.resolution === "unknown";
 }
+function previewNeedsProductConfirmation(preview) {
+  return preview?.resolution !== "grocy";
+}
+function conversionRow(unitOptions) {
+  return `<div class="conversion-row"><label>Stock unit<select name="qu_id_stock" required>${unitOptions}</select></label><label>Per scan<input name="qu_factor_purchase_to_stock" type="number" min="0.01" step="0.01" value="1" required></label><label>Scanned package<select name="qu_id_purchase" required>${unitOptions}</select></label></div>`;
+}
 function previewDialog(preview) {
   const product = preview.product || {};
   const source = preview.resolution === "grocy" ? "Existing Grocy product" : preview.resolution === "lookup" ? `Suggested by ${product.source || "Ultimate Lookup"}` : "Unknown product";
   const locationButtons = options.locations.map(x => `<button type="button" class="choice location-choice" data-value="${x.id}">${escapeHtml(x.name)}</button>`).join("");
   const locationOptions = options.locations.map((x, index) => `<option value="${x.id}" ${index === 0 ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("");
   const unitOptions = options.quantity_units.map((x, index) => `<option value="${x.id}" ${index === 0 ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("");
+  const productFields = previewNeedsProductConfirmation(preview)
+    ? `<fieldset class="product-edit-fields"><legend>Product</legend><label>Product name<input name="name" value="${escapeHtml(product.name || "")}" required></label>
+        <label>Brand<input name="brand" value="${escapeHtml(product.brand || "")}"></label><label>Package quantity<input name="package_quantity" value="${escapeHtml(product.quantity || product.size || "")}"></label>
+        <label>Image URL<input name="image_url" value="${escapeHtml(product.image_url || "")}"></label><div class="image-upload-row"><label>Upload image<input type="file" name="image_upload" accept="image/*"></label><label class="inline-option"><input type="checkbox" name="overwrite_image" checked> Use uploaded image</label></div><label>Description<textarea name="description">${escapeHtml(previewDescription(preview, product))}</textarea></label>
+        <div class="form-pair"><label>Default location<select name="product_location_id" required>${locationOptions}</select></label><span></span></div>${conversionRow(unitOptions)}</fieldset>`
+    : `<p class="current-stock">Existing Grocy units and conversion will be used for this scan.</p>`;
   return `<div class="preview-photo">${previewImage(product)}</div><p class="drawer-kicker">${escapeHtml(source)}</p><h2>${escapeHtml(product.name || "Unknown product")}</h2>
     <p class="preview-barcode">${escapeHtml(preview.barcode)}</p>${product.stock_amount != null ? `<p class="current-stock">Current stock: <b>${product.stock_amount}</b> ${escapeHtml(product.quantity_unit || "")}</p>` : ""}
     <form id="preview-confirm-form">
@@ -237,10 +249,7 @@ function previewDialog(preview) {
       <fieldset><legend>Quantity</legend><div class="choice-group quantity-group"><button type="button" class="choice quantity-choice selected" data-value="1">1</button><button type="button" class="choice quantity-choice" data-value="2">2</button><button type="button" class="choice quantity-choice" data-value="3">3</button><input id="custom-quantity" type="number" min="0" step="0.01" value="1" aria-label="Custom quantity"></div></fieldset>
       <fieldset><legend>Stock location</legend><div class="choice-group location-group"><button type="button" class="choice location-choice selected" data-value="">Product default</button>${locationButtons}</div></fieldset>
       <button type="submit" class="confirm-scan">Confirm Add 1</button>
-      <fieldset class="product-edit-fields"><legend>Product</legend><label>Product name<input name="name" value="${escapeHtml(product.name || "")}" required></label>
-        <label>Brand<input name="brand" value="${escapeHtml(product.brand || "")}"></label><label>Package quantity<input name="package_quantity" value="${escapeHtml(product.quantity || product.size || "")}"></label>
-        <label>Image URL<input name="image_url" value="${escapeHtml(product.image_url || "")}"></label><div class="image-upload-row"><label>Upload image<input type="file" name="image_upload" accept="image/*"></label><label class="inline-option"><input type="checkbox" name="overwrite_image" checked> Use uploaded image</label></div><label>Description<textarea name="description">${escapeHtml(previewDescription(preview, product))}</textarea></label>
-        <div class="form-pair"><label>Default location<select name="product_location_id" required>${locationOptions}</select></label><label>Quantity unit<select name="qu_id" required>${unitOptions}</select></label></div></fieldset></form>`;
+      ${productFields}</form>`;
 }
 function updateConfirmLabel() {
   const form = $("#preview-confirm-form"); if (!form) return;
@@ -309,30 +318,40 @@ document.addEventListener("submit", async event => {
     const location = event.target.querySelector(".location-choice.selected").dataset.value;
     const quantity = Number($("#custom-quantity").value);
     if (mode === "set" && !confirm(`Set stock to ${quantity}?`)) return;
-    const formData = new FormData(event.target);
-    const product = {
-      name: formData.get("name").trim(),
-      brand: formData.get("brand").trim() || null,
-      quantity: formData.get("package_quantity").trim() || null,
-      image_url: formData.get("image_url").trim() || null,
-      description: formData.get("description").trim() || null,
-      catalog_contribution: previewIsManualContribution(activePreview),
-      location_id: Number(formData.get("product_location_id")),
-      qu_id: Number(formData.get("qu_id")),
-    };
-    if (!product.brand) delete product.brand;
-    if (!product.quantity) delete product.quantity;
-    if (!product.image_url) delete product.image_url;
-    if (!product.description) delete product.description;
-    const data = { event_id: `dashboard-manual-${Date.now()}`, device_id: "dashboard-manual", barcode: activePreview.barcode, mode, quantity, product };
+    const data = { event_id: `dashboard-manual-${Date.now()}`, device_id: "dashboard-manual", barcode: activePreview.barcode, mode, quantity };
     if (location) data.location_id = Number(location);
     const button = event.target.querySelector(".confirm-scan"); setButtonBusy(button, true, "Updating Grocy...");
-    try { await api("/dashboard/scan-confirm", { method: "POST", body: JSON.stringify(data) }); $("#scan-dialog").close(); activePreview = null; await load(); $("#quick-scan input").focus(); } catch (error) { toast(error.message); }
+    try {
+      if (previewNeedsProductConfirmation(activePreview)) {
+        const formData = new FormData(event.target);
+        const product = {
+          name: formData.get("name").trim(),
+          brand: formData.get("brand").trim() || null,
+          quantity: formData.get("package_quantity").trim() || null,
+          image_url: formData.get("image_url").trim() || null,
+          description: formData.get("description").trim() || null,
+          catalog_contribution: previewIsManualContribution(activePreview),
+          location_id: Number(formData.get("product_location_id")),
+          qu_id_stock: Number(formData.get("qu_id_stock")),
+          qu_id_purchase: Number(formData.get("qu_id_purchase")),
+          qu_factor_purchase_to_stock: Number(formData.get("qu_factor_purchase_to_stock") || "1"),
+        };
+        if (!product.brand) delete product.brand;
+        if (!product.quantity) delete product.quantity;
+        if (!product.image_url) delete product.image_url;
+        if (!product.description) delete product.description;
+        data.product = product;
+        await api("/dashboard/scan-confirm", { method: "POST", body: JSON.stringify(data) });
+      } else {
+        await api("/scan-events", { method: "POST", body: JSON.stringify(data) });
+      }
+      $("#scan-dialog").close(); activePreview = null; await load(); $("#quick-scan input").focus();
+    } catch (error) { toast(error.message); }
     finally { setButtonBusy(button, false); }
     return;
   }
   if (!event.target.matches(".review-form")) return;
-  event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); data.location_id = Number(data.location_id); data.qu_id = Number(data.qu_id); data.catalog_contribution = reviewIsManualContribution(events.find(x => x.event_id === event.target.dataset.event)); if (!data.image_url) delete data.image_url;
+  event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); data.location_id = Number(data.location_id); data.qu_id_stock = Number(data.qu_id_stock); data.qu_id_purchase = Number(data.qu_id_purchase); data.qu_factor_purchase_to_stock = Number(data.qu_factor_purchase_to_stock || "1"); data.catalog_contribution = reviewIsManualContribution(events.find(x => x.event_id === event.target.dataset.event)); if (!data.image_url) delete data.image_url;
   const button = event.target.querySelector('button[type="submit"]'); setButtonBusy(button, true, "Adding to Grocy...");
   try { await api(`/scan-events/${event.target.dataset.event}/confirm`, { method: "POST", body: JSON.stringify(data) }); closeDrawer(); await load(); } catch (error) { toast(error.message); }
   finally { setButtonBusy(button, false); }

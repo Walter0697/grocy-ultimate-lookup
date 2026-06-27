@@ -203,7 +203,9 @@ def test_process_auto_creates_complete_trusted_lookup_result_for_scanner_path(tm
     assert event["product_name"] == "Trusted Product"
     assert len(grocy.created) == 1
     assert grocy.created[0][1].location_id == 4
-    assert grocy.created[0][1].qu_id == 7
+    assert grocy.created[0][1].qu_id_stock == 7
+    assert grocy.created[0][1].qu_id_purchase == 7
+    assert grocy.created[0][1].qu_factor_purchase_to_stock == 1
     assert len(grocy.operations) == 1
 
 
@@ -286,7 +288,9 @@ def test_dashboard_confirm_uses_edited_product_before_applying_scan(tmp_path) ->
                     image_url="http://host.docker.internal:9290/uploaded-images/edited-product.jpg",
                     catalog_contribution=True,
                     location_id=4,
-                    qu_id=7,
+                    qu_id_stock=7,
+                    qu_id_purchase=8,
+                    qu_factor_purchase_to_stock=12,
                 ),
             )
         )
@@ -296,6 +300,9 @@ def test_dashboard_confirm_uses_edited_product_before_applying_scan(tmp_path) ->
     assert event["product_name"] == "Edited Product"
     assert len(scanner.grocy.created) == 1
     assert scanner.grocy.created[0][1].name == "Edited Product"
+    assert scanner.grocy.created[0][1].qu_id_stock == 7
+    assert scanner.grocy.created[0][1].qu_id_purchase == 8
+    assert scanner.grocy.created[0][1].qu_factor_purchase_to_stock == 12
     assert scanner.grocy.operations[0][1].location_id == 4
     assert catalog.exported[0][1].name == "Edited Product"
     assert (
@@ -327,7 +334,9 @@ def test_dashboard_confirm_does_not_export_lookup_suggestion_to_catalog(tmp_path
                     quantity="12 oz",
                     catalog_contribution=False,
                     location_id=4,
-                    qu_id=7,
+                    qu_id_stock=7,
+                    qu_id_purchase=7,
+                    qu_factor_purchase_to_stock=1,
                 ),
             )
         )
@@ -352,7 +361,9 @@ def test_dashboard_confirm_updates_existing_grocy_product_before_applying_scan(t
                 product=PendingProductConfirmation(
                     name="Edited Existing Product",
                     location_id=4,
-                    qu_id=7,
+                    qu_id_stock=7,
+                    qu_id_purchase=9,
+                    qu_factor_purchase_to_stock=4,
                 ),
             )
         )
@@ -362,6 +373,9 @@ def test_dashboard_confirm_updates_existing_grocy_product_before_applying_scan(t
     assert event["product_name"] == "Edited Existing Product"
     assert grocy.created == []
     assert grocy.updated[0][0] == 9
+    assert grocy.updated[0][2].qu_id_stock == 7
+    assert grocy.updated[0][2].qu_id_purchase == 9
+    assert grocy.updated[0][2].qu_factor_purchase_to_stock == 4
 
 
 def test_failed_known_product_operation_keeps_product_context(tmp_path) -> None:
@@ -485,7 +499,9 @@ def test_confirm_creates_grocy_product_then_applies_original_operation(tmp_path)
             PendingProductConfirmation(
                 name="Confirmed Product",
                 location_id=2,
-                qu_id=2,
+                qu_id_stock=2,
+                qu_id_purchase=2,
+                qu_factor_purchase_to_stock=1,
             ),
         )
     )
@@ -515,7 +531,9 @@ def test_confirm_exports_user_confirmed_product_to_catalog(tmp_path) -> None:
                 quantity="500 mL",
                 catalog_contribution=True,
                 location_id=2,
-                qu_id=2,
+                qu_id_stock=2,
+                qu_id_purchase=2,
+                qu_factor_purchase_to_stock=1,
             ),
         )
     )
@@ -543,7 +561,9 @@ def test_confirm_still_applies_scan_when_catalog_export_fails(tmp_path) -> None:
             PendingProductConfirmation(
                 name="Confirmed Product",
                 location_id=2,
-                qu_id=2,
+                qu_id_stock=2,
+                qu_id_purchase=2,
+                qu_factor_purchase_to_stock=1,
             ),
         )
     )

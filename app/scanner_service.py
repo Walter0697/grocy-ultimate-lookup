@@ -92,7 +92,9 @@ class ScannerService:
             quantity=result.quantity or result.size,
             image_url=result.image_url,
             location_id=int(locations[0]["id"]),
-            qu_id=int(units[0]["id"]),
+            qu_id_stock=int(units[0]["id"]),
+            qu_id_purchase=int(units[0]["id"]),
+            qu_factor_purchase_to_stock=1,
         )
         created = await self.grocy.create_product(barcode, product)
         self.local_store.upsert(

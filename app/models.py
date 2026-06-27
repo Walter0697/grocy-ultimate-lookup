@@ -144,4 +144,6 @@ class PendingProductConfirmation(BaseModel):
     image_url: HttpUrl | None = None
     catalog_contribution: bool = False
     location_id: int = Field(gt=0)
-    qu_id: int = Field(gt=0)
+    qu_id_stock: int = Field(gt=0)
+    qu_id_purchase: int = Field(gt=0)
+    qu_factor_purchase_to_stock: float = Field(default=1, gt=0)
