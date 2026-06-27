@@ -74,6 +74,7 @@ function formData() {
     branch: form.branch.value.trim() || "main",
     export_images: form.export_images.checked,
     auto_push: form.auto_push.checked,
+    auto_push_ai_results: form.auto_push_ai_results.checked,
     author_name: form.author_name.value.trim() || null,
     author_email: form.author_email.value.trim() || null
   };
@@ -126,6 +127,7 @@ function fillForm(settings) {
   form.branch.value = settings.branch || "main";
   form.export_images.checked = settings.export_images;
   form.auto_push.checked = settings.auto_push;
+  form.auto_push_ai_results.checked = settings.auto_push_ai_results;
   form.author_name.value = settings.author_name || "";
   form.author_email.value = settings.author_email || "";
   updateCatalogConfigState();
@@ -173,6 +175,8 @@ function fillLookupForm(settings) {
 function updateCatalogConfigState() {
   const form = $("#community-catalog-form");
   $("#community-catalog-config").classList.toggle("is-dimmed", !form.enabled.checked);
+  form.auto_push_ai_results.disabled = !form.auto_push.checked;
+  form.auto_push_ai_results.closest(".switch-row").classList.toggle("is-dimmed", !form.auto_push.checked);
   const reviewActions = $("#pending-review-actions");
   reviewActions.classList.toggle("is-dimmed", form.auto_push.checked);
   reviewActions.querySelectorAll("button").forEach(button => {

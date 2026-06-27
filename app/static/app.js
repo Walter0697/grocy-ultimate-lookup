@@ -330,6 +330,7 @@ document.addEventListener("submit", async event => {
           quantity: formData.get("package_quantity").trim() || null,
           image_url: formData.get("image_url").trim() || null,
           description: formData.get("description").trim() || null,
+          lookup_source: product.source || null,
           catalog_contribution: previewIsManualContribution(activePreview),
           location_id: Number(formData.get("product_location_id")),
           qu_id_stock: Number(formData.get("qu_id_stock")),
@@ -340,6 +341,7 @@ document.addEventListener("submit", async event => {
         if (!product.quantity) delete product.quantity;
         if (!product.image_url) delete product.image_url;
         if (!product.description) delete product.description;
+        if (!product.lookup_source) delete product.lookup_source;
         data.product = product;
         await api("/dashboard/scan-confirm", { method: "POST", body: JSON.stringify(data) });
       } else {

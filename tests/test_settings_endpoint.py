@@ -58,6 +58,7 @@ def test_community_catalog_settings_endpoint_reads_and_saves(monkeypatch, tmp_pa
                 branch="main",
                 export_images=True,
                 auto_push=False,
+                auto_push_ai_results=False,
                 author_name="Walter",
                 author_email="walter@example.test",
             )
@@ -67,8 +68,10 @@ def test_community_catalog_settings_endpoint_reads_and_saves(monkeypatch, tmp_pa
 
     assert saved.enabled is True
     assert saved.github_pat_set is True
+    assert saved.auto_push_ai_results is False
     assert loaded.github_pat_set is True
     assert loaded.repository_url == "https://github.com/example/catalog.git"
+    assert loaded.auto_push_ai_results is False
     assert not hasattr(loaded, "github_pat")
 
 

@@ -21,6 +21,7 @@ class CommunityCatalogSettings(BaseModel):
     export_images: bool = True
     auto_commit: bool = False
     auto_push: bool = True
+    auto_push_ai_results: bool = True
     git_remote: str = "origin"
     git_branch: str = "main"
     author_name: str | None = None
@@ -43,6 +44,7 @@ class CommunityCatalogSettingsResponse(BaseModel):
     branch: str
     export_images: bool
     auto_push: bool
+    auto_push_ai_results: bool
     author_name: str | None
     author_email: str | None
     github_pat_set: bool
@@ -55,6 +57,7 @@ class CommunityCatalogSettingsUpdate(BaseModel):
     branch: str = "main"
     export_images: bool = True
     auto_push: bool = True
+    auto_push_ai_results: bool = True
     author_name: str | None = None
     author_email: str | None = None
 
@@ -219,6 +222,7 @@ def public_community_catalog_settings(settings_value: CommunityCatalogSettings) 
         branch=settings_value.branch or settings_value.git_branch,
         export_images=settings_value.export_images,
         auto_push=settings_value.auto_push,
+        auto_push_ai_results=settings_value.auto_push_ai_results,
         author_name=settings_value.author_name,
         author_email=settings_value.author_email,
         github_pat_set=bool(settings_value.github_pat),
@@ -345,6 +349,7 @@ class AppSettingsStore:
                 "export_images": value.export_images,
                 "auto_commit": value.auto_push,
                 "auto_push": value.auto_push,
+                "auto_push_ai_results": value.auto_push_ai_results,
                 "author_name": value.author_name.strip() if value.author_name else DEFAULT_CATALOG_AUTHOR_NAME,
                 "author_email": value.author_email.strip() if value.author_email else DEFAULT_CATALOG_AUTHOR_EMAIL,
                 "path": current.workdir,

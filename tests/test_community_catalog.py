@@ -462,6 +462,76 @@ def test_runtime_manual_mode_queues_pending_product(tmp_path) -> None:
     assert products[0]["name"] == "Manual Product"
 
 
+def test_runtime_blocks_ai_search_result_when_ai_auto_push_disabled(tmp_path) -> None:
+    from app.app_settings import CommunityCatalogSettings
+
+    class Store:
+        def get_community_catalog(self):
+            return CommunityCatalogSettings(
+                enabled=True,
+                repository_url="https://github.com/example/catalog.git",
+                github_pat=None,
+                branch="main",
+                workdir=str(tmp_path / "workdir"),
+                path=str(tmp_path / "workdir"),
+                export_images=True,
+                auto_commit=False,
+                auto_push=True,
+                auto_push_ai_results=False,
+                git_remote="origin",
+                git_branch="main",
+                author_name=None,
+                author_email=None,
+            )
+
+    queue = CommunityCatalogQueue(tmp_path / "queue.sqlite3")
+    runtime = RuntimeCommunityCatalogExporter(Store(), queue_store=queue)
+
+    result = runtime.export_confirmed_product(
+        "627985000070",
+        ConfirmedProductRequest(name="Suggested Product"),
+        result_source="web_search",
+    )
+
+    assert result.exported is False
+    assert runtime.pending_products() == []
+    assert not (tmp_path / "workdir").exists()
+
+
+def test_runtime_allows_manual_confirm_even_when_ai_auto_push_disabled(tmp_path) -> None:
+    from app.app_settings import CommunityCatalogSettings
+
+    class Store:
+        def get_community_catalog(self):
+            return CommunityCatalogSettings(
+                enabled=True,
+                repository_url=None,
+                github_pat=None,
+                branch="main",
+                workdir=str(tmp_path / "workdir"),
+                path=str(tmp_path / "catalog"),
+                export_images=True,
+                auto_commit=False,
+                auto_push=True,
+                auto_push_ai_results=False,
+                git_remote="origin",
+                git_branch="main",
+                author_name=None,
+                author_email=None,
+            )
+
+    runtime = RuntimeCommunityCatalogExporter(Store())
+
+    result = runtime.export_confirmed_product(
+        "627985000070",
+        ConfirmedProductRequest(name="Manual Product"),
+        result_source=None,
+    )
+
+    assert result.exported is True
+    assert (tmp_path / "catalog" / "products" / "627" / "985" / "627985000070" / "product.json").exists()
+
+
 def test_exporter_bootstraps_existing_empty_remote_checkout(tmp_path) -> None:
     runner = FakeGitRunner(fail_fetch_missing_branch=True)
     checkout = tmp_path / "checkout"

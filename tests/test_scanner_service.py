@@ -19,10 +19,10 @@ class FakeCommunityCatalog:
         self.error = error
         self.exported = []
 
-    def export_confirmed_product(self, barcode, product):
+    def export_confirmed_product(self, barcode, product, *, result_source=None):
         if self.error:
             raise self.error
-        self.exported.append((barcode, product))
+        self.exported.append((barcode, product, result_source))
         return SimpleNamespace(warnings=())
 
 
@@ -539,11 +539,96 @@ def test_confirm_exports_user_confirmed_product_to_catalog(tmp_path) -> None:
     )
 
     assert len(catalog.exported) == 1
-    barcode, product = catalog.exported[0]
+    barcode, product, result_source = catalog.exported[0]
     assert barcode == "123456"
     assert product.name == "Confirmed Product"
     assert product.brand == "Confirmed Brand"
     assert product.quantity == "500 mL"
+    assert result_source is None
+
+
+def test_confirm_exports_ai_search_result_to_catalog_with_source(tmp_path) -> None:
+    catalog = FakeCommunityCatalog()
+    scanner = service(
+        tmp_path,
+        FakeGrocy(),
+        FakeLookup(
+            LookupResponse(
+                barcode="123456",
+                found=True,
+                result=LookupResult(
+                    barcode="123456",
+                    name="Suggested Product",
+                    source="llm_fallback",
+                    confidence=0.8,
+                ),
+            )
+        ),
+        community_catalog=catalog,
+    )
+    run(scanner.process(request()))
+
+    run(
+        scanner.confirm(
+            "event-1",
+            PendingProductConfirmation(
+                name="Confirmed Product",
+                brand="Confirmed Brand",
+                quantity="500 mL",
+                catalog_contribution=False,
+                location_id=2,
+                qu_id_stock=2,
+                qu_id_purchase=2,
+                qu_factor_purchase_to_stock=1,
+            ),
+        )
+    )
+
+    assert len(catalog.exported) == 1
+    barcode, product, result_source = catalog.exported[0]
+    assert barcode == "123456"
+    assert product.name == "Confirmed Product"
+    assert result_source == "llm_fallback"
+
+
+def test_dashboard_confirm_exports_ai_search_result_to_catalog_with_source(tmp_path) -> None:
+    catalog = FakeCommunityCatalog()
+    scanner = service(
+        tmp_path,
+        FakeGrocy(),
+        FakeLookup(LookupResponse(barcode="123456", found=False)),
+        community_catalog=catalog,
+    )
+
+    event = run(
+        scanner.confirm_dashboard_scan(
+            DashboardScanConfirmation(
+                event_id="dashboard-lookup",
+                device_id="dashboard-manual",
+                barcode="123456",
+                mode="add",
+                quantity=1,
+                product=PendingProductConfirmation(
+                    name="Lookup Product",
+                    brand="Lookup Brand",
+                    quantity="12 oz",
+                    lookup_source="web_search",
+                    catalog_contribution=False,
+                    location_id=4,
+                    qu_id_stock=7,
+                    qu_id_purchase=7,
+                    qu_factor_purchase_to_stock=1,
+                ),
+            )
+        )
+    )
+
+    assert event["status"] == "applied"
+    assert len(catalog.exported) == 1
+    barcode, product, result_source = catalog.exported[0]
+    assert barcode == "123456"
+    assert product.name == "Lookup Product"
+    assert result_source == "web_search"
 
 
 def test_confirm_still_applies_scan_when_catalog_export_fails(tmp_path) -> None:

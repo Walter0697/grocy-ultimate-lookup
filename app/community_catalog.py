@@ -25,6 +25,7 @@ CATALOG_SCHEMA_VERSION = 1
 CATALOG_TYPE = "grocy-community-catalog"
 CATALOG_MANIFEST = "catalog.json"
 SOURCE_STATUS_TTL = timedelta(minutes=10)
+AI_SEARCH_SOURCES = frozenset({"web_search", "llm_fallback", "agent_completed"})
 
 CATALOG_README = """# Grocy Community Catalog
 
@@ -680,9 +681,13 @@ class RuntimeCommunityCatalogExporter:
         self,
         barcode: str,
         product: ConfirmedProductRequest,
+        *,
+        result_source: str | None = None,
     ) -> CommunityCatalogExportResult:
         current = self.settings_store.get_community_catalog()
         if not current.enabled:
+            return CommunityCatalogExportResult(exported=False)
+        if not self._is_export_allowed(current, result_source):
             return CommunityCatalogExportResult(exported=False)
         local_image_path = self._local_uploaded_image_path(product)
         if current.repository_url and not current.auto_push:
@@ -767,6 +772,18 @@ class RuntimeCommunityCatalogExporter:
     @staticmethod
     def _public_pending_item(item: dict) -> dict:
         return {key: value for key, value in item.items() if key not in {"product", "local_image_path"}}
+
+    @staticmethod
+    def _is_ai_search_result(result_source: str | None) -> bool:
+        return result_source in AI_SEARCH_SOURCES
+
+    def _is_export_allowed(self, current, result_source: str | None) -> bool:
+        return not (
+            current.repository_url
+            and current.auto_push
+            and self._is_ai_search_result(result_source)
+            and not current.auto_push_ai_results
+        )
 
 
 class CommunityCatalogSourceRegistry:

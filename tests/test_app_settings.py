@@ -163,6 +163,26 @@ def test_app_settings_update_preserves_saved_pat_when_blank(tmp_path) -> None:
     assert second.auto_push is False
 
 
+def test_app_settings_store_persists_auto_push_ai_results(tmp_path) -> None:
+    store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
+
+    saved = store.update_community_catalog(
+        CommunityCatalogSettingsUpdate(
+            enabled=True,
+            repository_url="https://github.com/example/catalog.git",
+            github_pat="secret-token",
+            branch="main",
+            auto_push=True,
+            auto_push_ai_results=False,
+        )
+    )
+    reopened = AppSettingsStore(str(tmp_path / "settings.sqlite3")).get_community_catalog()
+
+    assert saved.auto_push is True
+    assert saved.auto_push_ai_results is False
+    assert reopened.auto_push_ai_results is False
+
+
 def test_app_settings_store_persists_ordered_community_catalog_sources(tmp_path) -> None:
     store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
 

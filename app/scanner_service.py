@@ -1,8 +1,9 @@
+import json
 import logging
 from uuid import uuid4
 
 from app.app_settings import AppSettingsStore
-from app.community_catalog import RuntimeCommunityCatalogExporter
+from app.community_catalog import AI_SEARCH_SOURCES, RuntimeCommunityCatalogExporter
 from app.config import settings
 from app.grocy import GrocyClient
 from app.local_store import LocalProductStore
@@ -145,7 +146,11 @@ class ScannerService:
         event = self._required(event_id)
         if event["status"] not in {"pending", "researching", "failed"}:
             return event
-        existing = await self._confirm_product(event["barcode"], product)
+        existing = await self._confirm_product(
+            event["barcode"],
+            product,
+            result_source=self._event_lookup_source(event),
+        )
         return await self._apply(self._request_from_event(event), existing)
 
     async def confirm_dashboard_scan(self, confirmation: DashboardScanConfirmation) -> dict:
@@ -160,10 +165,20 @@ class ScannerService:
         event, created = self.store.create(request)
         if not created:
             return event
-        product = await self._confirm_product(confirmation.barcode, confirmation.product)
+        product = await self._confirm_product(
+            confirmation.barcode,
+            confirmation.product,
+            result_source=confirmation.product.lookup_source,
+        )
         return await self._apply(request, product)
 
-    async def _confirm_product(self, barcode: str, product: PendingProductConfirmation) -> dict:
+    async def _confirm_product(
+        self,
+        barcode: str,
+        product: PendingProductConfirmation,
+        *,
+        result_source: str | None = None,
+    ) -> dict:
         existing = await self.grocy.find_product_by_barcode(barcode)
         if existing is None:
             existing = await self.grocy.create_product(barcode, product)
@@ -179,7 +194,7 @@ class ScannerService:
                 notes="Confirmed from external scanner dashboard",
             ),
         )
-        if product.catalog_contribution:
+        if product.catalog_contribution or result_source in AI_SEARCH_SOURCES:
             catalog_product = ConfirmedProductRequest(
                 name=product.name,
                 brand=product.brand,
@@ -188,7 +203,11 @@ class ScannerService:
                 notes=product.description,
             )
             try:
-                result = self.community_catalog.export_confirmed_product(barcode, catalog_product)
+                result = self.community_catalog.export_confirmed_product(
+                    barcode,
+                    catalog_product,
+                    result_source=result_source,
+                )
                 for warning in result.warnings:
                     logger.warning("Community catalog export warning for %s: %s", barcode, warning)
             except Exception as exc:
@@ -260,6 +279,22 @@ class ScannerService:
         if event is None:
             raise KeyError(event_id)
         return event
+
+    @staticmethod
+    def _event_lookup_source(event: dict) -> str | None:
+        payload = event.get("lookup_payload")
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                return None
+        if not isinstance(payload, dict):
+            return None
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            return None
+        source = result.get("source")
+        return source if isinstance(source, str) else None
 
     @staticmethod
     def _request_from_event(event: dict) -> ScanEventRequest:
