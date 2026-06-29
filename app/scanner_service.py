@@ -3,6 +3,7 @@ import logging
 from uuid import uuid4
 
 from app.app_settings import AppSettingsStore
+from app.auto_created_store import AutoCreatedProductStore
 from app.community_catalog import AI_SEARCH_SOURCES, RuntimeCommunityCatalogExporter
 from app.config import settings
 from app.grocy import GrocyClient
@@ -27,12 +28,14 @@ class ScannerService:
         grocy: GrocyClient | None = None,
         lookup: LookupOrchestrator | None = None,
         local_store: LocalProductStore | None = None,
+        auto_created_store: AutoCreatedProductStore | None = None,
         community_catalog=None,
     ) -> None:
         self.store = store or ScanEventStore(settings.scan_events_path)
         self.grocy = grocy or GrocyClient()
         self.lookup = lookup or LookupOrchestrator()
         self.local_store = local_store or LocalProductStore(settings.local_products_path)
+        self.auto_created_store = auto_created_store or AutoCreatedProductStore(settings.auto_created_products_path)
         self.community_catalog = community_catalog or RuntimeCommunityCatalogExporter(
             AppSettingsStore(settings.app_settings_path)
         )
@@ -98,6 +101,11 @@ class ScannerService:
             qu_factor_purchase_to_stock=1,
         )
         created = await self.grocy.create_product(barcode, product)
+        self.auto_created_store.upsert(
+            product_id=int(created["product"]["id"]),
+            barcode=barcode,
+            source=result.source,
+        )
         self.local_store.upsert(
             barcode,
             ConfirmedProductRequest(

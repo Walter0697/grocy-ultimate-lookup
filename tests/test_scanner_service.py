@@ -9,6 +9,7 @@ from app.models import (
     PendingProductConfirmation,
     ScanEventRequest,
 )
+from app.auto_created_store import AutoCreatedProductStore
 from app.local_store import LocalProductStore
 from app.scan_events import ScanEventStore
 from app.scanner_service import ScannerService
@@ -102,6 +103,7 @@ def service(tmp_path, grocy, lookup, community_catalog=None):
         grocy=grocy,
         lookup=lookup,
         local_store=LocalProductStore(str(tmp_path / "local.sqlite3")),
+        auto_created_store=AutoCreatedProductStore(str(tmp_path / "auto-created.sqlite3")),
         community_catalog=community_catalog,
     )
     return scanner
@@ -207,6 +209,23 @@ def test_process_auto_creates_complete_trusted_lookup_result_for_scanner_path(tm
     assert grocy.created[0][1].qu_id_purchase == 7
     assert grocy.created[0][1].qu_factor_purchase_to_stock == 1
     assert len(grocy.operations) == 1
+
+
+def test_process_auto_create_records_owned_product_for_dashboard_edit(tmp_path) -> None:
+    result = LookupResult(
+        barcode="123456",
+        name="Trusted Product",
+        image_url="https://example.test/image.jpg",
+        source="open_food_facts",
+        confidence=0.95,
+    )
+    grocy = FakeGrocy()
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=True, result=result)))
+
+    run(scanner.process(request()))
+
+    record = scanner.auto_created_store.get_by_product_id(22)
+    assert record == {"product_id": 22, "barcode": "123456", "source": "open_food_facts"}
 
 
 def test_catalog_lookup_auto_create_does_not_export_back_to_own_catalog(tmp_path) -> None:
