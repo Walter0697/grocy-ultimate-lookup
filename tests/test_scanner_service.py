@@ -37,6 +37,11 @@ class FakeLookup:
         return self.response
 
 
+class FailingAutoCreatedStore:
+    def upsert(self, *, product_id: int, barcode: str, source: str) -> None:
+        raise RuntimeError("ownership store write failed")
+
+
 class FakeGrocy:
     def __init__(self, product=None, fail_apply: Exception | None = None) -> None:
         self.product = product
@@ -226,6 +231,31 @@ def test_process_auto_create_records_owned_product_for_dashboard_edit(tmp_path) 
 
     record = scanner.auto_created_store.get_by_product_id(22)
     assert record == {"product_id": 22, "barcode": "123456", "source": "open_food_facts"}
+
+
+def test_process_auto_create_ignores_ownership_write_failure(tmp_path, caplog) -> None:
+    result = LookupResult(
+        barcode="123456",
+        name="Trusted Product",
+        image_url="https://example.test/image.jpg",
+        source="open_food_facts",
+        confidence=0.95,
+    )
+    scanner = ScannerService(
+        store=ScanEventStore(str(tmp_path / "events.sqlite3")),
+        grocy=FakeGrocy(),
+        lookup=FakeLookup(LookupResponse(barcode="123456", found=True, result=result)),
+        local_store=LocalProductStore(str(tmp_path / "local.sqlite3")),
+        auto_created_store=FailingAutoCreatedStore(),
+    )
+
+    with caplog.at_level("WARNING"):
+        event = run(scanner.process(request()))
+
+    assert event["status"] == "applied"
+    assert len(scanner.grocy.created) == 1
+    assert len(scanner.grocy.operations) == 1
+    assert "Auto-created product ownership write failed for 123456: ownership store write failed" in caplog.text
 
 
 def test_catalog_lookup_auto_create_does_not_export_back_to_own_catalog(tmp_path) -> None:

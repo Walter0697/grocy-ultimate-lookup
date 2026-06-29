@@ -101,11 +101,14 @@ class ScannerService:
             qu_factor_purchase_to_stock=1,
         )
         created = await self.grocy.create_product(barcode, product)
-        self.auto_created_store.upsert(
-            product_id=int(created["product"]["id"]),
-            barcode=barcode,
-            source=result.source,
-        )
+        try:
+            self.auto_created_store.upsert(
+                product_id=int(created["product"]["id"]),
+                barcode=barcode,
+                source=result.source,
+            )
+        except Exception as exc:
+            logger.warning("Auto-created product ownership write failed for %s: %s", barcode, exc)
         self.local_store.upsert(
             barcode,
             ConfirmedProductRequest(
