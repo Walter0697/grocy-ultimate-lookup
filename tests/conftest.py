@@ -9,6 +9,7 @@ os.environ.update(
     {
         "LOOKUP_CACHE_PATH": str(TEST_DATA_DIR / "lookup-cache.sqlite3"),
         "LOCAL_PRODUCTS_PATH": str(TEST_DATA_DIR / "local-products.sqlite3"),
+        "AUTO_CREATED_PRODUCTS_PATH": str(TEST_DATA_DIR / "auto-created-products.sqlite3"),
         "AGENT_SEARCH_PATH": str(TEST_DATA_DIR / "agent-search.sqlite3"),
         "SCAN_EVENTS_PATH": str(TEST_DATA_DIR / "scan-events.sqlite3"),
         "APP_SETTINGS_PATH": str(TEST_DATA_DIR / "app-settings.sqlite3"),

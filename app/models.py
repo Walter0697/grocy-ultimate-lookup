@@ -148,3 +148,15 @@ class PendingProductConfirmation(BaseModel):
     qu_id_stock: int = Field(gt=0)
     qu_id_purchase: int = Field(gt=0)
     qu_factor_purchase_to_stock: float = Field(default=1, gt=0)
+
+
+class DashboardProductUpdate(BaseModel):
+    name: str = Field(min_length=1)
+    description: str | None = None
+    brand: str | None = None
+    quantity: str | None = None
+    image_url: HttpUrl | None = None
+    location_id: int = Field(gt=0)
+    qu_id_stock: int = Field(gt=0)
+    qu_id_purchase: int = Field(gt=0)
+    qu_factor_purchase_to_stock: float = Field(default=1, gt=0)

@@ -31,6 +31,7 @@ from app.grocy_units import seed_units
 from app.models import (
     ConfirmedProduct,
     ConfirmedProductRequest,
+    DashboardProductUpdate,
     DashboardScanConfirmation,
     DeviceHeartbeatRequest,
     DeviceScanRequest,
@@ -467,6 +468,18 @@ async def confirm_scan_event(event_id: str, product: PendingProductConfirmation)
 async def dashboard_products() -> list[dict]:
     try:
         return await scanner.products()
+    except GrocyError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@app.put("/dashboard/products/{product_id}")
+async def dashboard_edit_product(product_id: int, product: DashboardProductUpdate) -> dict:
+    try:
+        return await scanner.update_dashboard_product(product_id, product)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except KeyError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard product not found")
     except GrocyError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 

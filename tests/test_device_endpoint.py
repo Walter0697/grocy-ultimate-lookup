@@ -1,6 +1,7 @@
 import asyncio
 from io import BytesIO
 
+import httpx
 from fastapi import HTTPException
 from starlette.datastructures import Headers, UploadFile
 
@@ -8,6 +9,7 @@ from app.config import settings
 from app.main import (
     app,
     create_device_scan,
+    dashboard_edit_product,
     dashboard_options,
     delete_scan_event,
     list_scanner_devices,
@@ -22,7 +24,7 @@ from app.main import (
     versioned_index_html,
 )
 from app.grocy import GrocyError
-from app.models import DeviceHeartbeatRequest, DeviceScanRequest, ScanEventRequest
+from app.models import DashboardProductUpdate, DeviceHeartbeatRequest, DeviceScanRequest, ScanEventRequest
 
 
 def run(coro):
@@ -348,3 +350,128 @@ def test_scan_preview_maps_grocy_errors_to_json_api_error(monkeypatch) -> None:
         assert "setup is missing" in exc.detail
     else:
         raise AssertionError("GrocyError was not converted to an API error")
+
+
+def test_dashboard_edit_product_forwards_success(monkeypatch) -> None:
+    product = DashboardProductUpdate(
+        name="Corrected Product",
+        location_id=4,
+        qu_id_stock=7,
+        qu_id_purchase=7,
+        qu_factor_purchase_to_stock=1,
+    )
+
+    async def fake_update_dashboard_product(product_id, payload):
+        assert product_id == 7
+        assert payload == product
+        return {"product_id": 7, "name": "Corrected Product", "editable": True}
+
+    monkeypatch.setattr(scanner, "update_dashboard_product", fake_update_dashboard_product)
+
+    response = run(dashboard_edit_product(7, product))
+
+    assert response == {"product_id": 7, "name": "Corrected Product", "editable": True}
+
+
+def test_dashboard_edit_product_maps_unowned_product_to_403(monkeypatch) -> None:
+    async def fake_update_dashboard_product(product_id, payload):
+        raise PermissionError("Only auto-created products can be edited from this dashboard")
+
+    monkeypatch.setattr(scanner, "update_dashboard_product", fake_update_dashboard_product)
+
+    try:
+        run(
+            dashboard_edit_product(
+                7,
+                DashboardProductUpdate(
+                    name="Corrected Product",
+                    location_id=4,
+                    qu_id_stock=7,
+                    qu_id_purchase=7,
+                    qu_factor_purchase_to_stock=1,
+                ),
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 403
+        assert exc.detail == "Only auto-created products can be edited from this dashboard"
+    else:
+        raise AssertionError("PermissionError was not converted to a 403 API error")
+
+
+def test_dashboard_edit_product_maps_missing_product_to_404(monkeypatch) -> None:
+    async def fake_update_dashboard_product(product_id, payload):
+        raise KeyError(product_id)
+
+    monkeypatch.setattr(scanner, "update_dashboard_product", fake_update_dashboard_product)
+
+    try:
+        run(
+            dashboard_edit_product(
+                7,
+                DashboardProductUpdate(
+                    name="Corrected Product",
+                    location_id=4,
+                    qu_id_stock=7,
+                    qu_id_purchase=7,
+                    qu_factor_purchase_to_stock=1,
+                ),
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 404
+        assert exc.detail == "Dashboard product not found"
+    else:
+        raise AssertionError("KeyError was not converted to a 404 API error")
+
+
+def test_dashboard_edit_product_route_returns_404(monkeypatch) -> None:
+    async def fake_update_dashboard_product(product_id, payload):
+        raise KeyError(product_id)
+
+    monkeypatch.setattr(scanner, "update_dashboard_product", fake_update_dashboard_product)
+
+    async def request():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.put(
+                "/dashboard/products/7",
+                json={
+                    "name": "Corrected Product",
+                    "location_id": 4,
+                    "qu_id_stock": 7,
+                    "qu_id_purchase": 7,
+                    "qu_factor_purchase_to_stock": 1,
+                },
+            )
+
+    response = run(request())
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Dashboard product not found"}
+
+
+def test_dashboard_edit_product_maps_grocy_errors_to_502(monkeypatch) -> None:
+    async def fake_update_dashboard_product(product_id, payload):
+        raise GrocyError("Grocy returned non-JSON response: setup is missing")
+
+    monkeypatch.setattr(scanner, "update_dashboard_product", fake_update_dashboard_product)
+
+    try:
+        run(
+            dashboard_edit_product(
+                7,
+                DashboardProductUpdate(
+                    name="Corrected Product",
+                    location_id=4,
+                    qu_id_stock=7,
+                    qu_id_purchase=7,
+                    qu_factor_purchase_to_stock=1,
+                ),
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 502
+        assert "setup is missing" in exc.detail
+    else:
+        raise AssertionError("GrocyError was not converted to a 502 API error")

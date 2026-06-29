@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.models import (
+    DashboardProductUpdate,
     DashboardScanConfirmation,
     DeviceScanRequest,
     LookupResponse,
@@ -235,6 +236,96 @@ def test_dashboard_products_raises_for_malformed_product_id(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="invalid literal"):
         run(scanner.products())
+
+
+def test_edit_dashboard_product_updates_only_owned_product(tmp_path) -> None:
+    grocy = FakeGrocy(details())
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=False)))
+    scanner.auto_created_store.upsert(product_id=7, barcode="123456", source="open_food_facts")
+
+    updated = run(
+        scanner.update_dashboard_product(
+            7,
+            DashboardProductUpdate(
+                name="Corrected Product",
+                description="Fixed details",
+                brand="Brand",
+                quantity="1 box",
+                image_url=None,
+                location_id=4,
+                qu_id_stock=7,
+                qu_id_purchase=7,
+                qu_factor_purchase_to_stock=1,
+            ),
+        )
+    )
+
+    assert updated == {
+        "product_id": 7,
+        "name": "Corrected Product",
+        "image_url": None,
+        "stock_amount": 0,
+        "editable": True,
+    }
+    assert grocy.updated[0][0] == 7
+    assert grocy.updated[0][1] == "123456"
+    assert grocy.updated[0][2].description == "Fixed details"
+
+
+def test_edit_dashboard_product_rejects_unowned_product(tmp_path) -> None:
+    scanner = service(tmp_path, FakeGrocy(details()), FakeLookup(LookupResponse(barcode="123456", found=False)))
+
+    with pytest.raises(PermissionError, match="Only auto-created products can be edited from this dashboard"):
+        run(
+            scanner.update_dashboard_product(
+                7,
+                DashboardProductUpdate(
+                    name="Corrected Product",
+                    location_id=4,
+                    qu_id_stock=7,
+                    qu_id_purchase=7,
+                    qu_factor_purchase_to_stock=1,
+                ),
+            )
+        )
+
+
+def test_edit_dashboard_product_rejects_stale_owned_product(tmp_path) -> None:
+    scanner = service(tmp_path, FakeGrocy(), FakeLookup(LookupResponse(barcode="123456", found=False)))
+    scanner.auto_created_store.upsert(product_id=7, barcode="123456", source="open_food_facts")
+
+    with pytest.raises(KeyError):
+        run(
+            scanner.update_dashboard_product(
+                7,
+                DashboardProductUpdate(
+                    name="Corrected Product",
+                    location_id=4,
+                    qu_id_stock=7,
+                    qu_id_purchase=7,
+                    qu_factor_purchase_to_stock=1,
+                ),
+            )
+        )
+
+
+def test_edit_dashboard_product_rejects_owned_product_when_barcode_points_to_other_product(tmp_path) -> None:
+    scanner = service(tmp_path, FakeGrocy(details(9, "Other Product", 2)), FakeLookup(LookupResponse(barcode="123456", found=False)))
+    scanner.auto_created_store.upsert(product_id=7, barcode="123456", source="open_food_facts")
+
+    with pytest.raises(KeyError):
+        run(
+            scanner.update_dashboard_product(
+                7,
+                DashboardProductUpdate(
+                    name="Corrected Product",
+                    location_id=4,
+                    qu_id_stock=7,
+                    qu_id_purchase=7,
+                    qu_factor_purchase_to_stock=1,
+                ),
+            )
+        )
 
 
 def test_dashboard_preview_does_not_auto_create_trusted_lookup_product(tmp_path) -> None:

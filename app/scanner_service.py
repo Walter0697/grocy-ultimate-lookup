@@ -10,6 +10,7 @@ from app.grocy import GrocyClient
 from app.local_store import LocalProductStore
 from app.models import (
     ConfirmedProductRequest,
+    DashboardProductUpdate,
     DashboardScanConfirmation,
     DeviceScanRequest,
     PendingProductConfirmation,
@@ -243,6 +244,24 @@ class ScannerService:
             "locations": await self.grocy.get_objects("locations"),
             "quantity_units": await self.grocy.get_objects("quantity_units"),
         }
+
+    async def update_dashboard_product(self, product_id: int, update: DashboardProductUpdate) -> dict:
+        record = self.auto_created_store.get_by_product_id(product_id)
+        if record is None:
+            raise PermissionError("Only auto-created products can be edited from this dashboard")
+
+        existing = await self.grocy.find_product_by_barcode(record["barcode"])
+        if existing is None or int(existing["product"]["id"]) != product_id:
+            raise KeyError(product_id)
+
+        updated = await self.grocy.update_product(
+            product_id,
+            record["barcode"],
+            PendingProductConfirmation(**update.model_dump()),
+        )
+        product = self.grocy.product_card(updated)
+        product["editable"] = True
+        return product
 
     async def _lookup_pending(self, request: ScanEventRequest) -> dict:
         response = await self.lookup.lookup(request.barcode, use_cache=False)
