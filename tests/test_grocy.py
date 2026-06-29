@@ -327,6 +327,32 @@ def event(mode: str) -> ScanEventRequest:
     )
 
 
+def test_product_card_includes_edit_prefill_fields() -> None:
+    client = RecordingGrocyClient()
+
+    card = client.product_card(
+        {
+            "product": {
+                "id": 4,
+                "name": "Tissue Pouch",
+                "description": "Fixed details",
+                "location_id": 4,
+                "qu_id_purchase": 12,
+                "qu_id_stock": 2,
+            },
+            "stock_amount": 2,
+            "quantity_unit_stock": {"name": "Piece"},
+            "location": {"name": "Kitchen"},
+            "product_barcodes": [{"barcode": "123456"}],
+        }
+    )
+
+    assert card["description"] == "Fixed details"
+    assert card["location_id"] == 4
+    assert card["qu_id_purchase"] == 12
+    assert card["qu_id_stock"] == 2
+
+
 def test_stock_operations_forward_location() -> None:
     add_client = AddPurchaseUnitGrocyClient()
     run(add_client.apply_stock_operation(4, event("add")))
