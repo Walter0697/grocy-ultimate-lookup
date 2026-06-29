@@ -227,7 +227,10 @@ class ScannerService:
         return existing
 
     async def products(self) -> list[dict]:
-        return await self.grocy.dashboard_products()
+        products = await self.grocy.dashboard_products()
+        for product in products:
+            product["editable"] = self.auto_created_store.get_by_product_id(int(product["product_id"])) is not None
+        return products
 
     async def options(self) -> dict:
         return {

@@ -78,6 +78,9 @@ class FakeGrocy:
             return [{"id": 7, "name": "Piece"}]
         return []
 
+    async def dashboard_products(self):
+        return [self.product_card(self.product)] if self.product is not None else []
+
     def product_card(self, product):
         return {
             "product_id": product["product"]["id"],
@@ -162,6 +165,24 @@ def test_preview_checks_grocy_before_lookup(tmp_path) -> None:
     assert preview["resolution"] == "grocy"
     assert preview["product"]["name"] == "Known Product"
     assert lookup.calls == []
+
+
+def test_dashboard_products_marks_auto_created_products_as_editable(tmp_path) -> None:
+    grocy = FakeGrocy(details())
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=False)))
+    scanner.auto_created_store.upsert(product_id=7, barcode="123456", source="open_food_facts")
+
+    products = run(scanner.products())
+
+    assert products == [
+        {
+            "product_id": 7,
+            "name": "Known Product",
+            "image_url": None,
+            "stock_amount": 2,
+            "editable": True,
+        }
+    ]
 
 
 def test_dashboard_preview_does_not_auto_create_trusted_lookup_product(tmp_path) -> None:
