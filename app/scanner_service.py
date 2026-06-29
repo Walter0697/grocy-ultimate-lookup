@@ -229,7 +229,12 @@ class ScannerService:
     async def products(self) -> list[dict]:
         products = await self.grocy.dashboard_products()
         for product in products:
-            product["editable"] = self.auto_created_store.get_by_product_id(int(product["product_id"])) is not None
+            try:
+                editable = self.auto_created_store.get_by_product_id(int(product["product_id"])) is not None
+            except Exception as exc:
+                logger.warning("Auto-created product ownership read failed for %s: %s", product["product_id"], exc)
+                editable = False
+            product["editable"] = editable
         return products
 
     async def options(self) -> dict:

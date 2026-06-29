@@ -42,6 +42,11 @@ class FailingAutoCreatedStore:
         raise RuntimeError("ownership store write failed")
 
 
+class ReadFailingAutoCreatedStore:
+    def get_by_product_id(self, product_id: int):
+        raise RuntimeError("ownership store read failed")
+
+
 class FakeGrocy:
     def __init__(self, product=None, fail_apply: Exception | None = None) -> None:
         self.product = product
@@ -183,6 +188,43 @@ def test_dashboard_products_marks_auto_created_products_as_editable(tmp_path) ->
             "editable": True,
         }
     ]
+
+
+def test_dashboard_products_marks_unowned_products_as_not_editable(tmp_path) -> None:
+    grocy = FakeGrocy(details())
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=False)))
+
+    products = run(scanner.products())
+
+    assert products == [
+        {
+            "product_id": 7,
+            "name": "Known Product",
+            "image_url": None,
+            "stock_amount": 2,
+            "editable": False,
+        }
+    ]
+
+
+def test_dashboard_products_defaults_to_not_editable_when_ownership_read_fails(tmp_path, caplog) -> None:
+    grocy = FakeGrocy(details())
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=False)))
+    scanner.auto_created_store = ReadFailingAutoCreatedStore()
+
+    with caplog.at_level("WARNING"):
+        products = run(scanner.products())
+
+    assert products == [
+        {
+            "product_id": 7,
+            "name": "Known Product",
+            "image_url": None,
+            "stock_amount": 2,
+            "editable": False,
+        }
+    ]
+    assert "Auto-created product ownership read failed for 7: ownership store read failed" in caplog.text
 
 
 def test_dashboard_preview_does_not_auto_create_trusted_lookup_product(tmp_path) -> None:
