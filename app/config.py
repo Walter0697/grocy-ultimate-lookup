@@ -7,6 +7,10 @@ class Settings(BaseSettings):
 
     lookup_cache_path: str = Field(default="/data/lookup-cache.sqlite3", alias="LOOKUP_CACHE_PATH")
     local_products_path: str = Field(default="/data/local-products.sqlite3", alias="LOCAL_PRODUCTS_PATH")
+    auto_created_products_path: str = Field(
+        default="/data/auto-created-products.sqlite3",
+        alias="AUTO_CREATED_PRODUCTS_PATH",
+    )
     lookup_request_timeout_seconds: float = Field(default=12, alias="LOOKUP_REQUEST_TIMEOUT_SECONDS")
     lookup_user_agent: str = Field(default="GrocyUltimateLookup/0.1", alias="LOOKUP_USER_AGENT")
     cache_min_confidence: float = Field(
