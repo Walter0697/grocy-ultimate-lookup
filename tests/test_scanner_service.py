@@ -258,6 +258,41 @@ def test_process_auto_create_ignores_ownership_write_failure(tmp_path, caplog) -
     assert "Auto-created product ownership write failed for 123456: ownership store write failed" in caplog.text
 
 
+def test_process_auto_create_fails_on_malformed_create_payload(tmp_path) -> None:
+    result = LookupResult(
+        barcode="123456",
+        name="Trusted Product",
+        image_url="https://example.test/image.jpg",
+        source="open_food_facts",
+        confidence=0.95,
+    )
+
+    class MalformedCreateGrocy(FakeGrocy):
+        async def create_product(self, barcode: str, product: PendingProductConfirmation):
+            self.created.append((barcode, product))
+            self.product = {"product": {"id": "broken", "name": product.name}, "stock_amount": 0}
+            return self.product
+
+    class BypassingApplyScannerService(ScannerService):
+        async def _apply(self, request: ScanEventRequest, grocy_product: dict) -> dict:
+            return {"status": "applied", "barcode": request.barcode}
+
+    scanner = BypassingApplyScannerService(
+        store=ScanEventStore(str(tmp_path / "events.sqlite3")),
+        grocy=MalformedCreateGrocy(),
+        lookup=FakeLookup(LookupResponse(barcode="123456", found=True, result=result)),
+        local_store=LocalProductStore(str(tmp_path / "local.sqlite3")),
+        auto_created_store=AutoCreatedProductStore(str(tmp_path / "auto-created.sqlite3")),
+    )
+
+    event = run(scanner.process(request()))
+
+    assert event["status"] == "failed"
+    assert "invalid literal" in event["error"]
+    assert len(scanner.grocy.created) == 1
+    assert len(scanner.grocy.operations) == 0
+
+
 def test_catalog_lookup_auto_create_does_not_export_back_to_own_catalog(tmp_path) -> None:
     result = LookupResult(
         barcode="123456",

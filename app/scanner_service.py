@@ -101,9 +101,10 @@ class ScannerService:
             qu_factor_purchase_to_stock=1,
         )
         created = await self.grocy.create_product(barcode, product)
+        product_id = int(created["product"]["id"])
         try:
             self.auto_created_store.upsert(
-                product_id=int(created["product"]["id"]),
+                product_id=product_id,
                 barcode=barcode,
                 source=result.source,
             )
