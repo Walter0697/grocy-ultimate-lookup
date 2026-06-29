@@ -227,6 +227,17 @@ def test_dashboard_products_defaults_to_not_editable_when_ownership_read_fails(t
     assert "Auto-created product ownership read failed for 7: ownership store read failed" in caplog.text
 
 
+def test_dashboard_products_raises_for_malformed_product_id(tmp_path) -> None:
+    grocy = FakeGrocy({"product": {"id": "broken", "name": "Known Product"}, "stock_amount": 2})
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=False)))
+
+    try:
+        run(scanner.products())
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "invalid literal" in str(exc)
+
+
 def test_dashboard_preview_does_not_auto_create_trusted_lookup_product(tmp_path) -> None:
     result = LookupResult(
         barcode="123456",
