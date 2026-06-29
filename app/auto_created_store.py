@@ -21,8 +21,8 @@ class AutoCreatedProductStore:
                     product_id INTEGER PRIMARY KEY,
                     barcode TEXT NOT NULL,
                     source TEXT NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
