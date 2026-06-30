@@ -156,8 +156,11 @@ def test_dashboard_static_includes_product_editor_controls() -> None:
     assert 'id="products-panel"' in index
     assert 'id="product-grid"' in index
     assert 'id="product-edit-dialog"' in index
+    assert 'id="product-edit-content"' in index
     assert "renderProducts" in script
     assert "openProductEditDialog" in script
+    assert 'id="product-edit-form"' in script
+    assert "Save product" in script
     assert "/dashboard/products" in script
 
 

@@ -210,16 +210,21 @@ function renderProducts() {
   node.innerHTML = products.length ? products.map(productCard).join("") : `<div class="empty">No dashboard products available yet.</div>`;
 }
 function productEditDialog(product) {
-  const detail = [
-    product.brand ? `Brand: ${product.brand}` : "",
-    product.quantity ? `Package: ${product.quantity}` : "",
-    product.location_name ? `Location: ${product.location_name}` : "",
-    product.barcode ? `Barcode: ${product.barcode}` : ""
-  ].filter(Boolean);
+  const locationOptions = options.locations.map(x => `<option value="${x.id}" ${x.id === product.location_id ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("");
+  const unitOptions = options.quantity_units.map(x => `<option value="${x.id}">${escapeHtml(x.name)}</option>`).join("");
   return `<p class="drawer-kicker">${escapeHtml(product.editable ? "AUTO-CREATED PRODUCT" : "READ ONLY")}</p>
     <h2>${escapeHtml(product.name || "Unnamed product")}</h2>
-    ${detail.map(line => `<p>${escapeHtml(line)}</p>`).join("")}
-    <p>This edit form shell is in place. Save behavior lands in the next task.</p>`;
+    <form id="product-edit-form" data-product-id="${escapeHtml(product.product_id)}" class="review-form">
+      <label>Product name<input name="name" value="${escapeHtml(product.name || "")}" required></label>
+      <label>Brand<input name="brand" value="${escapeHtml(product.brand || "")}"></label>
+      <label>Package quantity<input name="quantity" value="${escapeHtml(product.quantity || "")}"></label>
+      <label>Image URL<input name="image_url" value="${escapeHtml(product.image_url || "")}"></label>
+      <div class="image-upload-row"><label>Upload image<input type="file" name="image_upload" accept="image/*"></label><label class="inline-option"><input type="checkbox" name="overwrite_image" checked> Use uploaded image</label></div>
+      <label>Description<textarea name="description">${escapeHtml(product.description || "")}</textarea></label>
+      <div class="form-pair"><label>Default location<select name="location_id">${locationOptions}</select></label><span></span></div>
+      ${conversionRow(unitOptions)}
+      <button type="submit">Save product</button>
+    </form>`;
 }
 function openProductEditDialog(productId) {
   const product = products.find(x => String(x.product_id) === String(productId));
@@ -322,7 +327,14 @@ function openScanDialog(preview) {
 }
 async function load() {
   try {
-    const [nextEvents, nextProducts, nextOptions] = await Promise.all([api("/scan-events?limit=200"), api("/dashboard/products"), api("/dashboard/options")]);
+    const [nextEvents, nextOptions] = await Promise.all([api("/scan-events?limit=200"), api("/dashboard/options")]);
+    let nextProducts = products;
+    try {
+      nextProducts = await api("/dashboard/products");
+    }
+    catch (error) {
+      console.warn("Dashboard products refresh failed:", error);
+    }
     const nextSignature = dataSignature(nextEvents, nextProducts, nextOptions);
     events = nextEvents;
     products = nextProducts;
