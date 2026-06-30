@@ -1,9 +1,11 @@
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;" })[c]);
 let events = [];
+let products = [];
 let options = { locations: [], quantity_units: [], scanner_devices: [] };
 let activeFilter = "all";
 let activePreview = null;
+let activeProduct = null;
 let dashboardSignature = "";
 
 async function api(path, init, json = true) {
@@ -132,8 +134,27 @@ function optionsSignature(nextOptions) {
     }))
   };
 }
-function dataSignature(nextEvents, nextOptions) {
-  return JSON.stringify({ events: nextEvents.map(eventSignature), options: optionsSignature(nextOptions) });
+function dataSignature(nextEvents, nextProducts, nextOptions) {
+  return JSON.stringify({
+    events: nextEvents.map(eventSignature),
+    products: nextProductsSignature(nextProducts),
+    options: optionsSignature(nextOptions)
+  });
+}
+function nextProductsSignature(nextProducts) {
+  return nextProducts.map(product => ({
+    product_id: product.product_id,
+    name: product.name,
+    description: product.description,
+    barcode: product.barcode,
+    brand: product.brand,
+    quantity: product.quantity,
+    image_url: product.image_url,
+    stock_amount: product.stock_amount,
+    quantity_unit: product.quantity_unit,
+    location_name: product.location_name,
+    editable: product.editable
+  }));
 }
 function subtitle(event) {
   const change = event.stock_before == null ? "" : `Stock ${event.stock_before} → ${event.stock_after}`;
@@ -168,6 +189,45 @@ function renderScannerStatus() {
   }
   node.innerHTML = devices.map(scannerStatusLine).join("");
 }
+function productCard(product) {
+  const notes = [
+    product.brand ? `Brand: ${product.brand}` : "",
+    product.quantity ? `Pack: ${product.quantity}` : "",
+    product.location_name ? `Default location: ${product.location_name}` : "",
+    product.barcode ? `Barcode: ${product.barcode}` : "",
+    product.stock_amount != null ? `Stock: ${product.stock_amount}${product.quantity_unit ? ` ${product.quantity_unit}` : ""}` : "",
+    product.description || ""
+  ].filter(Boolean).slice(0, 3);
+  return `<article class="product-card" data-product-id="${escapeHtml(product.product_id)}">
+    <p>${escapeHtml(product.editable ? "DASHBOARD EDITABLE" : "GROCY MANAGED")}</p>
+    <h3>${escapeHtml(product.name || "Unnamed product")}</h3>
+    ${notes.map(note => `<p>${escapeHtml(note)}</p>`).join("")}
+    ${product.editable ? `<button type="button" class="product-edit-button" data-product-id="${escapeHtml(product.product_id)}">Edit product</button>` : ""}
+  </article>`;
+}
+function renderProducts() {
+  const node = $("#product-grid");
+  node.innerHTML = products.length ? products.map(productCard).join("") : `<div class="empty">No dashboard products available yet.</div>`;
+}
+function productEditDialog(product) {
+  const detail = [
+    product.brand ? `Brand: ${product.brand}` : "",
+    product.quantity ? `Package: ${product.quantity}` : "",
+    product.location_name ? `Location: ${product.location_name}` : "",
+    product.barcode ? `Barcode: ${product.barcode}` : ""
+  ].filter(Boolean);
+  return `<p class="drawer-kicker">${escapeHtml(product.editable ? "AUTO-CREATED PRODUCT" : "READ ONLY")}</p>
+    <h2>${escapeHtml(product.name || "Unnamed product")}</h2>
+    ${detail.map(line => `<p>${escapeHtml(line)}</p>`).join("")}
+    <p>This edit form shell is in place. Save behavior lands in the next task.</p>`;
+}
+function openProductEditDialog(productId) {
+  const product = products.find(x => String(x.product_id) === String(productId));
+  if (!product || !product.editable) return;
+  activeProduct = product;
+  $("#product-edit-content").innerHTML = productEditDialog(product);
+  $("#product-edit-dialog").showModal();
+}
 function card(event, index) {
   const review = needsReview(event);
   const result = event.lookup_payload?.result;
@@ -184,6 +244,7 @@ function render() {
   $("#all-count").textContent = events.length;
   $("#review-count").textContent = events.filter(needsReview).length;
   renderScannerStatus();
+  renderProducts();
   $("#event-grid").innerHTML = visible.length ? visible.map(card).join("") : `<div class="empty">No scans in this view yet.</div>`;
 }
 function reviewForm(event) {
@@ -261,9 +322,10 @@ function openScanDialog(preview) {
 }
 async function load() {
   try {
-    const [nextEvents, nextOptions] = await Promise.all([api("/scan-events?limit=200"), api("/dashboard/options")]);
-    const nextSignature = dataSignature(nextEvents, nextOptions);
+    const [nextEvents, nextProducts, nextOptions] = await Promise.all([api("/scan-events?limit=200"), api("/dashboard/products"), api("/dashboard/options")]);
+    const nextSignature = dataSignature(nextEvents, nextProducts, nextOptions);
     events = nextEvents;
+    products = nextProducts;
     options = nextOptions;
     if (nextSignature === dashboardSignature) return;
     dashboardSignature = nextSignature;
@@ -281,6 +343,7 @@ $("#quick-scan").addEventListener("submit", async event => {
 document.addEventListener("click", async event => {
   const filter = event.target.closest("[data-filter]");
   if (filter) { activeFilter = filter.dataset.filter; document.querySelectorAll("[data-filter]").forEach(x => x.classList.toggle("active", x === filter)); return render(); }
+  const productEditButton = event.target.closest(".product-edit-button"); if (productEditButton) return openProductEditDialog(productEditButton.dataset.productId);
   const polaroid = event.target.closest(".polaroid.review"); if (polaroid) return openDrawer(polaroid.dataset.event);
   const choice = event.target.closest(".choice");
   if (choice) {
@@ -288,6 +351,7 @@ document.addEventListener("click", async event => {
     if (choice.classList.contains("quantity-choice")) $("#custom-quantity").value = choice.dataset.value; return updateConfirmLabel();
   }
   if (event.target.matches("#close-scan-dialog")) { $("#scan-dialog").close(); return $("#quick-scan input").focus(); }
+  if (event.target.matches("#close-product-edit-dialog")) { $("#product-edit-dialog").close(); activeProduct = null; return $("#quick-scan input").focus(); }
   if (event.target.matches("#close-drawer") || event.target.matches("#drawer-backdrop")) return closeDrawer();
   if (event.target.matches(".refresh-event")) {
     try { await api(`/scan-events/${event.target.closest("form").dataset.event}/refresh`, { method: "POST" }); closeDrawer(); await load(); } catch (error) { toast(error.message); }

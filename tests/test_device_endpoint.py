@@ -149,6 +149,18 @@ def test_dashboard_static_includes_scanner_device_status_panel() -> None:
     assert "scanner_devices" in script
 
 
+def test_dashboard_static_includes_product_editor_controls() -> None:
+    index = (static_path / "index.html").read_text()
+    script = (static_path / "app.js").read_text()
+
+    assert 'id="products-panel"' in index
+    assert 'id="product-grid"' in index
+    assert 'id="product-edit-dialog"' in index
+    assert "renderProducts" in script
+    assert "openProductEditDialog" in script
+    assert "/dashboard/products" in script
+
+
 def test_dashboard_links_to_settings_page() -> None:
     index = (static_path / "index.html").read_text()
     settings_html = (static_path / "settings.html").read_text()

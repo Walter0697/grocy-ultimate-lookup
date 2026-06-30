@@ -34,12 +34,23 @@
 
   <main>
     <section id="scanner-status" class="scanner-status" aria-live="polite"></section>
+    <section id="products-panel" class="products-panel" aria-live="polite">
+      <div class="section-heading">
+        <p>PRODUCTS</p>
+        <h2>Dashboard products</h2>
+      </div>
+      <div id="product-grid" class="product-grid"></div>
+    </section>
     <div id="event-grid" class="event-grid"></div>
   </main>
 
   <dialog id="scan-dialog" class="scan-dialog">
     <button id="close-scan-dialog" class="close">Close</button>
     <div id="scan-preview-content"></div>
+  </dialog>
+  <dialog id="product-edit-dialog" class="scan-dialog">
+    <button id="close-product-edit-dialog" class="close">Close</button>
+    <div id="product-edit-content"></div>
   </dialog>
   <aside id="review-drawer" class="review-drawer" aria-hidden="true">
     <button id="close-drawer" class="close">Close</button>
