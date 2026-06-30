@@ -43,6 +43,7 @@ function setButtonBusy(button, busy, label) {
 }
 function imageContainerForForm(form) {
   if (form.id === "preview-confirm-form") return $(".preview-photo");
+  if (form.id === "product-edit-form") return form.closest("dialog")?.querySelector(".drawer-image");
   if (form.classList.contains("review-form")) return $(".drawer-image");
   return null;
 }
@@ -211,8 +212,10 @@ function renderProducts() {
 }
 function productEditDialog(product) {
   const locationOptions = options.locations.map(x => `<option value="${x.id}" ${x.id === product.location_id ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("");
-  const unitOptions = options.quantity_units.map(x => `<option value="${x.id}">${escapeHtml(x.name)}</option>`).join("");
-  return `<p class="drawer-kicker">${escapeHtml(product.editable ? "AUTO-CREATED PRODUCT" : "READ ONLY")}</p>
+  const stockUnitOptions = options.quantity_units.map(x => `<option value="${x.id}" ${x.id === product.qu_id_stock ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("");
+  const purchaseUnitOptions = options.quantity_units.map(x => `<option value="${x.id}" ${x.id === product.qu_id_purchase ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("");
+  return `<div class="drawer-image">${previewImage(product)}</div>
+    <p class="drawer-kicker">${escapeHtml(product.editable ? "AUTO-CREATED PRODUCT" : "READ ONLY")}</p>
     <h2>${escapeHtml(product.name || "Unnamed product")}</h2>
     <form id="product-edit-form" data-product-id="${escapeHtml(product.product_id)}" class="review-form">
       <label>Product name<input name="name" value="${escapeHtml(product.name || "")}" required></label>
@@ -222,7 +225,7 @@ function productEditDialog(product) {
       <div class="image-upload-row"><label>Upload image<input type="file" name="image_upload" accept="image/*"></label><label class="inline-option"><input type="checkbox" name="overwrite_image" checked> Use uploaded image</label></div>
       <label>Description<textarea name="description">${escapeHtml(product.description || "")}</textarea></label>
       <div class="form-pair"><label>Default location<select name="location_id">${locationOptions}</select></label><span></span></div>
-      ${conversionRow(unitOptions)}
+      ${conversionRow(stockUnitOptions, purchaseUnitOptions, product.qu_factor_purchase_to_stock || 1)}
       <button type="submit">Save product</button>
     </form>`;
 }
@@ -293,8 +296,8 @@ function previewIsManualContribution(preview) {
 function previewNeedsProductConfirmation(preview) {
   return preview?.resolution !== "grocy";
 }
-function conversionRow(unitOptions) {
-  return `<div class="conversion-row"><label>Stock unit<select name="qu_id_stock" required>${unitOptions}</select></label><label>Per scan<input name="qu_factor_purchase_to_stock" type="number" min="0.01" step="0.01" value="1" required></label><label>Scanned package<select name="qu_id_purchase" required>${unitOptions}</select></label></div>`;
+function conversionRow(stockUnitOptions, purchaseUnitOptions = stockUnitOptions, factor = 1) {
+  return `<div class="conversion-row"><label>Stock unit<select name="qu_id_stock" required>${stockUnitOptions}</select></label><label>Per scan<input name="qu_factor_purchase_to_stock" type="number" min="0.01" step="0.01" value="${escapeHtml(factor)}" required></label><label>Scanned package<select name="qu_id_purchase" required>${purchaseUnitOptions}</select></label></div>`;
 }
 function previewDialog(preview) {
   const product = preview.product || {};
@@ -306,7 +309,7 @@ function previewDialog(preview) {
     ? `<fieldset class="product-edit-fields"><legend>Product</legend><label>Product name<input name="name" value="${escapeHtml(product.name || "")}" required></label>
         <label>Brand<input name="brand" value="${escapeHtml(product.brand || "")}"></label><label>Package quantity<input name="package_quantity" value="${escapeHtml(product.quantity || product.size || "")}"></label>
         <label>Image URL<input name="image_url" value="${escapeHtml(product.image_url || "")}"></label><div class="image-upload-row"><label>Upload image<input type="file" name="image_upload" accept="image/*"></label><label class="inline-option"><input type="checkbox" name="overwrite_image" checked> Use uploaded image</label></div><label>Description<textarea name="description">${escapeHtml(previewDescription(preview, product))}</textarea></label>
-        <div class="form-pair"><label>Default location<select name="product_location_id" required>${locationOptions}</select></label><span></span></div>${conversionRow(unitOptions)}</fieldset>`
+      <div class="form-pair"><label>Default location<select name="product_location_id" required>${locationOptions}</select></label><span></span></div>${conversionRow(unitOptions)}</fieldset>`
     : `<p class="current-stock">Existing Grocy units and conversion will be used for this scan.</p>`;
   return `<div class="preview-photo">${previewImage(product)}</div><p class="drawer-kicker">${escapeHtml(source)}</p><h2>${escapeHtml(product.name || "Unknown product")}</h2>
     <p class="preview-barcode">${escapeHtml(preview.barcode)}</p>${product.stock_amount != null ? `<p class="current-stock">Current stock: <b>${product.stock_amount}</b> ${escapeHtml(product.quantity_unit || "")}</p>` : ""}
@@ -424,6 +427,33 @@ document.addEventListener("submit", async event => {
         await api("/scan-events", { method: "POST", body: JSON.stringify(data) });
       }
       $("#scan-dialog").close(); activePreview = null; await load(); $("#quick-scan input").focus();
+    } catch (error) { toast(error.message); }
+    finally { setButtonBusy(button, false); }
+    return;
+  }
+  if (event.target.matches("#product-edit-form")) {
+    event.preventDefault();
+    if (!activeProduct?.product_id) return toast("No active product selected.");
+    const formData = new FormData(event.target);
+    const data = {
+      name: formData.get("name").trim(),
+      description: formData.get("description").trim() || null,
+      brand: formData.get("brand").trim() || null,
+      quantity: formData.get("quantity").trim() || null,
+      image_url: formData.get("image_url").trim() || null,
+      location_id: Number(formData.get("location_id")),
+      qu_id_stock: Number(formData.get("qu_id_stock")),
+      qu_id_purchase: Number(formData.get("qu_id_purchase")),
+      qu_factor_purchase_to_stock: Number(formData.get("qu_factor_purchase_to_stock") || "1"),
+    };
+    const button = event.target.querySelector('button[type="submit"]'); setButtonBusy(button, true, "Saving...");
+    try {
+      await api(`/dashboard/products/${activeProduct.product_id}`, { method: "PUT", body: JSON.stringify(data) });
+      $("#product-edit-dialog").close();
+      activeProduct = null;
+      await load();
+      toast("Product updated.");
+      $("#quick-scan input").focus();
     } catch (error) { toast(error.message); }
     finally { setButtonBusy(button, false); }
     return;

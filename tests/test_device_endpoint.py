@@ -164,6 +164,15 @@ def test_dashboard_static_includes_product_editor_controls() -> None:
     assert "/dashboard/products" in script
 
 
+def test_dashboard_script_submits_product_edits_to_dashboard_endpoint() -> None:
+    script = (static_path / "app.js").read_text()
+
+    assert "/dashboard/products/${activeProduct.product_id}" in script or "/dashboard/products/" in script
+    assert "product-edit-form" in script
+    assert "Product updated." in script
+    assert 'method: "PUT"' in script or "method: 'PUT'" in script
+
+
 def test_dashboard_links_to_settings_page() -> None:
     index = (static_path / "index.html").read_text()
     settings_html = (static_path / "settings.html").read_text()
