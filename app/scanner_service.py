@@ -9,6 +9,8 @@ from app.config import settings
 from app.grocy import GrocyClient
 from app.local_store import LocalProductStore
 from app.models import (
+    DashboardProductEditResult,
+    DashboardProductEditProductSummary,
     ConfirmedProductRequest,
     DashboardProductUpdate,
     DashboardScanConfirmation,
@@ -17,6 +19,7 @@ from app.models import (
     ScanEventRequest,
 )
 from app.orchestrator import LookupOrchestrator
+from app.product_edit_history import ProductEditHistoryStore
 from app.scan_events import ScanEventStore
 
 logger = logging.getLogger(__name__)
@@ -30,6 +33,7 @@ class ScannerService:
         lookup: LookupOrchestrator | None = None,
         local_store: LocalProductStore | None = None,
         auto_created_store: AutoCreatedProductStore | None = None,
+        history_store: ProductEditHistoryStore | None = None,
         community_catalog=None,
     ) -> None:
         self.store = store or ScanEventStore(settings.scan_events_path)
@@ -37,6 +41,8 @@ class ScannerService:
         self.lookup = lookup or LookupOrchestrator()
         self.local_store = local_store or LocalProductStore(settings.local_products_path)
         self.auto_created_store = auto_created_store or AutoCreatedProductStore(settings.auto_created_products_path)
+        history_path = self.store.path.parent / "product-edit-history.sqlite3"
+        self.history_store = history_store or ProductEditHistoryStore(str(history_path))
         self.community_catalog = community_catalog or RuntimeCommunityCatalogExporter(
             AppSettingsStore(settings.app_settings_path)
         )
@@ -230,13 +236,7 @@ class ScannerService:
     async def products(self) -> list[dict]:
         products = await self.grocy.dashboard_products()
         for product in products:
-            product_id = int(product["product_id"])
-            try:
-                editable = self.auto_created_store.get_by_product_id(product_id) is not None
-            except Exception as exc:
-                logger.warning("Auto-created product ownership read failed for %s: %s", product_id, exc)
-                editable = False
-            product["editable"] = editable
+            product["editable"] = True
         return products
 
     async def options(self) -> dict:
@@ -247,21 +247,57 @@ class ScannerService:
 
     async def update_dashboard_product(self, product_id: int, update: DashboardProductUpdate) -> dict:
         record = self.auto_created_store.get_by_product_id(product_id)
-        if record is None:
-            raise PermissionError("Only auto-created products can be edited from this dashboard")
+        barcode = record["barcode"] if record is not None else await self.grocy.get_product_barcode(product_id)
+        if barcode is None:
+            raise KeyError(product_id)
 
-        existing = await self.grocy.find_product_by_barcode(record["barcode"])
+        existing = await self.grocy.find_product_by_barcode(barcode)
         if existing is None or int(existing["product"]["id"]) != product_id:
             raise KeyError(product_id)
 
+        before_snapshot = self._dashboard_product_snapshot(existing)
+        update_payload = update.model_dump()
+        if before_snapshot.get("image_url") and str(update.image_url or "") == str(before_snapshot["image_url"]):
+            update_payload["image_url"] = None
         updated = await self.grocy.update_product(
             product_id,
-            record["barcode"],
-            PendingProductConfirmation(**update.model_dump()),
+            barcode,
+            PendingProductConfirmation(**update_payload),
         )
-        product = self.grocy.product_card(updated)
-        product["editable"] = True
-        return product
+        after_snapshot = self._dashboard_product_snapshot(updated)
+        product = self._dashboard_product_summary(updated)
+        changed_fields = sorted(
+            field for field in before_snapshot.keys() | after_snapshot.keys() if before_snapshot.get(field) != after_snapshot.get(field)
+        )
+        history_entry = None
+        try:
+            history_entry = self.history_store.create(
+                product_id=product_id,
+                barcode=barcode,
+                source="dashboard",
+                changed_fields=changed_fields,
+                before={field: before_snapshot.get(field) for field in changed_fields},
+                after={field: after_snapshot.get(field) for field in changed_fields},
+            )
+        except Exception as exc:
+            logger.warning("Product edit history write failed for %s: %s", barcode, exc)
+
+        updated_event_count = 0
+        try:
+            updated_event_count = self.store.backfill_product_snapshot(
+                product_id=product_id,
+                barcode=barcode,
+                product_name=product["name"],
+                image_url=product["image_url"],
+            )
+        except Exception as exc:
+            logger.warning("Applied scan event backfill failed for %s: %s", barcode, exc)
+
+        return DashboardProductEditResult(
+            product=DashboardProductEditProductSummary.model_validate(product),
+            updated_event_count=updated_event_count,
+            history_entry=history_entry,
+        ).model_dump(mode="json")
 
     async def _lookup_pending(self, request: ScanEventRequest) -> dict:
         response = await self.lookup.lookup(request.barcode, use_cache=False)
@@ -374,4 +410,29 @@ class ScannerService:
             "stock_after": event["stock_after"],
             "needs_review": needs_review,
             "message": message,
+        }
+
+    def _dashboard_product_summary(self, product: dict) -> dict:
+        card = self.grocy.product_card(product)
+        return {
+            "product_id": card["product_id"],
+            "name": card["name"],
+            "image_url": card.get("image_url"),
+            "stock_amount": card.get("stock_amount"),
+            "editable": True,
+        }
+
+    def _dashboard_product_snapshot(self, product: dict) -> dict:
+        product_data = product.get("product") or {}
+        card = self.grocy.product_card(product)
+        return {
+            "name": product_data.get("name"),
+            "description": product_data.get("description"),
+            "brand": product_data.get("brand"),
+            "quantity": product_data.get("quantity"),
+            "image_url": card.get("image_url"),
+            "location_id": product_data.get("location_id"),
+            "qu_id_stock": product_data.get("qu_id_stock"),
+            "qu_id_purchase": product_data.get("qu_id_purchase"),
+            "qu_factor_purchase_to_stock": product_data.get("qu_factor_purchase_to_stock"),
         }

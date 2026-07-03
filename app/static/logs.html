@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pantry Signal Logs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600;9..144,800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="identity">
+      <p>PRODUCT CHANGE HISTORY</p>
+      <h1>Edit logs</h1>
+    </div>
+    <nav class="filters page-tabs">
+      <a href="/">Scan</a>
+      <a class="active" href="/logs">Logs</a>
+      <a href="/settings">Settings</a>
+    </nav>
+    <div class="header-actions">
+      <span class="online"><i></i> Audit trail</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="log-shell">
+      <div class="log-header">
+        <div>
+          <p class="drawer-kicker">LATEST PRODUCT EDITS</p>
+          <h2>Change history</h2>
+        </div>
+        <div id="log-summary" class="log-summary"></div>
+      </div>
+      <div class="log-controls">
+        <label class="log-filter">
+          <span>Filter</span>
+          <input id="log-filter-input" type="text" placeholder="Search product, barcode, product id, or change text">
+        </label>
+      </div>
+      <div class="log-table-wrap">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th><button type="button" class="log-sort active" data-sort="created_at">Edited at</button></th>
+              <th><button type="button" class="log-sort" data-sort="product_name">Product</button></th>
+              <th><button type="button" class="log-sort" data-sort="barcode">Barcode</button></th>
+              <th><button type="button" class="log-sort" data-sort="product_id">Product ID</button></th>
+              <th>Changes</th>
+            </tr>
+          </thead>
+          <tbody id="log-table-body" aria-live="polite"></tbody>
+        </table>
+      </div>
+      <div class="log-pagination">
+        <button type="button" id="log-prev" class="secondary">Previous</button>
+        <span id="log-page-status" class="log-page-status"></span>
+        <button type="button" id="log-next" class="secondary">Next</button>
+      </div>
+    </section>
+  </main>
+  <div id="toast"></div>
+  {{APP_VERSION_BADGE}}
+  <script src="/static/logs.js"></script>
+</body>
+</html>

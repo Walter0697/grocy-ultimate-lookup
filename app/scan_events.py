@@ -101,6 +101,29 @@ class ScanEventStore:
             raise RuntimeError("Scan event disappeared")
         return result
 
+    def backfill_product_snapshot(
+        self,
+        *,
+        product_id: int,
+        barcode: str,
+        product_name: str | None,
+        image_url: str | None,
+    ) -> int:
+        with self._connect() as db:
+            cursor = db.execute(
+                """
+                UPDATE scan_events
+                SET product_name = ?, image_url = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE status = 'applied'
+                  AND (
+                    product_id = ?
+                    OR (product_id IS NULL AND barcode = ?)
+                  )
+                """,
+                (product_name, image_url, product_id, barcode),
+            )
+        return int(cursor.rowcount or 0)
+
     def delete(self, event_id: str) -> bool:
         with self._connect() as db:
             cursor = db.execute("DELETE FROM scan_events WHERE event_id = ?", (event_id,))

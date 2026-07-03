@@ -16,15 +16,13 @@
       <p>SCANNER ACTIVITY</p>
       <h1>Kitchen scans</h1>
     </div>
-    <nav class="filters">
-      <button class="active" data-filter="all">All <b id="all-count">0</b></button>
-      <button data-filter="review">Needs review <b id="review-count">0</b></button>
-      <button data-filter="applied">Applied</button>
-      <button data-filter="failed">Failed</button>
+    <nav class="filters page-tabs">
+      <a class="active" href="/">Scan</a>
+      <a href="/logs">Logs</a>
+      <a href="/settings">Settings</a>
     </nav>
     <div class="header-actions">
       <span class="online"><i></i> Grocy online</span>
-      <a class="settings-button" href="/settings">Settings</a>
       <form id="quick-scan" class="quick-scan">
         <input name="barcode" placeholder="Scan barcode + Enter" autocomplete="off" required autofocus>
         <span class="scan-loading" aria-live="polite"><i></i><b>Looking up product...</b></span>
@@ -33,14 +31,13 @@
   </header>
 
   <main>
+    <nav class="filters scan-filters">
+      <button class="active" data-filter="all">All <b id="all-count">0</b></button>
+      <button data-filter="review">Needs review <b id="review-count">0</b></button>
+      <button data-filter="applied">Applied</button>
+      <button data-filter="failed">Failed</button>
+    </nav>
     <section id="scanner-status" class="scanner-status" aria-live="polite"></section>
-    <section id="products-panel" class="products-panel" aria-live="polite">
-      <div class="section-heading">
-        <p>PRODUCTS</p>
-        <h2>Dashboard products</h2>
-      </div>
-      <div id="product-grid" class="product-grid"></div>
-    </section>
     <div id="event-grid" class="event-grid"></div>
   </main>
 

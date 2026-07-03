@@ -6,6 +6,7 @@ let options = { locations: [], quantity_units: [], scanner_devices: [] };
 let activeFilter = "all";
 let activePreview = null;
 let activeProduct = null;
+let activeProductEvent = null;
 let dashboardSignature = "";
 
 async function api(path, init, json = true) {
@@ -190,34 +191,32 @@ function renderScannerStatus() {
   }
   node.innerHTML = devices.map(scannerStatusLine).join("");
 }
-function productCard(product) {
-  const notes = [
-    product.brand ? `Brand: ${product.brand}` : "",
-    product.quantity ? `Pack: ${product.quantity}` : "",
-    product.location_name ? `Default location: ${product.location_name}` : "",
-    product.barcode ? `Barcode: ${product.barcode}` : "",
-    product.stock_amount != null ? `Stock: ${product.stock_amount}${product.quantity_unit ? ` ${product.quantity_unit}` : ""}` : "",
-    product.description || ""
-  ].filter(Boolean).slice(0, 3);
-  return `<article class="product-card" data-product-id="${escapeHtml(product.product_id)}">
-    <p>${escapeHtml(product.editable ? "DASHBOARD EDITABLE" : "GROCY MANAGED")}</p>
-    <h3>${escapeHtml(product.name || "Unnamed product")}</h3>
-    ${notes.map(note => `<p>${escapeHtml(note)}</p>`).join("")}
-    ${product.editable ? `<button type="button" class="product-edit-button" data-product-id="${escapeHtml(product.product_id)}">Edit product</button>` : ""}
-  </article>`;
+function productById(productId) {
+  return products.find(x => String(x.product_id) === String(productId)) || null;
 }
-function renderProducts() {
-  const node = $("#product-grid");
-  node.innerHTML = products.length ? products.map(productCard).join("") : `<div class="empty">No dashboard products available yet.</div>`;
+function activeScanContext(event) {
+  if (!event) return "";
+  const location = options.locations.find(x => x.id === event.location_id)?.name || "Product default";
+  return `<fieldset><legend>Scan context</legend>
+    <div class="form-pair readonly-pair">
+      <label>Mode<input value="${escapeHtml(event.mode?.toUpperCase() || "")}" readonly></label>
+      <label>Quantity<input value="${escapeHtml(event.quantity ?? "")}" readonly></label>
+    </div>
+    <div class="form-pair readonly-pair">
+      <label>Location<input value="${escapeHtml(location)}" readonly></label>
+      <label>Barcode<input value="${escapeHtml(event.barcode || "")}" readonly></label>
+    </div>
+  </fieldset>`;
 }
-function productEditDialog(product) {
+function productEditDialog(product, event) {
   const locationOptions = options.locations.map(x => `<option value="${x.id}" ${x.id === product.location_id ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("");
   const stockUnitOptions = options.quantity_units.map(x => `<option value="${x.id}" ${x.id === product.qu_id_stock ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("");
   const purchaseUnitOptions = options.quantity_units.map(x => `<option value="${x.id}" ${x.id === product.qu_id_purchase ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("");
   return `<div class="drawer-image">${previewImage(product)}</div>
-    <p class="drawer-kicker">${escapeHtml(product.editable ? "AUTO-CREATED PRODUCT" : "READ ONLY")}</p>
+    <p class="drawer-kicker">GROCY PRODUCT</p>
     <h2>${escapeHtml(product.name || "Unnamed product")}</h2>
     <form id="product-edit-form" data-product-id="${escapeHtml(product.product_id)}" class="review-form">
+      ${activeScanContext(event)}
       <label>Product name<input name="name" value="${escapeHtml(product.name || "")}" required></label>
       <label>Brand<input name="brand" value="${escapeHtml(product.brand || "")}"></label>
       <label>Package quantity<input name="quantity" value="${escapeHtml(product.quantity || "")}"></label>
@@ -229,17 +228,19 @@ function productEditDialog(product) {
       <button type="submit">Save product</button>
     </form>`;
 }
-function openProductEditDialog(productId) {
-  const product = products.find(x => String(x.product_id) === String(productId));
-  if (!product || !product.editable) return;
+function openProductEditDialog(productId, eventId = null) {
+  const product = productById(productId);
+  if (!product) return toast("Product details are still loading. Try again in a moment.");
   activeProduct = product;
-  $("#product-edit-content").innerHTML = productEditDialog(product);
+  activeProductEvent = eventId ? events.find(x => x.event_id === eventId) || null : null;
+  $("#product-edit-content").innerHTML = productEditDialog(product, activeProductEvent);
   $("#product-edit-dialog").showModal();
 }
 function card(event, index) {
   const review = needsReview(event);
   const result = event.lookup_payload?.result;
-  return `<article class="polaroid ${review || isLoading(event) ? "review" : "applied"} ${event.status}" data-event="${escapeHtml(event.event_id)}" style="--delay:${Math.min(index, 10) * 35}ms">
+  const cardClass = review || isLoading(event) ? "review" : "applied";
+  return `<article class="polaroid ${cardClass} ${event.status}" data-event="${escapeHtml(event.event_id)}" data-product-id="${escapeHtml(event.product_id || "")}" style="--delay:${Math.min(index, 10) * 35}ms">
     <div class="photo">${image(event)}<em class="badge ${operationClass(event)}">${escapeHtml(operationBadge(event))}</em></div>
     <div class="caption"><span>${captionStatus(event, review)}</span>
       <h2>${escapeHtml(title(event))}</h2>
@@ -252,7 +253,6 @@ function render() {
   $("#all-count").textContent = events.length;
   $("#review-count").textContent = events.filter(needsReview).length;
   renderScannerStatus();
-  renderProducts();
   $("#event-grid").innerHTML = visible.length ? visible.map(card).join("") : `<div class="empty">No scans in this view yet.</div>`;
 }
 function reviewForm(event) {
@@ -358,15 +358,15 @@ $("#quick-scan").addEventListener("submit", async event => {
 document.addEventListener("click", async event => {
   const filter = event.target.closest("[data-filter]");
   if (filter) { activeFilter = filter.dataset.filter; document.querySelectorAll("[data-filter]").forEach(x => x.classList.toggle("active", x === filter)); return render(); }
-  const productEditButton = event.target.closest(".product-edit-button"); if (productEditButton) return openProductEditDialog(productEditButton.dataset.productId);
   const polaroid = event.target.closest(".polaroid.review"); if (polaroid) return openDrawer(polaroid.dataset.event);
+  const appliedPolaroid = event.target.closest(".polaroid.applied"); if (appliedPolaroid?.dataset.productId) return openProductEditDialog(appliedPolaroid.dataset.productId, appliedPolaroid.dataset.event);
   const choice = event.target.closest(".choice");
   if (choice) {
     choice.closest(".choice-group").querySelectorAll(".choice").forEach(x => x.classList.remove("selected")); choice.classList.add("selected");
     if (choice.classList.contains("quantity-choice")) $("#custom-quantity").value = choice.dataset.value; return updateConfirmLabel();
   }
   if (event.target.matches("#close-scan-dialog")) { $("#scan-dialog").close(); return $("#quick-scan input").focus(); }
-  if (event.target.matches("#close-product-edit-dialog")) { $("#product-edit-dialog").close(); activeProduct = null; return $("#quick-scan input").focus(); }
+  if (event.target.matches("#close-product-edit-dialog")) { $("#product-edit-dialog").close(); activeProduct = null; activeProductEvent = null; return $("#quick-scan input").focus(); }
   if (event.target.matches("#close-drawer") || event.target.matches("#drawer-backdrop")) return closeDrawer();
   if (event.target.matches(".refresh-event")) {
     try { await api(`/scan-events/${event.target.closest("form").dataset.event}/refresh`, { method: "POST" }); closeDrawer(); await load(); } catch (error) { toast(error.message); }
@@ -448,11 +448,12 @@ document.addEventListener("submit", async event => {
     };
     const button = event.target.querySelector('button[type="submit"]'); setButtonBusy(button, true, "Saving...");
     try {
-      await api(`/dashboard/products/${activeProduct.product_id}`, { method: "PUT", body: JSON.stringify(data) });
+      const result = await api(`/dashboard/products/${activeProduct.product_id}`, { method: "PUT", body: JSON.stringify(data) });
       $("#product-edit-dialog").close();
       activeProduct = null;
+      activeProductEvent = null;
       await load();
-      toast("Product updated.");
+      toast(result.updated_event_count > 0 ? `Product updated. Updated ${result.updated_event_count} dashboard record(s).` : "Product updated.");
       $("#quick-scan input").focus();
     } catch (error) { toast(error.message); }
     finally { setButtonBusy(button, false); }

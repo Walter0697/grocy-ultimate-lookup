@@ -56,6 +56,14 @@ class GrocyClient:
             None,
         )
 
+    async def get_product_barcode(self, product_id: int) -> str | None:
+        barcodes = await self.get_objects("product_barcodes")
+        match = next((row for row in barcodes if int(row.get("product_id") or 0) == product_id), None)
+        if match is None:
+            return None
+        barcode = match.get("barcode")
+        return str(barcode) if barcode else None
+
     async def update_product_barcode(self, barcode_row_id: int, payload: dict) -> None:
         await self._request("PUT", f"/objects/product_barcodes/{barcode_row_id}", json=payload)
 
@@ -225,7 +233,10 @@ class GrocyClient:
         barcode: str,
         product: PendingProductConfirmation,
     ) -> dict:
-        picture_file_name = await self._upload_product_picture(barcode, product.image_url)
+        try:
+            picture_file_name = await self._upload_product_picture(barcode, product.image_url)
+        except httpx.HTTPError as exc:
+            raise GrocyError(f"Product image download failed: {exc}") from exc
         payload = self.product_payload(product, picture_file_name=picture_file_name)
         payload.pop("qu_factor_purchase_to_stock", None)
         created = await self._request("POST", "/objects/products", json=payload)
@@ -256,7 +267,10 @@ class GrocyClient:
         barcode: str,
         product: PendingProductConfirmation,
     ) -> dict:
-        picture_file_name = await self._upload_product_picture(barcode, product.image_url)
+        try:
+            picture_file_name = await self._upload_product_picture(barcode, product.image_url)
+        except httpx.HTTPError as exc:
+            raise GrocyError(f"Product image download failed: {exc}") from exc
         payload = self.product_payload(product, picture_file_name=picture_file_name)
         payload.pop("qu_factor_purchase_to_stock", None)
         existing_product = await self.get_product_object(product_id)
