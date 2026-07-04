@@ -1,6 +1,7 @@
 import asyncio
 from io import BytesIO
 
+import httpx
 from fastapi import HTTPException
 from starlette.datastructures import Headers, UploadFile
 
@@ -8,10 +9,12 @@ from app.config import settings
 from app.main import (
     app,
     create_device_scan,
+    dashboard_edit_product,
     dashboard_options,
     delete_scan_event,
     list_scanner_devices,
     preview_scan,
+    product_edit_history,
     seed_grocy_units,
     scanner,
     scanner_heartbeat,
@@ -20,9 +23,19 @@ from app.main import (
     upload_product_image,
     uploaded_images_path,
     versioned_index_html,
+    versioned_logs_html,
 )
 from app.grocy import GrocyError
-from app.models import DeviceHeartbeatRequest, DeviceScanRequest, ScanEventRequest
+from app.models import (
+    DashboardProductEditProductSummary,
+    DashboardProductEditResult,
+    DashboardProductUpdate,
+    DeviceHeartbeatRequest,
+    DeviceScanRequest,
+    ProductEditHistoryEntry,
+    ProductEditHistoryListResponse,
+    ScanEventRequest,
+)
 
 
 def run(coro):
@@ -128,7 +141,16 @@ def test_dashboard_uses_versioned_local_assets() -> None:
 
     assert "/static/app.js?v=" in response
     assert "/static/styles.css?v=" in response
-    assert "/static/scan-dialog.css?v=" in response
+
+
+def test_logs_page_uses_versioned_local_assets() -> None:
+    response = versioned_logs_html()
+
+    assert "/static/logs.js?v=" in response
+    assert "/static/styles.css?v=" in response
+    assert 'id="log-table-body"' in response
+    assert 'id="log-prev"' in response
+    assert 'id="log-filter-input"' in response
 
 
 def test_dashboard_renders_subtle_app_version_badge() -> None:
@@ -147,14 +169,56 @@ def test_dashboard_static_includes_scanner_device_status_panel() -> None:
     assert "scanner_devices" in script
 
 
+def test_dashboard_static_includes_product_editor_controls() -> None:
+    index = (static_path / "index.html").read_text()
+    script = (static_path / "app.js").read_text()
+
+    assert 'id="products-panel"' not in index
+    assert 'id="product-grid"' not in index
+    assert 'id="product-edit-dialog"' in index
+    assert 'id="product-edit-content"' in index
+    assert "openProductEditDialog" in script
+    assert 'id="product-edit-form"' in script
+    assert "Save product" in script
+    assert "/dashboard/products" in script
+    assert ".polaroid.applied" in script
+    assert "Scan context" in script
+
+
+def test_dashboard_script_submits_product_edits_to_dashboard_endpoint() -> None:
+    script = (static_path / "app.js").read_text()
+
+    assert "/dashboard/products/${activeProduct.product_id}" in script or "/dashboard/products/" in script
+    assert "product-edit-form" in script
+    assert "Product updated." in script
+    assert "updated_event_count" in script
+    assert "dashboard record(s)." in script
+    assert 'method: "PUT"' in script or "method: 'PUT'" in script
+
+
 def test_dashboard_links_to_settings_page() -> None:
     index = (static_path / "index.html").read_text()
     settings_html = (static_path / "settings.html").read_text()
     settings_script = (static_path / "settings.js").read_text()
 
-    assert '<a class="settings-button" href="/settings">Settings</a>' in index
+    assert '<a href="/logs">Logs</a>' in index
+    assert '<a href="/settings">Settings</a>' in index
     assert 'id="community-catalog-form"' in settings_html
     assert "/settings/community-catalog" in settings_script
+
+
+def test_logs_script_includes_sorting_and_pagination_controls() -> None:
+    script = (static_path / "logs.js").read_text()
+
+    assert "historyState" in script
+    assert "log-sort" in script
+    assert "offset" in script
+    assert "total" in script
+    assert "#log-prev" in script
+    assert "#log-next" in script
+    assert "#log-filter-input" in script
+    assert "searchText" in script
+    assert "No matching edits on this page." in script
 
 
 def test_settings_page_uses_pending_product_review_dialog() -> None:
@@ -335,6 +399,18 @@ def test_dashboard_options_maps_grocy_errors_to_json_api_error(monkeypatch) -> N
         raise AssertionError("GrocyError was not converted to an API error")
 
 
+def test_dashboard_edit_product_route_exposes_richer_response_model() -> None:
+    route = next(route for route in app.routes if getattr(route, "path", None) == "/dashboard/products/{product_id}" and "PUT" in route.methods)
+
+    assert route.response_model is DashboardProductEditResult
+
+
+def test_product_edit_history_route_exposes_history_entries() -> None:
+    route = next(route for route in app.routes if getattr(route, "path", None) == "/product-edit-history" and "GET" in route.methods)
+
+    assert route.response_model is ProductEditHistoryListResponse
+
+
 def test_scan_preview_maps_grocy_errors_to_json_api_error(monkeypatch) -> None:
     async def fake_preview(barcode):
         raise GrocyError("Grocy returned non-JSON response: setup is missing")
@@ -348,3 +424,210 @@ def test_scan_preview_maps_grocy_errors_to_json_api_error(monkeypatch) -> None:
         assert "setup is missing" in exc.detail
     else:
         raise AssertionError("GrocyError was not converted to an API error")
+
+
+def test_dashboard_edit_product_forwards_success(monkeypatch) -> None:
+    product = DashboardProductUpdate(
+        name="Corrected Product",
+        location_id=4,
+        qu_id_stock=7,
+        qu_id_purchase=7,
+        qu_factor_purchase_to_stock=1,
+    )
+    response_value = DashboardProductEditResult(
+        product=DashboardProductEditProductSummary(
+            product_id=7,
+            name="Corrected Product",
+            image_url=None,
+            stock_amount=2,
+            editable=True,
+        ),
+        updated_event_count=3,
+        history_entry=ProductEditHistoryEntry(
+            id=11,
+            product_id=7,
+            barcode="123456",
+            source="dashboard",
+            changed_fields=["name"],
+            before={"name": "Old Product"},
+            after={"name": "Corrected Product"},
+            related_event_id=None,
+            created_at="2026-07-01T00:00:00Z",
+        ),
+    )
+    model_validate_calls = []
+
+    async def fake_update_dashboard_product(product_id, payload):
+        assert product_id == 7
+        assert payload == product
+        return response_value
+
+    monkeypatch.setattr(scanner, "update_dashboard_product", fake_update_dashboard_product)
+
+    original_model_validate = DashboardProductEditResult.model_validate
+
+    def fake_model_validate(cls, value, *args, **kwargs):
+        model_validate_calls.append(value)
+        assert value is response_value
+        return original_model_validate(value, *args, **kwargs)
+
+    monkeypatch.setattr(DashboardProductEditResult, "model_validate", classmethod(fake_model_validate))
+
+    async def request():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.put(
+                "/dashboard/products/7",
+                json={
+                    "name": "Corrected Product",
+                    "location_id": 4,
+                    "qu_id_stock": 7,
+                    "qu_id_purchase": 7,
+                    "qu_factor_purchase_to_stock": 1,
+                },
+            )
+
+    response = run(request())
+
+    assert response.status_code == 200
+    assert model_validate_calls == [response_value]
+    assert response.json() == response_value.model_dump(mode="json")
+
+
+def test_dashboard_edit_product_maps_unowned_product_to_403(monkeypatch) -> None:
+    async def fake_update_dashboard_product(product_id, payload):
+        raise PermissionError("Only auto-created products can be edited from this dashboard")
+
+    monkeypatch.setattr(scanner, "update_dashboard_product", fake_update_dashboard_product)
+
+    async def request():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.put(
+                "/dashboard/products/7",
+                json={
+                    "name": "Corrected Product",
+                    "location_id": 4,
+                    "qu_id_stock": 7,
+                    "qu_id_purchase": 7,
+                    "qu_factor_purchase_to_stock": 1,
+                },
+            )
+
+    response = run(request())
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Only auto-created products can be edited from this dashboard"}
+
+
+def test_product_edit_history_forwards_store_results(monkeypatch) -> None:
+    result = ProductEditHistoryListResponse(
+        items=[
+            ProductEditHistoryEntry(
+                id=11,
+                product_id=7,
+                barcode="123456",
+                source="dashboard",
+                changed_fields=["name", "brand"],
+                before={"name": "Old Product", "brand": "Old Brand"},
+                after={"name": "Corrected Product", "brand": "New Brand"},
+                related_event_id=None,
+                created_at="2026-07-01T00:00:00Z",
+            )
+        ],
+        total=1,
+        limit=25,
+        offset=50,
+        sort="barcode",
+        order="asc",
+    )
+    list_calls = []
+
+    def fake_list(*, limit, offset, sort, order):
+        list_calls.append((limit, offset, sort, order))
+        return result
+
+    monkeypatch.setattr(scanner.history_store, "list", fake_list)
+
+    response = run(product_edit_history(limit=25, offset=50, sort="barcode", order="asc"))
+
+    assert list_calls == [(25, 50, "barcode", "asc")]
+    assert response == result
+
+
+def test_dashboard_edit_product_maps_missing_product_to_404(monkeypatch) -> None:
+    async def fake_update_dashboard_product(product_id, payload):
+        raise KeyError(product_id)
+
+    monkeypatch.setattr(scanner, "update_dashboard_product", fake_update_dashboard_product)
+
+    async def request():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.put(
+                "/dashboard/products/7",
+                json={
+                    "name": "Corrected Product",
+                    "location_id": 4,
+                    "qu_id_stock": 7,
+                    "qu_id_purchase": 7,
+                    "qu_factor_purchase_to_stock": 1,
+                },
+            )
+
+    response = run(request())
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Dashboard product not found"}
+
+
+def test_dashboard_edit_product_route_returns_404(monkeypatch) -> None:
+    async def fake_update_dashboard_product(product_id, payload):
+        raise KeyError(product_id)
+
+    monkeypatch.setattr(scanner, "update_dashboard_product", fake_update_dashboard_product)
+
+    async def request():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.put(
+                "/dashboard/products/7",
+                json={
+                    "name": "Corrected Product",
+                    "location_id": 4,
+                    "qu_id_stock": 7,
+                    "qu_id_purchase": 7,
+                    "qu_factor_purchase_to_stock": 1,
+                },
+            )
+
+    response = run(request())
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Dashboard product not found"}
+
+
+def test_dashboard_edit_product_maps_grocy_errors_to_502(monkeypatch) -> None:
+    async def fake_update_dashboard_product(product_id, payload):
+        raise GrocyError("Grocy returned non-JSON response: setup is missing")
+
+    monkeypatch.setattr(scanner, "update_dashboard_product", fake_update_dashboard_product)
+
+    async def request():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.put(
+                "/dashboard/products/7",
+                json={
+                    "name": "Corrected Product",
+                    "location_id": 4,
+                    "qu_id_stock": 7,
+                    "qu_id_purchase": 7,
+                    "qu_factor_purchase_to_stock": 1,
+                },
+            )
+
+    response = run(request())
+
+    assert response.status_code == 502
+    assert "setup is missing" in response.json()["detail"]

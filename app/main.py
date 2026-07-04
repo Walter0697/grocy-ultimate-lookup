@@ -31,6 +31,8 @@ from app.grocy_units import seed_units
 from app.models import (
     ConfirmedProduct,
     ConfirmedProductRequest,
+    DashboardProductUpdate,
+    DashboardProductEditResult,
     DashboardScanConfirmation,
     DeviceHeartbeatRequest,
     DeviceScanRequest,
@@ -38,6 +40,8 @@ from app.models import (
     DeviceStatus,
     LookupResponse,
     PendingProductConfirmation,
+    ProductEditHistoryEntry,
+    ProductEditHistoryListResponse,
     ScanEventRequest,
 )
 from app.orchestrator import LookupOrchestrator
@@ -79,6 +83,23 @@ async def dashboard() -> HTMLResponse:
 def versioned_index_html() -> str:
     html = (static_path / "index.html").read_text()
     for asset in ("styles.css", "scan-dialog.css", "app.js"):
+        version = str(int((static_path / asset).stat().st_mtime))
+        html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
+    html = html.replace("{{APP_VERSION_BADGE}}", render_app_version_badge())
+    return html
+
+
+@app.get("/logs", include_in_schema=False)
+async def logs_page() -> HTMLResponse:
+    return HTMLResponse(
+        versioned_logs_html(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def versioned_logs_html() -> str:
+    html = (static_path / "logs.html").read_text()
+    for asset in ("styles.css", "logs.js"):
         version = str(int((static_path / asset).stat().st_mtime))
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
     html = html.replace("{{APP_VERSION_BADGE}}", render_app_version_badge())
@@ -469,6 +490,32 @@ async def dashboard_products() -> list[dict]:
         return await scanner.products()
     except GrocyError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@app.put("/dashboard/products/{product_id}", response_model=DashboardProductEditResult)
+async def dashboard_edit_product(product_id: int, product: DashboardProductUpdate) -> DashboardProductEditResult:
+    try:
+        result = await scanner.update_dashboard_product(product_id, product)
+        return DashboardProductEditResult.model_validate(result)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except KeyError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard product not found")
+    except GrocyError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@app.get("/product-edit-history", response_model=ProductEditHistoryListResponse)
+async def product_edit_history(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    sort: str = Query(default="created_at"),
+    order: str = Query(default="desc"),
+) -> ProductEditHistoryListResponse:
+    try:
+        return scanner.history_store.list(limit=limit, offset=offset, sort=sort, order=order)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
 
 @app.get("/dashboard/options")

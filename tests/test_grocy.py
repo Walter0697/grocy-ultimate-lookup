@@ -1,6 +1,7 @@
 import asyncio
 
 import pytest
+import httpx
 
 from app.grocy import GrocyClient, GrocyError
 from app.grocy_units import COMMON_GROCY_UNITS, missing_unit_names
@@ -84,6 +85,11 @@ class UpdateRecordingGrocyClient(GrocyClient):
                 ]
             return {"product": {"id": 4}, "stock_amount": 2}
         return []
+
+
+class UpdateImageDownloadFailGrocyClient(UpdateRecordingGrocyClient):
+    async def _upload_product_picture(self, barcode: str, image_url):
+        raise httpx.ConnectError("All connection attempts failed")
 
 
 class UpdateWithStaleRowsGrocyClient(GrocyClient):
@@ -327,6 +333,32 @@ def event(mode: str) -> ScanEventRequest:
     )
 
 
+def test_product_card_includes_edit_prefill_fields() -> None:
+    client = RecordingGrocyClient()
+
+    card = client.product_card(
+        {
+            "product": {
+                "id": 4,
+                "name": "Tissue Pouch",
+                "description": "Fixed details",
+                "location_id": 4,
+                "qu_id_purchase": 12,
+                "qu_id_stock": 2,
+            },
+            "stock_amount": 2,
+            "quantity_unit_stock": {"name": "Piece"},
+            "location": {"name": "Kitchen"},
+            "product_barcodes": [{"barcode": "123456"}],
+        }
+    )
+
+    assert card["description"] == "Fixed details"
+    assert card["location_id"] == 4
+    assert card["qu_id_purchase"] == 12
+    assert card["qu_id_stock"] == 2
+
+
 def test_stock_operations_forward_location() -> None:
     add_client = AddPurchaseUnitGrocyClient()
     run(add_client.apply_stock_operation(4, event("add")))
@@ -474,6 +506,26 @@ def test_update_product_rewrites_barcode_mapping_and_upserts_conversion_rows() -
         "factor": 1 / 12,
         "product_id": 4,
     }
+
+
+def test_update_product_wraps_image_download_failures_as_grocy_errors() -> None:
+    client = UpdateImageDownloadFailGrocyClient()
+
+    with pytest.raises(GrocyError, match="Product image download failed"):
+        run(
+            client.update_product(
+                4,
+                "123",
+                PendingProductConfirmation(
+                    name="Tissue Pouch",
+                    image_url="https://example.com/image.jpg",
+                    location_id=4,
+                    qu_id_stock=2,
+                    qu_id_purchase=12,
+                    qu_factor_purchase_to_stock=12,
+                ),
+            )
+        )
 
 
 def test_create_product_same_unit_only_writes_one_self_conversion() -> None:

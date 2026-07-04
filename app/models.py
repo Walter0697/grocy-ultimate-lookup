@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 
 class LookupResult(BaseModel):
@@ -148,3 +148,58 @@ class PendingProductConfirmation(BaseModel):
     qu_id_stock: int = Field(gt=0)
     qu_id_purchase: int = Field(gt=0)
     qu_factor_purchase_to_stock: float = Field(default=1, gt=0)
+
+
+class DashboardProductUpdate(BaseModel):
+    name: str = Field(min_length=1)
+    description: str | None = None
+    brand: str | None = None
+    quantity: str | None = None
+    image_url: HttpUrl | None = None
+    location_id: int = Field(gt=0)
+    qu_id_stock: int = Field(gt=0)
+    qu_id_purchase: int = Field(gt=0)
+    qu_factor_purchase_to_stock: float = Field(default=1, gt=0)
+
+
+class DashboardProductEditProductSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    product_id: int
+    name: str
+    image_url: HttpUrl | None = None
+    stock_amount: float | None = None
+    editable: bool = True
+
+
+class ProductEditHistoryEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    product_id: int
+    barcode: str
+    source: str
+    changed_fields: list[str]
+    before: dict[str, object]
+    after: dict[str, object]
+    related_event_id: str | None = None
+    created_at: str
+
+
+class ProductEditHistoryListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ProductEditHistoryEntry]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1)
+    offset: int = Field(ge=0)
+    sort: Literal["created_at", "product_name", "barcode", "product_id"]
+    order: Literal["asc", "desc"]
+
+
+class DashboardProductEditResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    product: DashboardProductEditProductSummary
+    updated_event_count: int = 0
+    history_entry: ProductEditHistoryEntry | None = None
