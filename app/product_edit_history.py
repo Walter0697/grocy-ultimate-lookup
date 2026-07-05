@@ -3,7 +3,14 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone
 
-from app.models import ProductEditHistoryEntry, ProductEditHistoryListResponse
+from app.models import (
+    ProductEditHistoryBarcodeListResponse,
+    ProductEditHistoryBarcodeSummary,
+    ProductEditHistoryDetailResponse,
+    ProductEditHistoryDiffField,
+    ProductEditHistoryEntry,
+    ProductEditHistoryListResponse,
+)
 
 
 class ProductEditHistoryStore:
@@ -12,6 +19,12 @@ class ProductEditHistoryStore:
         "product_name": "COALESCE(json_extract(after, '$.name'), json_extract(before, '$.name'), '')",
         "barcode": "barcode",
         "product_id": "product_id",
+    }
+    BARCODE_SORT_COLUMNS = {
+        "barcode": "barcode",
+        "product_name": "product_name",
+        "edit_count": "edit_count",
+        "last_edited_at": "last_edited_at",
     }
 
     def __init__(self, path: str) -> None:
@@ -102,21 +115,40 @@ class ProductEditHistoryStore:
         offset: int = 0,
         sort: str = "created_at",
         order: str = "desc",
+        query: str = "",
     ) -> ProductEditHistoryListResponse:
         sort_column = self.SORT_COLUMNS.get(sort)
         if sort_column is None:
             raise ValueError("Unsupported sort field")
         direction = "ASC" if order == "asc" else "DESC"
+        search = query.strip().lower()
+        where_clause = ""
+        params: list[object] = []
+        if search:
+            where_clause = """
+                WHERE lower(barcode) LIKE ?
+                   OR lower(CAST(product_id AS TEXT)) LIKE ?
+                   OR lower(COALESCE(json_extract(after, '$.name'), json_extract(before, '$.name'), '')) LIKE ?
+                   OR lower(changed_fields) LIKE ?
+                   OR lower(before) LIKE ?
+                   OR lower(after) LIKE ?
+            """
+            like = f"%{search}%"
+            params.extend([like, like, like, like, like, like])
         with self._connect() as db:
-            total = db.execute("SELECT COUNT(*) AS count FROM product_edit_history").fetchone()["count"]
+            total = db.execute(
+                f"SELECT COUNT(*) AS count FROM product_edit_history {where_clause}",
+                params,
+            ).fetchone()["count"]
             rows = db.execute(
                 f"""
                 SELECT *
                 FROM product_edit_history
+                {where_clause}
                 ORDER BY {sort_column} {direction}, id {direction}
                 LIMIT ? OFFSET ?
                 """,
-                (limit, offset),
+                [*params, limit, offset],
             ).fetchall()
         return ProductEditHistoryListResponse(
             items=[self._row(row) for row in rows],
@@ -125,6 +157,105 @@ class ProductEditHistoryStore:
             offset=offset,
             sort=sort,
             order=order,
+            query=query,
+        )
+
+    def detail(self, history_id: int) -> ProductEditHistoryDetailResponse | None:
+        entry = self.get(history_id)
+        if entry is None:
+            return None
+        diffs = [
+            ProductEditHistoryDiffField(
+                field=field,
+                before=entry.before.get(field),
+                after=entry.after.get(field),
+            )
+            for field in entry.changed_fields
+        ]
+        return ProductEditHistoryDetailResponse(entry=entry, diffs=diffs)
+
+    def barcode_summary(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        sort: str = "last_edited_at",
+        order: str = "desc",
+        query: str = "",
+    ) -> ProductEditHistoryBarcodeListResponse:
+        sort_column = self.BARCODE_SORT_COLUMNS.get(sort)
+        if sort_column is None:
+            raise ValueError("Unsupported sort field")
+        direction = "ASC" if order == "asc" else "DESC"
+        search = query.strip().lower()
+        where_clause = ""
+        params: list[object] = []
+        if search:
+            where_clause = """
+                WHERE lower(barcode) LIKE ?
+                   OR lower(product_name) LIKE ?
+                   OR lower(CAST(latest_product_id AS TEXT)) LIKE ?
+            """
+            like = f"%{search}%"
+            params.extend([like, like, like])
+
+        base_query = f"""
+            WITH ranked AS (
+                SELECT
+                    barcode,
+                    product_id,
+                    COALESCE(json_extract(after, '$.name'), json_extract(before, '$.name'), '') AS product_name,
+                    created_at,
+                    id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY barcode
+                        ORDER BY created_at DESC, id DESC
+                    ) AS rn,
+                    COUNT(*) OVER (PARTITION BY barcode) AS edit_count
+                FROM product_edit_history
+            )
+            SELECT
+                barcode,
+                COALESCE(
+                    (
+                        SELECT named.product_name
+                        FROM ranked named
+                        WHERE named.barcode = ranked.barcode
+                          AND named.product_name <> ''
+                        ORDER BY named.created_at DESC, named.id DESC
+                        LIMIT 1
+                    ),
+                    product_name
+                ) AS product_name,
+                product_id AS latest_product_id,
+                edit_count,
+                created_at AS last_edited_at
+            FROM ranked
+            WHERE rn = 1
+        """
+        with self._connect() as db:
+            total = db.execute(
+                f"SELECT COUNT(*) AS count FROM ({base_query}) summary {where_clause}",
+                params,
+            ).fetchone()["count"]
+            rows = db.execute(
+                f"""
+                SELECT *
+                FROM ({base_query}) summary
+                {where_clause}
+                ORDER BY {sort_column} {direction}, barcode {direction}
+                LIMIT ? OFFSET ?
+                """,
+                [*params, limit, offset],
+            ).fetchall()
+        return ProductEditHistoryBarcodeListResponse(
+            items=[ProductEditHistoryBarcodeSummary.model_validate(dict(row)) for row in rows],
+            total=int(total),
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            order=order,
+            query=query,
         )
 
     def _row(self, row: sqlite3.Row) -> ProductEditHistoryEntry:

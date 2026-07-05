@@ -57,6 +57,13 @@ function toast(message) {
   setTimeout(() => node.classList.remove("show"), 3500);
 }
 
+function bindBackdropClose(dialog) {
+  if (!dialog) return;
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+}
+
 function setButtonBusy(button, busy, label) {
   if (!button) return;
   if (busy) button.dataset.label = button.textContent;
@@ -119,6 +126,10 @@ function metadataFormData() {
     categories: parseCommaList(form.catalog_categories.value)
   };
 }
+
+bindBackdropClose($("#token-help-dialog"));
+bindBackdropClose($("#pending-products-dialog"));
+bindBackdropClose($("#add-catalog-source-dialog"));
 
 function fillForm(settings) {
   const form = $("#community-catalog-form");

@@ -186,6 +186,21 @@ class ProductEditHistoryEntry(BaseModel):
     created_at: str
 
 
+class ProductEditHistoryDiffField(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    before: object | None = None
+    after: object | None = None
+
+
+class ProductEditHistoryDetailResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entry: ProductEditHistoryEntry
+    diffs: list[ProductEditHistoryDiffField]
+
+
 class ProductEditHistoryListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -195,6 +210,29 @@ class ProductEditHistoryListResponse(BaseModel):
     offset: int = Field(ge=0)
     sort: Literal["created_at", "product_name", "barcode", "product_id"]
     order: Literal["asc", "desc"]
+    query: str = ""
+
+
+class ProductEditHistoryBarcodeSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    barcode: str
+    product_name: str
+    latest_product_id: int
+    edit_count: int = Field(ge=0)
+    last_edited_at: str
+
+
+class ProductEditHistoryBarcodeListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ProductEditHistoryBarcodeSummary]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1)
+    offset: int = Field(ge=0)
+    sort: Literal["barcode", "product_name", "edit_count", "last_edited_at"]
+    order: Literal["asc", "desc"]
+    query: str = ""
 
 
 class DashboardProductEditResult(BaseModel):

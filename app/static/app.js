@@ -30,6 +30,15 @@ function toast(message) {
   const node = $("#toast"); node.textContent = message; node.classList.add("show");
   setTimeout(() => node.classList.remove("show"), 3500);
 }
+function bindBackdropClose(dialog, onClose) {
+  if (!dialog) return;
+  dialog.addEventListener("click", event => {
+    if (event.target === dialog) {
+      dialog.close();
+      onClose?.();
+    }
+  });
+}
 function setQuickScanBusy(busy) {
   const form = $("#quick-scan");
   form.classList.toggle("busy", busy);
@@ -328,6 +337,15 @@ function updateConfirmLabel() {
 function openScanDialog(preview) {
   activePreview = preview; $("#scan-preview-content").innerHTML = previewDialog(preview); $("#scan-dialog").showModal(); updateConfirmLabel();
 }
+bindBackdropClose($("#scan-dialog"), () => {
+  activePreview = null;
+  $("#quick-scan input").focus();
+});
+bindBackdropClose($("#product-edit-dialog"), () => {
+  activeProduct = null;
+  activeProductEvent = null;
+  $("#quick-scan input").focus();
+});
 async function load() {
   try {
     const [nextEvents, nextOptions] = await Promise.all([api("/scan-events?limit=200"), api("/dashboard/options")]);

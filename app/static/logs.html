@@ -34,13 +34,17 @@
         </div>
         <div id="log-summary" class="log-summary"></div>
       </div>
+      <div class="filters log-view-toggle">
+        <button type="button" class="active" data-log-view="entries">Entries</button>
+        <button type="button" data-log-view="barcodes">Barcodes</button>
+      </div>
       <div class="log-controls">
         <label class="log-filter">
           <span>Filter</span>
           <input id="log-filter-input" type="text" placeholder="Search product, barcode, product id, or change text">
         </label>
       </div>
-      <div class="log-table-wrap">
+      <div id="log-entries-view" class="log-table-wrap">
         <table class="log-table">
           <thead>
             <tr>
@@ -54,6 +58,19 @@
           <tbody id="log-table-body" aria-live="polite"></tbody>
         </table>
       </div>
+      <div id="log-barcodes-view" class="log-table-wrap hidden">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th><button type="button" class="log-sort" data-sort="barcode">Barcode</button></th>
+              <th><button type="button" class="log-sort" data-sort="product_name">Product</button></th>
+              <th><button type="button" class="log-sort" data-sort="edit_count">Edits</button></th>
+              <th><button type="button" class="log-sort" data-sort="last_edited_at">Last edited</button></th>
+            </tr>
+          </thead>
+          <tbody id="barcode-table-body" aria-live="polite"></tbody>
+        </table>
+      </div>
       <div class="log-pagination">
         <button type="button" id="log-prev" class="secondary">Previous</button>
         <span id="log-page-status" class="log-page-status"></span>
@@ -61,6 +78,10 @@
       </div>
     </section>
   </main>
+  <dialog id="log-detail-dialog" class="scan-dialog">
+    <button id="close-log-detail-dialog" class="close">Close</button>
+    <div id="log-detail-content"></div>
+  </dialog>
   <div id="toast"></div>
   {{APP_VERSION_BADGE}}
   <script src="/static/logs.js"></script>
