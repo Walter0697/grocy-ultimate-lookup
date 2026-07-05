@@ -14,6 +14,8 @@ from app.main import (
     delete_scan_event,
     list_scanner_devices,
     preview_scan,
+    product_edit_history_barcodes,
+    product_edit_history_detail,
     product_edit_history,
     seed_grocy_units,
     scanner,
@@ -32,6 +34,10 @@ from app.models import (
     DashboardProductUpdate,
     DeviceHeartbeatRequest,
     DeviceScanRequest,
+    ProductEditHistoryBarcodeListResponse,
+    ProductEditHistoryBarcodeSummary,
+    ProductEditHistoryDetailResponse,
+    ProductEditHistoryDiffField,
     ProductEditHistoryEntry,
     ProductEditHistoryListResponse,
     ScanEventRequest,
@@ -151,6 +157,9 @@ def test_logs_page_uses_versioned_local_assets() -> None:
     assert 'id="log-table-body"' in response
     assert 'id="log-prev"' in response
     assert 'id="log-filter-input"' in response
+    assert 'data-log-view="entries"' in response
+    assert 'data-log-view="barcodes"' in response
+    assert 'id="log-detail-dialog"' in response
 
 
 def test_dashboard_renders_subtle_app_version_badge() -> None:
@@ -183,6 +192,8 @@ def test_dashboard_static_includes_product_editor_controls() -> None:
     assert "/dashboard/products" in script
     assert ".polaroid.applied" in script
     assert "Scan context" in script
+    assert "bindBackdropClose" in script
+    assert 'event.target === dialog' in script
 
 
 def test_dashboard_script_submits_product_edits_to_dashboard_endpoint() -> None:
@@ -207,18 +218,51 @@ def test_dashboard_links_to_settings_page() -> None:
     assert "/settings/community-catalog" in settings_script
 
 
-def test_logs_script_includes_sorting_and_pagination_controls() -> None:
+def test_logs_script_uses_server_side_query_for_history_fetch() -> None:
     script = (static_path / "logs.js").read_text()
 
-    assert "historyState" in script
-    assert "log-sort" in script
-    assert "offset" in script
-    assert "total" in script
-    assert "#log-prev" in script
-    assert "#log-next" in script
-    assert "#log-filter-input" in script
-    assert "searchText" in script
-    assert "No matching edits on this page." in script
+    assert 'query: String(historyState.query || "")' in script
+    assert "searchText(" not in script
+    assert "No matching edits on this page." not in script
+
+
+def test_dashboard_scan_filters_expose_soft_pill_hook() -> None:
+    index = (static_path / "index.html").read_text()
+    styles = (static_path / "styles.css").read_text()
+
+    assert 'class="filters scan-filters"' in index
+    assert ".scan-filters{" in styles or ".scan-filters {" in styles
+    assert "border-radius:999px" in styles
+
+
+def test_logs_script_renders_readable_diff_panel() -> None:
+    script = (static_path / "logs.js").read_text()
+    styles = (static_path / "styles.css").read_text()
+
+    assert "log-detail-meta" in script
+    assert "log-detail-card" in script
+    assert ".log-detail-card" in styles
+
+
+def test_logs_page_includes_detail_drawer_controls() -> None:
+    html = (static_path / "logs.html").read_text()
+    script = (static_path / "logs.js").read_text()
+
+    assert 'id="log-detail-dialog"' in html
+    assert "/product-edit-history/" in script
+    assert "openLogDetail" in script
+    assert "bindBackdropClose" in script
+    assert 'event.target === dialog' in script
+
+
+def test_logs_page_includes_barcode_summary_view_toggle() -> None:
+    html = (static_path / "logs.html").read_text()
+    script = (static_path / "logs.js").read_text()
+
+    assert 'data-log-view="entries"' in html
+    assert 'data-log-view="barcodes"' in html
+    assert "/product-edit-history/barcodes" in script
+    assert "loadBarcodeSummary" in script
 
 
 def test_settings_page_uses_pending_product_review_dialog() -> None:
@@ -232,6 +276,8 @@ def test_settings_page_uses_pending_product_review_dialog() -> None:
     assert "/settings/community-catalog/pending-products" in settings_script
     assert "/settings/community-catalog/push-products" in settings_script
     assert "/settings/community-catalog/discard-products" in settings_script
+    assert "bindBackdropClose" in settings_script
+    assert 'event.target === dialog' in settings_script
 
 
 def test_settings_page_includes_inline_community_catalog_source_list() -> None:
@@ -411,6 +457,20 @@ def test_product_edit_history_route_exposes_history_entries() -> None:
     assert route.response_model is ProductEditHistoryListResponse
 
 
+def test_product_edit_history_routes_expose_detail_and_barcode_models() -> None:
+    detail_route = next(
+        route for route in app.routes
+        if getattr(route, "path", None) == "/product-edit-history/{history_id}" and "GET" in route.methods
+    )
+    barcode_route = next(
+        route for route in app.routes
+        if getattr(route, "path", None) == "/product-edit-history/barcodes" and "GET" in route.methods
+    )
+
+    assert detail_route.response_model is ProductEditHistoryDetailResponse
+    assert barcode_route.response_model is ProductEditHistoryBarcodeListResponse
+
+
 def test_scan_preview_maps_grocy_errors_to_json_api_error(monkeypatch) -> None:
     async def fake_preview(barcode):
         raise GrocyError("Grocy returned non-JSON response: setup is missing")
@@ -543,16 +603,118 @@ def test_product_edit_history_forwards_store_results(monkeypatch) -> None:
     )
     list_calls = []
 
-    def fake_list(*, limit, offset, sort, order):
-        list_calls.append((limit, offset, sort, order))
+    def fake_list(*, limit, offset, sort, order, query):
+        list_calls.append((limit, offset, sort, order, query))
         return result
 
     monkeypatch.setattr(scanner.history_store, "list", fake_list)
 
-    response = run(product_edit_history(limit=25, offset=50, sort="barcode", order="asc"))
+    response = run(product_edit_history(limit=25, offset=50, sort="barcode", order="asc", query=""))
 
-    assert list_calls == [(25, 50, "barcode", "asc")]
+    assert list_calls == [(25, 50, "barcode", "asc", "")]
     assert response == result
+
+
+def test_product_edit_history_route_forwards_query_and_pagination(monkeypatch) -> None:
+    calls = []
+    result = ProductEditHistoryListResponse(
+        items=[],
+        total=0,
+        limit=25,
+        offset=10,
+        sort="barcode",
+        order="asc",
+        query="milk",
+    )
+
+    def fake_list(*, limit, offset, sort, order, query):
+        calls.append((limit, offset, sort, order, query))
+        return result
+
+    monkeypatch.setattr(scanner.history_store, "list", fake_list)
+
+    response = run(product_edit_history(limit=25, offset=10, sort="barcode", order="asc", query="milk"))
+
+    assert calls == [(25, 10, "barcode", "asc", "milk")]
+    assert response == result
+
+
+def test_product_edit_history_detail_route_maps_missing_row_to_404(monkeypatch) -> None:
+    monkeypatch.setattr(scanner.history_store, "detail", lambda history_id: None)
+
+    try:
+        run(product_edit_history_detail(99))
+    except HTTPException as exc:
+        assert exc.status_code == 404
+    else:
+        raise AssertionError("missing detail row was not converted to 404")
+
+
+def test_product_edit_history_detail_route_forwards_store_result(monkeypatch) -> None:
+    response_value = ProductEditHistoryDetailResponse(
+        entry=ProductEditHistoryEntry(
+            id=11,
+            product_id=7,
+            barcode="123456",
+            source="dashboard",
+            changed_fields=["name"],
+            before={"name": "Old Product"},
+            after={"name": "Corrected Product"},
+            related_event_id=None,
+            created_at="2026-07-01T00:00:00Z",
+        ),
+        diffs=[
+            ProductEditHistoryDiffField(
+                field="name",
+                before="Old Product",
+                after="Corrected Product",
+            )
+        ],
+    )
+    detail_calls = []
+
+    def fake_detail(history_id):
+        detail_calls.append(history_id)
+        return response_value
+
+    monkeypatch.setattr(scanner.history_store, "detail", fake_detail)
+
+    response = run(product_edit_history_detail(11))
+
+    assert detail_calls == [11]
+    assert response == response_value
+
+
+def test_product_edit_history_barcodes_forwards_store_results(monkeypatch) -> None:
+    response_value = ProductEditHistoryBarcodeListResponse(
+        items=[
+            ProductEditHistoryBarcodeSummary(
+                barcode="123456",
+                product_name="Corrected Product",
+                latest_product_id=7,
+                edit_count=2,
+                last_edited_at="2026-07-01T00:00:00Z",
+            )
+        ],
+        total=1,
+        limit=25,
+        offset=0,
+        sort="edit_count",
+        order="desc",
+        query="123",
+    )
+    calls = []
+
+    def fake_barcode_summary(*, limit, offset, sort, order, query):
+        calls.append((limit, offset, sort, order, query))
+        return response_value
+
+    monkeypatch.setattr(scanner.history_store, "barcode_summary", fake_barcode_summary)
+
+    response = run(product_edit_history_barcodes(limit=25, offset=0, sort="edit_count", order="desc", query="123"))
+
+    assert calls == [(25, 0, "edit_count", "desc", "123")]
+    assert response == response_value
 
 
 def test_dashboard_edit_product_maps_missing_product_to_404(monkeypatch) -> None:

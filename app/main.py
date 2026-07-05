@@ -40,6 +40,8 @@ from app.models import (
     DeviceStatus,
     LookupResponse,
     PendingProductConfirmation,
+    ProductEditHistoryBarcodeListResponse,
+    ProductEditHistoryDetailResponse,
     ProductEditHistoryEntry,
     ProductEditHistoryListResponse,
     ScanEventRequest,
@@ -511,11 +513,34 @@ async def product_edit_history(
     offset: int = Query(default=0, ge=0),
     sort: str = Query(default="created_at"),
     order: str = Query(default="desc"),
+    query: str = Query(default=""),
 ) -> ProductEditHistoryListResponse:
     try:
-        return scanner.history_store.list(limit=limit, offset=offset, sort=sort, order=order)
+        return scanner.history_store.list(limit=limit, offset=offset, sort=sort, order=order, query=query)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@app.get("/product-edit-history/barcodes", response_model=ProductEditHistoryBarcodeListResponse)
+async def product_edit_history_barcodes(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    sort: str = Query(default="last_edited_at"),
+    order: str = Query(default="desc"),
+    query: str = Query(default=""),
+) -> ProductEditHistoryBarcodeListResponse:
+    try:
+        return scanner.history_store.barcode_summary(limit=limit, offset=offset, sort=sort, order=order, query=query)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@app.get("/product-edit-history/{history_id}", response_model=ProductEditHistoryDetailResponse)
+async def product_edit_history_detail(history_id: int) -> ProductEditHistoryDetailResponse:
+    detail = scanner.history_store.detail(history_id)
+    if detail is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product edit history not found")
+    return detail
 
 
 @app.get("/dashboard/options")

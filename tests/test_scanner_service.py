@@ -11,6 +11,9 @@ from app.models import (
     DeviceScanRequest,
     LookupResponse,
     LookupResult,
+    ProductEditHistoryBarcodeListResponse,
+    ProductEditHistoryDetailResponse,
+    ProductEditHistoryDiffField,
     ProductEditHistoryEntry,
     PendingProductConfirmation,
     ScanEventRequest,
@@ -1303,11 +1306,87 @@ def test_product_edit_history_store_records_before_after_snapshot(tmp_path) -> N
     assert stored.created_at.endswith("Z")
     assert "T" in stored.created_at
 
-    listing = store.list(limit=10, offset=0, sort="created_at", order="desc")
+    listing = store.list(limit=10, offset=0, sort="created_at", order="desc", query="")
     assert listing.total == 1
     assert listing.items[0].id == history_entry.id
     assert listing.sort == "created_at"
     assert listing.order == "desc"
+
+
+def test_product_edit_history_store_filters_rows_by_server_side_query(tmp_path) -> None:
+    store = ProductEditHistoryStore(str(tmp_path / "history.sqlite3"))
+    store.create(
+        product_id=7,
+        barcode="123456",
+        source="dashboard",
+        changed_fields=["name", "brand"],
+        before={"name": "Known Product", "brand": "Old"},
+        after={"name": "Corrected Product", "brand": "New"},
+    )
+    store.create(
+        product_id=8,
+        barcode="999999",
+        source="dashboard",
+        changed_fields=["name"],
+        before={"name": "Milk"},
+        after={"name": "Whole Milk"},
+    )
+
+    result = store.list(limit=25, offset=0, sort="created_at", order="desc", query="123456")
+
+    assert result.total == 1
+    assert [item.barcode for item in result.items] == ["123456"]
+    assert result.query == "123456"
+
+
+def test_product_edit_history_store_returns_detail_with_field_diffs(tmp_path) -> None:
+    store = ProductEditHistoryStore(str(tmp_path / "history.sqlite3"))
+    entry = store.create(
+        product_id=7,
+        barcode="123456",
+        source="dashboard",
+        changed_fields=["name", "brand"],
+        before={"name": "Known Product", "brand": "Old"},
+        after={"name": "Corrected Product", "brand": "New"},
+    )
+
+    detail = store.detail(entry.id)
+
+    assert isinstance(detail, ProductEditHistoryDetailResponse)
+    assert detail.entry.id == entry.id
+    assert detail.diffs[0] == ProductEditHistoryDiffField(
+        field="name",
+        before="Known Product",
+        after="Corrected Product",
+    )
+
+
+def test_product_edit_history_store_groups_barcode_summary_rows(tmp_path) -> None:
+    store = ProductEditHistoryStore(str(tmp_path / "history.sqlite3"))
+    store.create(
+        product_id=7,
+        barcode="123456",
+        source="dashboard",
+        changed_fields=["name"],
+        before={"name": "Known Product"},
+        after={"name": "Corrected Product"},
+    )
+    store.create(
+        product_id=7,
+        barcode="123456",
+        source="dashboard",
+        changed_fields=["brand"],
+        before={"brand": "Old"},
+        after={"brand": "New"},
+    )
+
+    result = store.barcode_summary(limit=25, offset=0, sort="edit_count", order="desc", query="")
+
+    assert isinstance(result, ProductEditHistoryBarcodeListResponse)
+    assert result.total == 1
+    assert result.items[0].barcode == "123456"
+    assert result.items[0].product_name == "Corrected Product"
+    assert result.items[0].edit_count == 2
 
 
 def test_backfill_product_snapshot_updates_applied_events_by_product_id_and_barcode(tmp_path) -> None:
