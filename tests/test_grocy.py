@@ -318,6 +318,144 @@ class UpdateToSameUnitWithoutBarcodeGrocyClient(GrocyClient):
         return []
 
 
+class UpdateWithGlobalFallbackConversionGrocyClient(GrocyClient):
+    def __init__(self) -> None:
+        self.requests = []
+
+    async def _request(self, method: str, path: str, **kwargs):
+        self.requests.append((method, path, kwargs))
+        if method == "PUT" and path in {
+            "/objects/products/4",
+            "/objects/product_barcodes/9",
+            "/objects/quantity_unit_conversions/91",
+            "/objects/quantity_unit_conversions/92",
+        }:
+            return None
+        if method == "GET":
+            if path == "/objects/products/4":
+                return {
+                    "id": 4,
+                    "name": "Legacy Tissue Pouch",
+                    "description": None,
+                    "location_id": 4,
+                    "qu_id_purchase": 2,
+                    "qu_id_stock": 2,
+                    "qu_id_consume": 2,
+                    "qu_id_price": 2,
+                }
+            if path == "/objects/product_barcodes":
+                return [{"id": 9, "product_id": 4, "barcode": "123", "qu_id": 2}]
+            if path == "/objects/quantity_unit_conversions":
+                if kwargs.get("params") == {"query[]": "product_id=4"}:
+                    return []
+                return [
+                    {"id": 91, "product_id": None, "from_qu_id": 12, "to_qu_id": 2, "factor": 1},
+                    {"id": 92, "product_id": None, "from_qu_id": 2, "to_qu_id": 12, "factor": 1},
+                ]
+            return {"product": {"id": 4}, "stock_amount": 2}
+        return []
+
+
+class UpdateWithPartialGlobalFallbackConversionGrocyClient(GrocyClient):
+    def __init__(self) -> None:
+        self.requests = []
+
+    async def _request(self, method: str, path: str, **kwargs):
+        self.requests.append((method, path, kwargs))
+        if method == "PUT" and path in {
+            "/objects/products/4",
+            "/objects/product_barcodes/9",
+            "/objects/quantity_unit_conversions/101",
+            "/objects/quantity_unit_conversions/102",
+        }:
+            return None
+        if method == "GET":
+            if path == "/objects/products/4":
+                return {
+                    "id": 4,
+                    "name": "Legacy Tissue Pouch",
+                    "description": None,
+                    "location_id": 4,
+                    "qu_id_purchase": 2,
+                    "qu_id_stock": 2,
+                    "qu_id_consume": 2,
+                    "qu_id_price": 2,
+                }
+            if path == "/objects/product_barcodes":
+                return [{"id": 9, "product_id": 4, "barcode": "123", "qu_id": 2}]
+            if path == "/objects/quantity_unit_conversions":
+                if kwargs.get("params") == {"query[]": "product_id=4"}:
+                    return [{"id": 101, "product_id": 4, "from_qu_id": 12, "to_qu_id": 2, "factor": 1}]
+                return [
+                    {"id": 101, "product_id": 4, "from_qu_id": 12, "to_qu_id": 2, "factor": 1},
+                    {"id": 102, "product_id": None, "from_qu_id": 2, "to_qu_id": 12, "factor": 1},
+                ]
+            return {"product": {"id": 4}, "stock_amount": 2}
+        return []
+
+
+class CreateWithUnfilteredProductConversionFallbackGrocyClient(GrocyClient):
+    def __init__(self) -> None:
+        self.requests = []
+
+    async def _request(self, method: str, path: str, **kwargs):
+        self.requests.append((method, path, kwargs))
+        if method == "POST" and path == "/objects/products":
+            return {"created_object_id": 4}
+        if method == "POST" and path == "/objects/product_barcodes":
+            return {"created_object_id": 9}
+        if method == "PUT" and path in {
+            "/objects/quantity_unit_conversions/111",
+            "/objects/quantity_unit_conversions/112",
+        }:
+            return None
+        if method == "GET":
+            if path == "/objects/quantity_unit_conversions":
+                if kwargs.get("params") == {"query[]": "product_id=4"}:
+                    return []
+                return [
+                    {"id": 111, "product_id": 4, "from_qu_id": 12, "to_qu_id": 2, "factor": 1},
+                    {"id": 112, "product_id": 4, "from_qu_id": 2, "to_qu_id": 12, "factor": 1},
+                ]
+            return {"product": {"id": 4}, "stock_amount": 2}
+        return []
+
+
+class CreateWithDelayedVisibleConversionGrocyClient(GrocyClient):
+    def __init__(self) -> None:
+        self.requests = []
+        self.post_attempts = 0
+        self.all_conversion_reads = 0
+
+    async def _request(self, method: str, path: str, **kwargs):
+        self.requests.append((method, path, kwargs))
+        if method == "POST" and path == "/objects/products":
+            return {"created_object_id": 4}
+        if method == "POST" and path == "/objects/product_barcodes":
+            return {"created_object_id": 9}
+        if method == "POST" and path == "/objects/quantity_unit_conversions":
+            self.post_attempts += 1
+            raise GrocyError("Grocy 400: SQLSTATE[23000]: Integrity constraint violation: 19 QU conversion already exists")
+        if method == "PUT" and path in {
+            "/objects/quantity_unit_conversions/121",
+            "/objects/quantity_unit_conversions/122",
+        }:
+            return None
+        if method == "GET":
+            if path == "/objects/quantity_unit_conversions":
+                if kwargs.get("params") == {"query[]": "product_id=4"}:
+                    return []
+                self.all_conversion_reads += 1
+                if self.all_conversion_reads == 1:
+                    return []
+                return [
+                    {"id": 121, "product_id": 4, "from_qu_id": 12, "to_qu_id": 2, "factor": 1},
+                    {"id": 122, "product_id": 4, "from_qu_id": 2, "to_qu_id": 12, "factor": 1},
+                ]
+            return {"product": {"id": 4}, "stock_amount": 2}
+        return []
+
+
 def run(coro):
     return asyncio.run(coro)
 
@@ -528,7 +666,7 @@ def test_update_product_wraps_image_download_failures_as_grocy_errors() -> None:
         )
 
 
-def test_create_product_same_unit_only_writes_one_self_conversion() -> None:
+def test_create_product_same_unit_writes_no_conversion_rows() -> None:
     client = RecordingGrocyClient()
 
     run(
@@ -550,13 +688,7 @@ def test_create_product_same_unit_only_writes_one_self_conversion() -> None:
         if request[0] == "POST" and request[1] == "/objects/quantity_unit_conversions"
     ]
 
-    assert len(conversion_requests) == 1
-    assert conversion_requests[0][2]["json"] == {
-        "from_qu_id": 7,
-        "to_qu_id": 7,
-        "factor": 1,
-        "product_id": 4,
-    }
+    assert conversion_requests == []
 
 
 def test_update_product_removes_stale_conversion_rows_after_unit_change() -> None:
@@ -738,7 +870,185 @@ def test_update_product_to_same_unit_without_previous_barcode_row_removes_stale_
     ]
 
 
-def test_create_product_same_unit_normalizes_self_conversion_factor_to_one() -> None:
+def test_update_product_reuses_existing_global_conversion_rows_when_filtered_lookup_is_empty() -> None:
+    client = UpdateWithGlobalFallbackConversionGrocyClient()
+
+    run(
+        client.update_product(
+            4,
+            "123",
+            PendingProductConfirmation(
+                name="Legacy Tissue Pouch",
+                location_id=4,
+                qu_id_stock=2,
+                qu_id_purchase=12,
+                qu_factor_purchase_to_stock=12,
+            ),
+        )
+    )
+
+    conversion_creates = [
+        request
+        for request in client.requests
+        if request[0] == "POST" and request[1] == "/objects/quantity_unit_conversions"
+    ]
+    conversion_updates = [
+        request
+        for request in client.requests
+        if request[0] == "PUT" and request[1] in {
+            "/objects/quantity_unit_conversions/91",
+            "/objects/quantity_unit_conversions/92",
+        }
+    ]
+
+    assert conversion_creates == []
+    assert conversion_updates == [
+        (
+            "PUT",
+            "/objects/quantity_unit_conversions/91",
+            {"json": {"from_qu_id": 12, "to_qu_id": 2, "factor": 12, "product_id": 4}},
+        ),
+        (
+            "PUT",
+            "/objects/quantity_unit_conversions/92",
+            {"json": {"from_qu_id": 2, "to_qu_id": 12, "factor": 1 / 12, "product_id": 4}},
+        ),
+    ]
+
+
+def test_update_product_reuses_global_reciprocal_row_when_filtered_lookup_is_partial() -> None:
+    client = UpdateWithPartialGlobalFallbackConversionGrocyClient()
+
+    run(
+        client.update_product(
+            4,
+            "123",
+            PendingProductConfirmation(
+                name="Legacy Tissue Pouch",
+                location_id=4,
+                qu_id_stock=2,
+                qu_id_purchase=12,
+                qu_factor_purchase_to_stock=12,
+            ),
+        )
+    )
+
+    conversion_creates = [
+        request
+        for request in client.requests
+        if request[0] == "POST" and request[1] == "/objects/quantity_unit_conversions"
+    ]
+    conversion_updates = [
+        request
+        for request in client.requests
+        if request[0] == "PUT" and request[1] in {
+            "/objects/quantity_unit_conversions/101",
+            "/objects/quantity_unit_conversions/102",
+        }
+    ]
+
+    assert conversion_creates == []
+    assert conversion_updates == [
+        (
+            "PUT",
+            "/objects/quantity_unit_conversions/101",
+            {"json": {"from_qu_id": 12, "to_qu_id": 2, "factor": 12, "product_id": 4}},
+        ),
+        (
+            "PUT",
+            "/objects/quantity_unit_conversions/102",
+            {"json": {"from_qu_id": 2, "to_qu_id": 12, "factor": 1 / 12, "product_id": 4}},
+        ),
+    ]
+
+
+def test_create_product_reuses_unfiltered_product_specific_rows_when_filtered_lookup_is_empty() -> None:
+    client = CreateWithUnfilteredProductConversionFallbackGrocyClient()
+
+    run(
+        client.create_product(
+            "123",
+            PendingProductConfirmation(
+                name="Legacy Tissue Pouch",
+                location_id=4,
+                qu_id_stock=2,
+                qu_id_purchase=12,
+                qu_factor_purchase_to_stock=12,
+            ),
+        )
+    )
+
+    conversion_creates = [
+        request
+        for request in client.requests
+        if request[0] == "POST" and request[1] == "/objects/quantity_unit_conversions"
+    ]
+    conversion_updates = [
+        request
+        for request in client.requests
+        if request[0] == "PUT" and request[1] in {
+            "/objects/quantity_unit_conversions/111",
+            "/objects/quantity_unit_conversions/112",
+        }
+    ]
+
+    assert conversion_creates == []
+    assert conversion_updates == [
+        (
+            "PUT",
+            "/objects/quantity_unit_conversions/111",
+            {"json": {"from_qu_id": 12, "to_qu_id": 2, "factor": 12, "product_id": 4}},
+        ),
+        (
+            "PUT",
+            "/objects/quantity_unit_conversions/112",
+            {"json": {"from_qu_id": 2, "to_qu_id": 12, "factor": 1 / 12, "product_id": 4}},
+        ),
+    ]
+
+
+def test_create_product_recovers_from_duplicate_conversion_error_by_refetching_and_updating() -> None:
+    client = CreateWithDelayedVisibleConversionGrocyClient()
+
+    run(
+        client.create_product(
+            "123",
+            PendingProductConfirmation(
+                name="Legacy Tissue Pouch",
+                location_id=4,
+                qu_id_stock=2,
+                qu_id_purchase=12,
+                qu_factor_purchase_to_stock=12,
+            ),
+        )
+    )
+
+    conversion_updates = [
+        request
+        for request in client.requests
+        if request[0] == "PUT" and request[1] in {
+            "/objects/quantity_unit_conversions/121",
+            "/objects/quantity_unit_conversions/122",
+        }
+    ]
+
+    assert client.post_attempts == 2
+    assert client.all_conversion_reads == 3
+    assert conversion_updates == [
+        (
+            "PUT",
+            "/objects/quantity_unit_conversions/121",
+            {"json": {"from_qu_id": 12, "to_qu_id": 2, "factor": 12, "product_id": 4}},
+        ),
+        (
+            "PUT",
+            "/objects/quantity_unit_conversions/122",
+            {"json": {"from_qu_id": 2, "to_qu_id": 12, "factor": 1 / 12, "product_id": 4}},
+        ),
+    ]
+
+
+def test_create_product_same_unit_ignores_conversion_factor() -> None:
     client = RecordingGrocyClient()
 
     run(
@@ -760,13 +1070,7 @@ def test_create_product_same_unit_normalizes_self_conversion_factor_to_one() -> 
         if request[0] == "POST" and request[1] == "/objects/quantity_unit_conversions"
     ]
 
-    assert len(conversion_requests) == 1
-    assert conversion_requests[0][2]["json"] == {
-        "from_qu_id": 7,
-        "to_qu_id": 7,
-        "factor": 1,
-        "product_id": 4,
-    }
+    assert conversion_requests == []
 
 
 def test_add_stock_operation_uses_purchase_barcode_unit() -> None:

@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -13,6 +14,9 @@ from app.models import PendingProductConfirmation, ScanEventRequest
 
 class GrocyError(RuntimeError):
     pass
+
+
+logger = logging.getLogger(__name__)
 
 
 class GrocyClient:
@@ -80,6 +84,9 @@ class GrocyClient:
             params={"query[]": f"product_id={product_id}"},
         )
 
+    async def get_all_quantity_unit_conversions(self) -> list[dict]:
+        return await self._request("GET", "/objects/quantity_unit_conversions")
+
     async def create_quantity_unit_conversion(self, payload: dict) -> dict:
         return await self._request("POST", "/objects/quantity_unit_conversions", json=payload)
 
@@ -98,10 +105,24 @@ class GrocyClient:
         previous_purchase_qu_id: int | None = None,
         previous_stock_qu_id: int | None = None,
     ) -> None:
-        if purchase_qu_id == stock_qu_id:
+        same_unit = purchase_qu_id == stock_qu_id
+        if same_unit:
             factor = 1
         existing = await self.get_quantity_unit_conversions(product_id)
-        desired = [
+        existing_pairs = {
+            (int(row["from_qu_id"]), int(row["to_qu_id"]))
+            for row in existing
+        }
+        for row in await self.get_all_quantity_unit_conversions():
+            row_product_id = int(row.get("product_id") or 0)
+            if row_product_id not in {0, product_id}:
+                continue
+            pair = (int(row["from_qu_id"]), int(row["to_qu_id"]))
+            if pair in existing_pairs:
+                continue
+            existing.append(row)
+            existing_pairs.add(pair)
+        desired = [] if same_unit else [
             {
                 "from_qu_id": purchase_qu_id,
                 "to_qu_id": stock_qu_id,
@@ -168,14 +189,51 @@ class GrocyClient:
                     for row in existing
                     if int(row["from_qu_id"]) == payload["from_qu_id"]
                     and int(row["to_qu_id"]) == payload["to_qu_id"]
-                    and int(row.get("product_id") or 0) == product_id
+                    and (
+                        int(row.get("product_id") or 0) == product_id
+                        or not row.get("product_id")
+                    )
                 ),
                 None,
             )
             if match is None:
-                await self.create_quantity_unit_conversion(payload)
+                try:
+                    await self.create_quantity_unit_conversion(payload)
+                except GrocyError as exc:
+                    if "QU conversion already exists" not in str(exc):
+                        raise
+                    logger.warning(
+                        "Duplicate quantity unit conversion create for product %s pair %s->%s; refetching existing rows",
+                        product_id,
+                        payload["from_qu_id"],
+                        payload["to_qu_id"],
+                    )
+                    recovered = await self._refetch_existing_quantity_unit_conversion(product_id, payload)
+                    if recovered is None:
+                        raise
+                    await self.update_quantity_unit_conversion(int(recovered["id"]), payload)
             else:
                 await self.update_quantity_unit_conversion(int(match["id"]), payload)
+
+    async def _refetch_existing_quantity_unit_conversion(self, product_id: int, payload: dict) -> dict | None:
+        pair = (payload["from_qu_id"], payload["to_qu_id"])
+        rows = await self.get_quantity_unit_conversions(product_id)
+        rows.extend(
+            row
+            for row in await self.get_all_quantity_unit_conversions()
+            if (int(row.get("product_id") or 0) in {0, product_id})
+            and (int(row["from_qu_id"]), int(row["to_qu_id"])) == pair
+        )
+        return next(
+            (
+                row
+                for row in rows
+                if int(row["from_qu_id"]) == payload["from_qu_id"]
+                and int(row["to_qu_id"]) == payload["to_qu_id"]
+                and int(row.get("product_id") or 0) in {0, product_id}
+            ),
+            None,
+        )
 
     async def get_purchase_to_stock_factor(self, product_id: int) -> float:
         product = await self.get_product_object(product_id)
