@@ -270,22 +270,44 @@ function reviewForm(event) {
   const description = [alternate, result.source ? `Lookup source: ${result.source}` : "", event.error || ""].filter(Boolean).join("\n");
   const locations = options.locations.map(x => `<option value="${x.id}" ${x.id === event.location_id ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("");
   const units = options.quantity_units.map(x => `<option value="${x.id}">${escapeHtml(x.name)}</option>`).join("");
+  const topActions = event.status === "failed"
+    ? `<div class="review-dialog-actions"><button type="button" class="secondary danger dialog-delete-action delete-event" data-event="${escapeHtml(event.event_id)}">Dismiss from review</button></div>`
+    : "";
   return `<div class="drawer-image">${image(event)}<span class="drawer-badge ${operationClass(event)}">${escapeHtml(operationBadge(event))}</span></div>
     <p class="drawer-kicker">${escapeHtml(event.status)} · ${escapeHtml(event.barcode)}</p><h2>${escapeHtml(event.product_name || "Unknown product")}</h2>
     <p class="drawer-operation">Pending operation: <b>${event.mode.toUpperCase()} ${event.quantity}</b></p>
+    ${topActions}
     <form class="review-form" data-event="${escapeHtml(event.event_id)}"><label>Product name<input name="name" value="${escapeHtml(event.product_name || "")}" required></label>
       <label>Brand<input name="brand" value="${escapeHtml(result.brand || "")}"></label><label>Package quantity<input name="quantity" value="${escapeHtml(result.quantity || "")}"></label>
       <label>Image URL<input name="image_url" value="${escapeHtml(event.image_url || "")}"></label><div class="image-upload-row"><label>Upload image<input type="file" name="image_upload" accept="image/*"></label><label class="inline-option"><input type="checkbox" name="overwrite_image" checked> Use uploaded image</label></div><label>Description<textarea name="description">${escapeHtml(description)}</textarea></label>
       <div class="form-pair"><label>Location<select name="location_id">${locations}</select></label><span></span></div>${conversionRow(units)}
       <button type="submit">Create in Grocy + apply scan</button>${event.status !== "failed" ? `<button type="button" class="secondary refresh-event">Refresh lookup</button>` : ""}<button type="button" class="secondary danger delete-event">Dismiss from review</button></form>`;
 }
-function openDrawer(eventId) {
+function processingDialog(event) {
+  const message = event.error || "This scan is still being processed.";
+  return `<div class="drawer-image">${image(event)}<span class="drawer-badge ${operationClass(event)}">${escapeHtml(operationBadge(event))}</span></div>
+    <p class="drawer-kicker">${escapeHtml(event.status)} · ${escapeHtml(event.barcode)}</p><h2>${escapeHtml(event.product_name || "Processing scan")}</h2>
+    <p class="drawer-operation">Pending operation: <b>${event.mode.toUpperCase()} ${event.quantity}</b></p>
+    <div class="review-dialog-actions"><button type="button" class="secondary danger dialog-delete-action delete-event" data-event="${escapeHtml(event.event_id)}">Dismiss from review</button></div>
+    <form method="dialog" class="review-form">
+      <label>Barcode<input value="${escapeHtml(event.barcode)}" readonly></label>
+      <label>Mode<input value="${escapeHtml(event.mode)}" readonly></label>
+      <label>Quantity<input value="${escapeHtml(event.quantity ?? "")}" readonly></label>
+      <label>Status<input value="${escapeHtml(event.status)}" readonly></label>
+      <label>Message<textarea readonly>${escapeHtml(message)}</textarea></label>
+      <button type="submit">Close</button>
+    </form>`;
+}
+function openReviewDialog(eventId) {
   const event = events.find(x => x.event_id === eventId);
   if (!event || !needsReview(event)) return;
-  $("#drawer-content").innerHTML = reviewForm(event);
-  $("#review-drawer").classList.add("open"); $("#drawer-backdrop").classList.remove("hidden");
+  $("#review-dialog-content").innerHTML = isLoading(event) ? processingDialog(event) : reviewForm(event);
+  $("#review-dialog").showModal();
 }
-function closeDrawer() { $("#review-drawer").classList.remove("open"); $("#drawer-backdrop").classList.add("hidden"); }
+function closeReviewDialog() { $("#review-dialog").close(); $("#quick-scan input").focus(); }
+function resolveEventId(node) {
+  return node?.dataset.event || node?.closest("[data-event]")?.dataset.event || "";
+}
 function previewImage(product) {
   return product?.image_url ? `<img src="${escapeHtml(product.image_url)}" alt="">` : `<div class="placeholder barcode-art"><i></i></div>`;
 }
@@ -346,6 +368,9 @@ bindBackdropClose($("#product-edit-dialog"), () => {
   activeProductEvent = null;
   $("#quick-scan input").focus();
 });
+bindBackdropClose($("#review-dialog"), () => {
+  $("#quick-scan input").focus();
+});
 async function load() {
   try {
     const [nextEvents, nextOptions] = await Promise.all([api("/scan-events?limit=200"), api("/dashboard/options")]);
@@ -376,7 +401,7 @@ $("#quick-scan").addEventListener("submit", async event => {
 document.addEventListener("click", async event => {
   const filter = event.target.closest("[data-filter]");
   if (filter) { activeFilter = filter.dataset.filter; document.querySelectorAll("[data-filter]").forEach(x => x.classList.toggle("active", x === filter)); return render(); }
-  const polaroid = event.target.closest(".polaroid.review"); if (polaroid) return openDrawer(polaroid.dataset.event);
+  const polaroid = event.target.closest(".polaroid.review"); if (polaroid) return openReviewDialog(polaroid.dataset.event);
   const appliedPolaroid = event.target.closest(".polaroid.applied"); if (appliedPolaroid?.dataset.productId) return openProductEditDialog(appliedPolaroid.dataset.productId, appliedPolaroid.dataset.event);
   const choice = event.target.closest(".choice");
   if (choice) {
@@ -385,13 +410,15 @@ document.addEventListener("click", async event => {
   }
   if (event.target.matches("#close-scan-dialog")) { $("#scan-dialog").close(); return $("#quick-scan input").focus(); }
   if (event.target.matches("#close-product-edit-dialog")) { $("#product-edit-dialog").close(); activeProduct = null; activeProductEvent = null; return $("#quick-scan input").focus(); }
-  if (event.target.matches("#close-drawer") || event.target.matches("#drawer-backdrop")) return closeDrawer();
+  if (event.target.matches("#close-review-dialog")) return closeReviewDialog();
   if (event.target.matches(".refresh-event")) {
-    try { await api(`/scan-events/${event.target.closest("form").dataset.event}/refresh`, { method: "POST" }); closeDrawer(); await load(); } catch (error) { toast(error.message); }
+    const eventId = resolveEventId(event.target.closest("form"));
+    try { await api(`/scan-events/${eventId}/refresh`, { method: "POST" }); closeReviewDialog(); await load(); } catch (error) { toast(error.message); }
   }
   if (event.target.matches(".delete-event")) {
     if (!confirm("Remove this scan from Needs review?")) return;
-    try { await api(`/scan-events/${event.target.closest("form").dataset.event}`, { method: "DELETE" }); closeDrawer(); await load(); } catch (error) { toast(error.message); }
+    const eventId = resolveEventId(event.target);
+    try { await api(`/scan-events/${eventId}`, { method: "DELETE" }); closeReviewDialog(); await load(); } catch (error) { toast(error.message); }
   }
 });
 document.addEventListener("input", event => {
@@ -427,7 +454,7 @@ document.addEventListener("submit", async event => {
           quantity: formData.get("package_quantity").trim() || null,
           image_url: formData.get("image_url").trim() || null,
           description: formData.get("description").trim() || null,
-          lookup_source: product.source || null,
+          lookup_source: activePreview.product?.source || null,
           catalog_contribution: previewIsManualContribution(activePreview),
           location_id: Number(formData.get("product_location_id")),
           qu_id_stock: Number(formData.get("qu_id_stock")),
@@ -480,7 +507,7 @@ document.addEventListener("submit", async event => {
   if (!event.target.matches(".review-form")) return;
   event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); data.location_id = Number(data.location_id); data.qu_id_stock = Number(data.qu_id_stock); data.qu_id_purchase = Number(data.qu_id_purchase); data.qu_factor_purchase_to_stock = Number(data.qu_factor_purchase_to_stock || "1"); data.catalog_contribution = reviewIsManualContribution(events.find(x => x.event_id === event.target.dataset.event)); if (!data.image_url) delete data.image_url;
   const button = event.target.querySelector('button[type="submit"]'); setButtonBusy(button, true, "Adding to Grocy...");
-  try { await api(`/scan-events/${event.target.dataset.event}/confirm`, { method: "POST", body: JSON.stringify(data) }); closeDrawer(); await load(); } catch (error) { toast(error.message); }
+  try { await api(`/scan-events/${event.target.dataset.event}/confirm`, { method: "POST", body: JSON.stringify(data) }); closeReviewDialog(); await load(); } catch (error) { toast(error.message); }
   finally { setButtonBusy(button, false); }
 });
 load(); setInterval(load, 12000);

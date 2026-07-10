@@ -181,12 +181,18 @@ def test_dashboard_static_includes_scanner_device_status_panel() -> None:
 def test_dashboard_static_includes_product_editor_controls() -> None:
     index = (static_path / "index.html").read_text()
     script = (static_path / "app.js").read_text()
+    styles = (static_path / "scan-dialog.css").read_text()
 
     assert 'id="products-panel"' not in index
     assert 'id="product-grid"' not in index
     assert 'id="product-edit-dialog"' in index
     assert 'id="product-edit-content"' in index
+    assert 'id="review-dialog"' in index
+    assert 'id="review-dialog-content"' in index
+    assert 'id="review-drawer"' not in index
+    assert 'id="drawer-backdrop"' not in index
     assert "openProductEditDialog" in script
+    assert "openReviewDialog" in script
     assert 'id="product-edit-form"' in script
     assert "Save product" in script
     assert "/dashboard/products" in script
@@ -194,6 +200,13 @@ def test_dashboard_static_includes_product_editor_controls() -> None:
     assert "Scan context" in script
     assert "bindBackdropClose" in script
     assert 'event.target === dialog' in script
+    assert "closeDrawer" not in script
+    assert 'showModal()' in script
+    assert "review-dialog-actions" in script
+    assert "dialog-delete-action" in script
+    assert ".review-dialog-actions" in styles
+    assert "resolveEventId(" in script
+    assert 'closest("[data-event]")' in script
 
 
 def test_dashboard_script_submits_product_edits_to_dashboard_endpoint() -> None:
@@ -205,6 +218,13 @@ def test_dashboard_script_submits_product_edits_to_dashboard_endpoint() -> None:
     assert "updated_event_count" in script
     assert "dashboard record(s)." in script
     assert 'method: "PUT"' in script or "method: 'PUT'" in script
+
+
+def test_dashboard_scan_confirm_uses_preview_lookup_source_without_self_reference() -> None:
+    script = (static_path / "app.js").read_text()
+
+    assert "lookup_source: activePreview.product?.source || null" in script
+    assert "lookup_source: product.source || null" not in script
 
 
 def test_dashboard_links_to_settings_page() -> None:
