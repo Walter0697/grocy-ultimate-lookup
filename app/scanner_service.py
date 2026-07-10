@@ -184,12 +184,20 @@ class ScannerService:
         event, created = self.store.create(request)
         if not created:
             return event
-        product = await self._confirm_product(
-            confirmation.barcode,
-            confirmation.product,
-            result_source=confirmation.product.lookup_source,
-        )
-        return await self._apply(request, product)
+        try:
+            product = await self._confirm_product(
+                confirmation.barcode,
+                confirmation.product,
+                result_source=confirmation.product.lookup_source,
+            )
+            return await self._apply(request, product)
+        except Exception as exc:
+            return self.store.update(
+                request.event_id,
+                status="failed",
+                product_name=confirmation.product.name,
+                error=str(exc),
+            )
 
     async def _confirm_product(
         self,

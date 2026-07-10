@@ -63,9 +63,17 @@ class FailingHistoryStore:
 
 
 class FakeGrocy:
-    def __init__(self, product=None, fail_apply: Exception | None = None) -> None:
+    def __init__(
+        self,
+        product=None,
+        fail_apply: Exception | None = None,
+        fail_create: Exception | None = None,
+        fail_update: Exception | None = None,
+    ) -> None:
         self.product = product
         self.fail_apply = fail_apply
+        self.fail_create = fail_create
+        self.fail_update = fail_update
         self.operations = []
         self.created = []
         self.updated = []
@@ -87,11 +95,15 @@ class FakeGrocy:
         return self.product
 
     async def create_product(self, barcode: str, product: PendingProductConfirmation):
+        if self.fail_create:
+            raise self.fail_create
         self.created.append((barcode, product))
         self.product = details(22, product.name, 0)
         return self.product
 
     async def update_product(self, product_id: int, barcode: str, product: PendingProductConfirmation):
+        if self.fail_update:
+            raise self.fail_update
         self.updated.append((product_id, barcode, product))
         self.product = details(product_id, product.name, 0)
         return self.product
@@ -1002,6 +1014,35 @@ def test_dashboard_confirm_updates_existing_grocy_product_before_applying_scan(t
     assert grocy.updated[0][2].qu_id_stock == 7
     assert grocy.updated[0][2].qu_id_purchase == 9
     assert grocy.updated[0][2].qu_factor_purchase_to_stock == 4
+
+
+def test_dashboard_confirm_marks_event_failed_when_product_confirmation_raises(tmp_path) -> None:
+    grocy = FakeGrocy(fail_create=RuntimeError("SQLSTATE(23666)"))
+    scanner = service(tmp_path, grocy, FakeLookup(LookupResponse(barcode="123456", found=False)))
+
+    event = run(
+        scanner.confirm_dashboard_scan(
+            DashboardScanConfirmation(
+                event_id="dashboard-failed-confirm",
+                device_id="dashboard-manual",
+                barcode="123456",
+                mode="add",
+                quantity=1,
+                product=PendingProductConfirmation(
+                    name="Broken Product",
+                    location_id=4,
+                    qu_id_stock=7,
+                    qu_id_purchase=8,
+                    qu_factor_purchase_to_stock=999999,
+                ),
+            )
+        )
+    )
+
+    assert event["status"] == "failed"
+    assert event["error"] == "SQLSTATE(23666)"
+    assert event["product_name"] == "Broken Product"
+    assert event["barcode"] == "123456"
 
 
 def test_failed_known_product_operation_keeps_product_context(tmp_path) -> None:
