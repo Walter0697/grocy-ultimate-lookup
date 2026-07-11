@@ -259,8 +259,10 @@ class ScannerService:
         before_snapshot = self._dashboard_product_snapshot(existing)
         original_source = self._original_product_source(product_id, before_snapshot)
         update_payload = update.model_dump()
+        export_image_url = update_payload.get("image_url")
         if before_snapshot.get("image_url") and str(update.image_url or "") == str(before_snapshot["image_url"]):
             update_payload["image_url"] = None
+            export_image_url = None
         updated = await self.grocy.update_product(
             product_id,
             barcode,
@@ -273,6 +275,7 @@ class ScannerService:
             updated=updated,
             source="dashboard",
             original_source=original_source,
+            export_image_url=str(export_image_url) if export_image_url else None,
         )
 
     async def request_image_review(self, product_id: int) -> dict:
@@ -329,6 +332,7 @@ class ScannerService:
             source="telegram_review_upload",
             related_event_id=event_id,
             original_source=original_source,
+            export_image_url=image_url,
         )
         completed_event = self.store.update(
             event_id,
@@ -363,6 +367,7 @@ class ScannerService:
         source: str,
         related_event_id: str | None = None,
         original_source: str | None = None,
+        export_image_url: str | None = None,
     ) -> dict:
         after_snapshot = self._dashboard_product_snapshot(updated)
         product = self._dashboard_product_summary(updated)
@@ -400,6 +405,7 @@ class ScannerService:
                 barcode=barcode,
                 snapshot=after_snapshot,
                 original_source=original_source,
+                export_image_url=export_image_url,
             )
 
         return DashboardProductEditResult(
@@ -558,12 +564,13 @@ class ScannerService:
         barcode: str,
         snapshot: dict,
         original_source: str | None,
+        export_image_url: str | None = None,
     ) -> None:
         export_product = ConfirmedProductRequest(
             name=snapshot.get("name") or "Unnamed product",
             brand=snapshot.get("brand"),
             quantity=snapshot.get("quantity"),
-            image_url=snapshot.get("image_url"),
+            image_url=export_image_url or snapshot.get("image_url"),
             notes=snapshot.get("description"),
         )
         try:

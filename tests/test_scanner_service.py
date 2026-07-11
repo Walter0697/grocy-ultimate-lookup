@@ -216,6 +216,25 @@ class PreserveImageGrocy(EditableGrocy):
         return self.product
 
 
+class RewrittenImageGrocy(EditableGrocy):
+    async def update_product(self, product_id: int, barcode: str, product: PendingProductConfirmation):
+        self.updated.append((product_id, barcode, product))
+        self.product = editable_details(
+            product_id=product_id,
+            name=product.name,
+            description=product.description,
+            brand=product.brand,
+            quantity=product.quantity,
+            image_url="http://localhost:9283/api/files/productpictures/rewritten.jpg" if product.image_url else None,
+            location_id=product.location_id,
+            qu_id_stock=product.qu_id_stock,
+            qu_id_purchase=product.qu_id_purchase,
+            qu_factor_purchase_to_stock=product.qu_factor_purchase_to_stock,
+            stock=self.product.get("stock_amount", 0),
+        )
+        return self.product
+
+
 class PreserveAppliedImageGrocy(EditableGrocy):
     async def apply_stock_operation(self, product_id: int, event: ScanEventRequest):
         self.operations.append((product_id, event))
@@ -317,6 +336,26 @@ def test_attach_image_to_existing_product_review_updates_product_and_history(tmp
     assert history.items[0].source == "telegram_review_upload"
     assert history.items[0].related_event_id == event["event_id"]
     assert history.items[0].after["image_url"] == "http://lookup.test/uploaded-images/new-image.jpg"
+
+
+def test_attach_image_to_event_exports_original_uploaded_image_when_grocy_rewrites_url(tmp_path) -> None:
+    catalog = FakeCommunityCatalog()
+    grocy = RewrittenImageGrocy(editable_details(image_url="https://old.example/product.jpg"))
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup, community_catalog=catalog)
+    scanner.auto_created_store.upsert(product_id=7, barcode="123456", source="community_catalog")
+
+    event = run(scanner.request_image_review(7))
+    updated = run(scanner.attach_image_to_event(event["event_id"], "http://lookup.test/uploaded-images/new-image.jpg"))
+
+    assert updated["status"] == "dismissed"
+    assert len(catalog.exported) == 1
+    barcode, product, result_source, export_reason, original_source = catalog.exported[0]
+    assert barcode == "123456"
+    assert str(product.image_url) == "http://lookup.test/uploaded-images/new-image.jpg"
+    assert result_source is None
+    assert export_reason == "modified"
+    assert original_source == "community_catalog"
 
 
 def test_known_grocy_product_is_applied_before_external_lookup(tmp_path) -> None:
