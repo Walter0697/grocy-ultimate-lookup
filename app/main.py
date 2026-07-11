@@ -28,6 +28,7 @@ from app.config import settings
 from app.community_catalog import CommunityCatalogSourceRegistry, RuntimeCommunityCatalogExporter, exporter_from_settings
 from app.grocy import GrocyError
 from app.grocy_units import seed_units
+from app.manual_category_store import ManualCategoryStore
 from app.models import (
     ConfirmedProduct,
     ConfirmedProductRequest,
@@ -39,6 +40,10 @@ from app.models import (
     DeviceScanResponse,
     DeviceStatus,
     LookupResponse,
+    ManualCategory,
+    ManualCategoryCreate,
+    ManualCategoryItem,
+    ManualCategoryItemCreate,
     PendingProductConfirmation,
     ProductEditHistoryBarcodeListResponse,
     ProductEditHistoryDetailResponse,
@@ -67,6 +72,7 @@ catalog_source_registry = CommunityCatalogSourceRegistry(app_settings_store)
 orchestrator = LookupOrchestrator(settings_store=app_settings_store)
 scanner = ScannerService(lookup=orchestrator)
 scanner_devices = ScannerDeviceRegistry()
+manual_category_store = ManualCategoryStore(settings.manual_categories_path)
 static_path = Path(__file__).parent / "static"
 uploaded_images_path = Path(settings.uploaded_images_path)
 uploaded_images_path.mkdir(parents=True, exist_ok=True)
@@ -637,6 +643,46 @@ async def product_edit_history_detail(history_id: int) -> ProductEditHistoryDeta
     if detail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product edit history not found")
     return detail
+
+
+@app.get("/dashboard/manual-categories", response_model=list[ManualCategory])
+async def list_manual_categories() -> list[ManualCategory]:
+    return manual_category_store.list_categories()
+
+
+@app.post("/dashboard/manual-categories", response_model=ManualCategory)
+async def create_manual_category(category: ManualCategoryCreate) -> ManualCategory:
+    return manual_category_store.create_category(
+        name=category.name,
+        group=category.group,
+        emoji=category.emoji,
+        image_url=category.image_url,
+    )
+
+
+@app.get("/dashboard/manual-category-items", response_model=list[ManualCategoryItem])
+async def list_manual_category_items(
+    category_id: str | None = Query(default=None),
+) -> list[ManualCategoryItem]:
+    return manual_category_store.list_items(category_id)
+
+
+@app.post("/dashboard/manual-categories/{category_id}/items", response_model=ManualCategoryItem)
+async def create_manual_category_item(
+    category_id: str,
+    item: ManualCategoryItemCreate,
+) -> ManualCategoryItem:
+    return manual_category_store.create_item(
+        category_id=category_id,
+        name=item.name,
+        quantity=item.quantity,
+        unit=item.unit,
+        default_location=item.default_location,
+        note=item.note,
+        emoji=item.emoji,
+        image_url=item.image_url,
+        favorite=item.favorite,
+    )
 
 
 @app.get("/dashboard/options")
