@@ -8,6 +8,7 @@ let activePreview = null;
 let activeProduct = null;
 let activeProductEvent = null;
 let dashboardSignature = "";
+let dashboardState = { limit: 24, offset: 0, total: 0, counts: { all: 0, review: 0, applied: 0, failed: 0 } };
 
 async function api(path, init, json = true) {
   const response = await fetch(path, { headers: json ? { "Content-Type": "application/json" } : {}, ...init });
@@ -161,7 +162,8 @@ function dataSignature(nextEvents, nextProducts, nextOptions) {
   return JSON.stringify({
     events: nextEvents.map(eventSignature),
     products: nextProductsSignature(nextProducts),
-    options: optionsSignature(nextOptions)
+    options: optionsSignature(nextOptions),
+    dashboard: dashboardState
   });
 }
 function nextProductsSignature(nextProducts) {
@@ -270,18 +272,19 @@ function card(event, index) {
       ${review && !isLoading(event) ? `<button class="review-button">Review details</button>` : ""}</div></article>`;
 }
 function render() {
-  const visible = events.filter(event => {
-    if (!showOnDashboard(event)) return false;
-    if (activeFilter === "review") return needsReview(event);
-    if (activeFilter === "applied") return event.status === "applied";
-    if (activeFilter === "failed") return event.status === "failed";
-    return true;
-  });
-  const dashboardEvents = events.filter(showOnDashboard);
-  $("#all-count").textContent = dashboardEvents.length;
-  $("#review-count").textContent = dashboardEvents.filter(needsReview).length;
+  const visible = events;
+  $("#all-count").textContent = dashboardState.counts.all || 0;
+  $("#review-count").textContent = dashboardState.counts.review || 0;
   renderScannerStatus();
+  updateDashboardPagination();
   $("#event-grid").innerHTML = visible.length ? visible.map(card).join("") : `<div class="empty">No scans in this view yet.</div>`;
+}
+function updateDashboardPagination() {
+  const start = dashboardState.total === 0 ? 0 : dashboardState.offset + 1;
+  const end = Math.min(dashboardState.offset + dashboardState.limit, dashboardState.total);
+  $("#dashboard-page-status").textContent = dashboardState.total ? `${start}-${end} of ${dashboardState.total}` : "0 results";
+  $("#dashboard-prev").disabled = dashboardState.offset === 0;
+  $("#dashboard-next").disabled = dashboardState.offset + dashboardState.limit >= dashboardState.total;
 }
 function imageReviewForm(event) {
   const catalogImage = event.review_kind === "catalog_image";
@@ -402,7 +405,12 @@ bindBackdropClose($("#review-dialog"), () => {
 });
 async function load() {
   try {
-    const [nextEvents, nextOptions] = await Promise.all([api("/scan-events?limit=200"), api("/dashboard/options")]);
+    const params = new URLSearchParams({
+      filter: activeFilter,
+      limit: String(dashboardState.limit),
+      offset: String(dashboardState.offset),
+    });
+    const [nextEventPage, nextOptions] = await Promise.all([api(`/scan-events?${params.toString()}`), api("/dashboard/options")]);
     let nextProducts = products;
     try {
       nextProducts = await api("/dashboard/products");
@@ -410,10 +418,25 @@ async function load() {
     catch (error) {
       console.warn("Dashboard products refresh failed:", error);
     }
-    const nextSignature = dataSignature(nextEvents, nextProducts, nextOptions);
-    events = nextEvents;
+    if (nextEventPage.total > 0 && dashboardState.offset >= nextEventPage.total) {
+      dashboardState.offset = Math.max(0, Math.floor((nextEventPage.total - 1) / dashboardState.limit) * dashboardState.limit);
+      return load();
+    }
+    const nextDashboardState = {
+      ...dashboardState,
+      total: nextEventPage.total,
+      counts: nextEventPage.counts || dashboardState.counts,
+    };
+    const nextSignature = JSON.stringify({
+      events: nextEventPage.items.map(eventSignature),
+      products: nextProductsSignature(nextProducts),
+      options: optionsSignature(nextOptions),
+      dashboard: nextDashboardState,
+    });
+    events = nextEventPage.items;
     products = nextProducts;
     options = nextOptions;
+    dashboardState = nextDashboardState;
     if (nextSignature === dashboardSignature) return;
     dashboardSignature = nextSignature;
     render();
@@ -429,7 +452,12 @@ $("#quick-scan").addEventListener("submit", async event => {
 });
 document.addEventListener("click", async event => {
   const filter = event.target.closest("[data-filter]");
-  if (filter) { activeFilter = filter.dataset.filter; document.querySelectorAll("[data-filter]").forEach(x => x.classList.toggle("active", x === filter)); return render(); }
+  if (filter) {
+    activeFilter = filter.dataset.filter;
+    dashboardState.offset = 0;
+    document.querySelectorAll("[data-filter]").forEach(x => x.classList.toggle("active", x === filter));
+    return load();
+  }
   const polaroid = event.target.closest(".polaroid.review"); if (polaroid) return openReviewDialog(polaroid.dataset.event);
   const appliedPolaroid = event.target.closest(".polaroid.applied"); if (appliedPolaroid?.dataset.productId) return openProductEditDialog(appliedPolaroid.dataset.productId, appliedPolaroid.dataset.event);
   const choice = event.target.closest(".choice");
@@ -468,6 +496,14 @@ document.addEventListener("click", async event => {
     if (!confirm("Remove this scan from Needs review?")) return;
     const eventId = resolveEventId(event.target);
     try { await api(`/scan-events/${eventId}`, { method: "DELETE" }); closeReviewDialog(); await load(); } catch (error) { toast(error.message); }
+  }
+  if (event.target.matches("#dashboard-prev")) {
+    dashboardState.offset = Math.max(0, dashboardState.offset - dashboardState.limit);
+    return load();
+  }
+  if (event.target.matches("#dashboard-next")) {
+    dashboardState.offset += dashboardState.limit;
+    return load();
   }
 });
 document.addEventListener("input", event => {

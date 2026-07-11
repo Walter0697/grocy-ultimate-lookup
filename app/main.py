@@ -50,6 +50,7 @@ from app.models import (
     ProductEditHistoryDetailResponse,
     ProductEditHistoryEntry,
     ProductEditHistoryListResponse,
+    ScanEventListResponse,
     ScanEventRequest,
 )
 from app.orchestrator import LookupOrchestrator
@@ -558,12 +559,13 @@ async def preview_scan(barcode: str) -> dict:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
-@app.get("/scan-events")
+@app.get("/scan-events", response_model=ScanEventListResponse)
 async def list_scan_events(
-    event_status: str | None = Query(default=None, alias="status"),
+    event_filter: str = Query(default="all", alias="filter", pattern="^(all|review|applied|failed)$"),
     limit: int = Query(default=100, ge=1, le=500),
-) -> list[dict]:
-    return scanner.store.list(status=event_status, limit=limit)
+    offset: int = Query(default=0, ge=0),
+) -> ScanEventListResponse:
+    return scanner.store.dashboard_page(event_filter=event_filter, limit=limit, offset=offset)
 
 
 @app.get("/scan-events/{event_id}")

@@ -18,6 +18,7 @@ from app.main import (
     external_dashboard_request_image_review,
     external_get_scan_event,
     external_list_scan_events,
+    list_scan_events,
     list_scanner_devices,
     preview_scan,
     product_edit_history_barcodes,
@@ -48,6 +49,7 @@ from app.models import (
     ProductEditHistoryDiffField,
     ProductEditHistoryEntry,
     ProductEditHistoryListResponse,
+    ScanEventListResponse,
     ScanEventRequest,
 )
 
@@ -240,8 +242,34 @@ def test_dashboard_static_includes_scanner_device_status_panel() -> None:
     script = (static_path / "app.js").read_text()
 
     assert 'id="scanner-status"' in index
+    assert 'id="dashboard-prev"' in index
+    assert 'id="dashboard-page-status"' in index
     assert "renderScannerStatus" in script
     assert "scanner_devices" in script
+    assert 'event.target.matches("#dashboard-next")' in script
+
+
+def test_scan_events_route_forwards_dashboard_filter_and_pagination(monkeypatch) -> None:
+    response_value = ScanEventListResponse(
+        items=[],
+        total=0,
+        limit=24,
+        offset=24,
+        filter="review",
+        counts={"all": 10, "review": 2, "applied": 7, "failed": 1},
+    )
+    calls = []
+
+    def fake_dashboard_page(*, event_filter, limit, offset):
+        calls.append((event_filter, limit, offset))
+        return response_value
+
+    monkeypatch.setattr(scanner.store, "dashboard_page", fake_dashboard_page)
+
+    response = run(list_scan_events(event_filter="review", limit=24, offset=24))
+
+    assert calls == [("review", 24, 24)]
+    assert response == response_value
 
 
 def test_request_image_review_endpoint_delegates_to_scanner(monkeypatch) -> None:

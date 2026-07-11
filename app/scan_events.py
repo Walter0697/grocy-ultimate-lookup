@@ -1,12 +1,16 @@
+from __future__ import annotations
+
 import json
 import sqlite3
 from pathlib import Path
 from typing import Any
 
-from app.models import ScanEventRequest
+from app.models import ScanEventListResponse, ScanEventRequest
 
 
 class ScanEventStore:
+    DASHBOARD_FILTERS = ("all", "review", "applied", "failed")
+
     def __init__(self, path: str) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -160,6 +164,55 @@ class ScanEventStore:
             rows = db.execute(query, args).fetchall()
         return [self._row(row) for row in rows]
 
+    def list_page(self, *, status: str | None = None, limit: int = 100, offset: int = 0) -> ScanEventListResponse:
+        query = "FROM scan_events"
+        args: list[Any] = []
+        if status:
+            query += " WHERE status = ?"
+            args.append(status)
+        with self._connect() as db:
+            total = int(db.execute(f"SELECT COUNT(*) {query}", args).fetchone()[0])
+            rows = db.execute(
+                f"SELECT * {query} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                [*args, limit, offset],
+            ).fetchall()
+        return ScanEventListResponse(
+            items=[self._row(row) for row in rows],
+            total=total,
+            limit=limit,
+            offset=offset,
+            counts={"all": total},
+        )
+
+    def dashboard_page(self, *, event_filter: str = "all", limit: int = 100, offset: int = 0) -> ScanEventListResponse:
+        if event_filter not in self.DASHBOARD_FILTERS:
+            raise ValueError(f"Unsupported dashboard filter: {event_filter}")
+        where, args = self._dashboard_where(event_filter)
+        count_queries = {
+            f"{name}_count": self._dashboard_count(name)
+            for name in self.DASHBOARD_FILTERS
+        }
+        with self._connect() as db:
+            total = int(db.execute(f"SELECT COUNT(*) FROM scan_events WHERE {where}", args).fetchone()[0])
+            rows = db.execute(
+                f"SELECT * FROM scan_events WHERE {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                [*args, limit, offset],
+            ).fetchall()
+            counts_row = db.execute(
+                "SELECT "
+                + ", ".join(f"{query} AS {name}" for name, query in count_queries.items())
+                + " FROM scan_events"
+            ).fetchone()
+        counts = {name: int(counts_row[f"{name}_count"] or 0) for name in self.DASHBOARD_FILTERS}
+        return ScanEventListResponse(
+            items=[self._row(row) for row in rows],
+            total=total,
+            limit=limit,
+            offset=offset,
+            filter=event_filter,
+            counts=counts,
+        )
+
     def update(self, event_id: str, **values) -> dict:
         allowed = {
             "status",
@@ -218,3 +271,27 @@ class ScanEventStore:
         result = dict(row)
         result["lookup_payload"] = json.loads(result["lookup_payload"]) if result["lookup_payload"] else None
         return result
+
+    def _dashboard_where(self, event_filter: str) -> tuple[str, list[Any]]:
+        dashboard_visible = (
+            "status != ?"
+            " AND NOT (COALESCE(review_kind, '') = ? AND status NOT IN (?, ?, ?))"
+        )
+        args: list[Any] = ["dismissed", "catalog_image", "pending", "researching", "failed"]
+        if event_filter == "review":
+            return f"{dashboard_visible} AND status IN (?, ?, ?)", [*args, "pending", "researching", "failed"]
+        if event_filter == "applied":
+            return f"{dashboard_visible} AND status = ?", [*args, "applied"]
+        if event_filter == "failed":
+            return f"{dashboard_visible} AND status = ?", [*args, "failed"]
+        return dashboard_visible, args
+
+    def _dashboard_count(self, event_filter: str) -> str:
+        where, args = self._dashboard_where(event_filter)
+        replacements = []
+        for value in args:
+            escaped = str(value).replace("'", "''")
+            replacements.append(f"'{escaped}'")
+        for value in replacements:
+            where = where.replace("?", value, 1)
+        return f"SUM(CASE WHEN {where} THEN 1 ELSE 0 END)"

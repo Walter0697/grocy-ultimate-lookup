@@ -242,6 +242,17 @@ class ProductEditHistoryBarcodeListResponse(BaseModel):
     query: str = ""
 
 
+class ScanEventListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[dict[str, object | None]]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1)
+    offset: int = Field(ge=0)
+    filter: Literal["all", "review", "applied", "failed"] = "all"
+    counts: dict[str, int] = Field(default_factory=dict)
+
+
 class DashboardProductEditResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

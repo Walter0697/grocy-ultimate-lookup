@@ -108,7 +108,8 @@ function renderPendingReviews() {
 }
 
 async function loadPendingReviews() {
-  const events = await api("/scan-events?limit=200");
+  const eventPage = await api("/scan-events?limit=200");
+  const events = Array.isArray(eventPage) ? eventPage : eventPage.items || [];
   pendingReviews = events.filter(needsDashboardReview);
   renderPendingReviews();
 }
