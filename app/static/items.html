@@ -31,7 +31,7 @@
     <section class="items-toolbar">
       <label class="items-search">
         <span>Search</span>
-        <input id="items-search-input" type="text" placeholder="Find apples, eggs, rice, herbs...">
+        <input id="items-search-input" type="text" placeholder="Find produce, eggs, rice, bread...">
       </label>
     </section>
     <div id="items-grid" class="event-grid items-category-grid" aria-live="polite"></div>
@@ -43,6 +43,7 @@
   </dialog>
   <div id="toast"></div>
   {{APP_VERSION_BADGE}}
+  <script>window.__ITEMS_CATALOG_URL = "/static/items-reference.json";</script>
   <script src="/static/stock-confirm.js"></script>
   <script src="/static/items.js"></script>
 </body>

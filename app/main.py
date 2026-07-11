@@ -118,7 +118,7 @@ async def items_page() -> HTMLResponse:
 
 def versioned_items_html() -> str:
     html = (static_path / "items.html").read_text()
-    for asset in ("styles.css", "scan-dialog.css", "stock-confirm.js", "items.js"):
+    for asset in ("styles.css", "scan-dialog.css", "stock-confirm.js", "items-reference.json", "items.js"):
         version = str(int((static_path / asset).stat().st_mtime))
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
     html = html.replace("{{APP_VERSION_BADGE}}", render_app_version_badge())

@@ -1,59 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;" })[c]);
 
-const categories = [
-  {
-    id: "apple",
-    name: "Apple",
-    emoji: "🍎",
-    group: "produce",
-    variants: [
-      { id: "produce-fuji-apple", name: "Fuji Apple", quantity: "per apple", stock: "12 apples", location: "Fruit bowl", unit: "piece", note: "Crisp sweet snack", favorite: true },
-      { id: "produce-gala-apple", name: "Gala Apple", quantity: "per apple", stock: "8 apples", location: "Fruit bowl", unit: "piece", note: "Milder everyday apple", favorite: false },
-      { id: "produce-honeycrisp-apple", name: "Honeycrisp Apple", quantity: "per apple", stock: "5 apples", location: "Fruit bowl", unit: "piece", note: "Premium crunch category member", favorite: false },
-    ],
-  },
-  {
-    id: "banana",
-    name: "Banana",
-    emoji: "🍌",
-    group: "produce",
-    variants: [
-      { id: "produce-cavendish-banana", name: "Cavendish Banana", quantity: "per banana", stock: "9 bananas", location: "Counter", unit: "piece", note: "Breakfast and smoothies", favorite: true },
-      { id: "produce-organic-banana", name: "Organic Banana", quantity: "per banana", stock: "4 bananas", location: "Counter", unit: "piece", note: "Separate item when you care about source", favorite: false },
-    ],
-  },
-  {
-    id: "eggs",
-    name: "Eggs",
-    emoji: "🥚",
-    group: "fridge",
-    variants: [
-      { id: "manual-free-range-eggs", name: "Free Range Eggs", quantity: "per egg", stock: "18 eggs", location: "Fridge", unit: "egg", note: "Usually bought in trays", favorite: true },
-      { id: "manual-jumbo-eggs", name: "Jumbo Eggs", quantity: "per egg", stock: "6 eggs", location: "Fridge", unit: "egg", note: "Could live under the same emoji category", favorite: false },
-    ],
-  },
-  {
-    id: "rice",
-    name: "Rice",
-    emoji: "🍚",
-    group: "dry",
-    variants: [
-      { id: "dry-jasmine-rice", name: "Jasmine Rice", quantity: "per scoop", stock: "4.2 kg", location: "Pantry", unit: "cup", note: "Loose refill bin style", favorite: false },
-      { id: "dry-basmati-rice", name: "Basmati Rice", quantity: "per scoop", stock: "2.7 kg", location: "Pantry", unit: "cup", note: "Separate item under same category", favorite: false },
-    ],
-  },
-  {
-    id: "greens",
-    name: "Leafy Greens",
-    emoji: "🥬",
-    group: "produce",
-    variants: [
-      { id: "produce-spinach-bundle", name: "Spinach Bundle", quantity: "per bundle", stock: "3 bundles", location: "Fridge drawer", unit: "bundle", note: "High-turn produce item", favorite: false },
-      { id: "produce-bok-choy-bundle", name: "Bok Choy", quantity: "per bundle", stock: "2 bundles", location: "Fridge drawer", unit: "bundle", note: "Another actual addable item", favorite: false },
-    ],
-  },
-];
+let categories = [];
 
 let activeSearch = "";
 let activeCategoryId = null;
@@ -313,6 +261,31 @@ function renderCategories() {
 }
 
 
+function normalizeReferenceVariant(variant) {
+  return {
+    ...variant,
+    stock: variant.stock ?? "Not in pantry",
+    location: variant.location ?? variant.default_location ?? "Pantry",
+    favorite: Boolean(variant.favorite),
+  };
+}
+
+async function loadReference() {
+  const url = window.__ITEMS_CATALOG_URL || "/static/items-reference.json";
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Failed to load catalog");
+    const data = await response.json();
+    categories = (data.categories || []).map(category => ({
+      ...category,
+      variants: (category.variants || []).map(normalizeReferenceVariant),
+    }));
+  } catch {
+    categories = [];
+    toast("Could not load item catalog.");
+  }
+}
+
 async function loadOptions() {
   try {
     const response = await fetch("/dashboard/options");
@@ -417,5 +390,10 @@ window.addEventListener("resize", () => {
   if (activeCategoryId) positionExpansionArrow();
 });
 
-renderCategories();
-loadOptions();
+async function init() {
+  $("#items-grid").innerHTML = `<div class="empty">Loading catalog...</div>`;
+  await Promise.all([loadReference(), loadOptions()]);
+  renderCategories();
+}
+
+init();

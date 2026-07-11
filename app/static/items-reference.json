@@ -1,0 +1,323 @@
+{
+  "version": 1,
+  "categories": [
+    {
+      "id": "apple",
+      "name": "Apple",
+      "emoji": "🍎",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-apple-fuji", "name": "Fuji Apple", "quantity": "per apple", "unit": "piece", "default_location": "Counter", "note": "Crisp and sweet" },
+        { "id": "ref-apple-gala", "name": "Gala Apple", "quantity": "per apple", "unit": "piece", "default_location": "Counter", "note": "Everyday snacking apple" },
+        { "id": "ref-apple-granny-smith", "name": "Granny Smith", "quantity": "per apple", "unit": "piece", "default_location": "Counter", "note": "Tart baking apple" }
+      ]
+    },
+    {
+      "id": "banana",
+      "name": "Banana",
+      "emoji": "🍌",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-banana-cavendish", "name": "Cavendish Banana", "quantity": "per banana", "unit": "piece", "default_location": "Counter", "note": "Breakfast and smoothies" },
+        { "id": "ref-banana-organic", "name": "Organic Banana", "quantity": "per banana", "unit": "piece", "default_location": "Counter", "note": "Separate when source matters" }
+      ]
+    },
+    {
+      "id": "citrus",
+      "name": "Citrus",
+      "emoji": "🍊",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-citrus-navel-orange", "name": "Navel Orange", "quantity": "per orange", "unit": "piece", "default_location": "Counter", "note": "Easy-peel snacking citrus" },
+        { "id": "ref-citrus-grapefruit", "name": "Grapefruit", "quantity": "per grapefruit", "unit": "piece", "default_location": "Fridge", "note": "Breakfast citrus" },
+        { "id": "ref-citrus-mandarin", "name": "Mandarin", "quantity": "per mandarin", "unit": "piece", "default_location": "Counter", "note": "Small lunch-box citrus" }
+      ]
+    },
+    {
+      "id": "berries",
+      "name": "Berries",
+      "emoji": "🫐",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-berries-strawberry", "name": "Strawberries", "quantity": "per pint", "unit": "pint", "default_location": "Fridge", "note": "Sold in clamshells or pints" },
+        { "id": "ref-berries-blueberry", "name": "Blueberries", "quantity": "per pint", "unit": "pint", "default_location": "Fridge", "note": "Fresh berry pack" },
+        { "id": "ref-berries-raspberry", "name": "Raspberries", "quantity": "per pint", "unit": "pint", "default_location": "Fridge", "note": "Soft berry pack" }
+      ]
+    },
+    {
+      "id": "grapes",
+      "name": "Grapes",
+      "emoji": "🍇",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-grapes-red", "name": "Red Grapes", "quantity": "per bunch", "unit": "bunch", "default_location": "Fridge", "note": "Loose or bagged bunch" },
+        { "id": "ref-grapes-green", "name": "Green Grapes", "quantity": "per bunch", "unit": "bunch", "default_location": "Fridge", "note": "Crisp table grapes" }
+      ]
+    },
+    {
+      "id": "melon",
+      "name": "Melon",
+      "emoji": "🍉",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-melon-watermelon", "name": "Watermelon", "quantity": "per wedge", "unit": "piece", "default_location": "Fridge", "note": "Whole or cut melon" },
+        { "id": "ref-melon-cantaloupe", "name": "Cantaloupe", "quantity": "per melon", "unit": "piece", "default_location": "Fridge", "note": "Whole or half melon" },
+        { "id": "ref-melon-honeydew", "name": "Honeydew", "quantity": "per melon", "unit": "piece", "default_location": "Fridge", "note": "Mild sweet melon" }
+      ]
+    },
+    {
+      "id": "stone-fruit",
+      "name": "Stone Fruit",
+      "emoji": "🍑",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-stone-peach", "name": "Peach", "quantity": "per peach", "unit": "piece", "default_location": "Counter", "note": "Summer stone fruit" },
+        { "id": "ref-stone-nectarine", "name": "Nectarine", "quantity": "per nectarine", "unit": "piece", "default_location": "Counter", "note": "Smooth-skin peach cousin" },
+        { "id": "ref-stone-plum", "name": "Plum", "quantity": "per plum", "unit": "piece", "default_location": "Counter", "note": "Snack-size stone fruit" }
+      ]
+    },
+    {
+      "id": "leafy-greens",
+      "name": "Leafy Greens",
+      "emoji": "🥬",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-greens-spinach", "name": "Spinach", "quantity": "per bundle", "unit": "bundle", "default_location": "Fridge", "note": "Bunched or bagged" },
+        { "id": "ref-greens-romaine", "name": "Romaine Lettuce", "quantity": "per head", "unit": "head", "default_location": "Fridge", "note": "Salad and wraps" },
+        { "id": "ref-greens-kale", "name": "Kale", "quantity": "per bunch", "unit": "bunch", "default_location": "Fridge", "note": "Hearty cooking green" }
+      ]
+    },
+    {
+      "id": "tomato",
+      "name": "Tomato",
+      "emoji": "🍅",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-tomato-roma", "name": "Roma Tomato", "quantity": "per tomato", "unit": "piece", "default_location": "Counter", "note": "Sauce and salsa" },
+        { "id": "ref-tomato-cherry", "name": "Cherry Tomatoes", "quantity": "per pint", "unit": "pint", "default_location": "Fridge", "note": "Sold loose or in pints" },
+        { "id": "ref-tomato-beefsteak", "name": "Beefsteak Tomato", "quantity": "per tomato", "unit": "piece", "default_location": "Counter", "note": "Sandwich slices" }
+      ]
+    },
+    {
+      "id": "peppers",
+      "name": "Peppers",
+      "emoji": "🫑",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-pepper-red-bell", "name": "Red Bell Pepper", "quantity": "per pepper", "unit": "piece", "default_location": "Fridge", "note": "Sweet pepper" },
+        { "id": "ref-pepper-green-bell", "name": "Green Bell Pepper", "quantity": "per pepper", "unit": "piece", "default_location": "Fridge", "note": "Stir-fry staple" },
+        { "id": "ref-pepper-jalapeno", "name": "Jalapeño", "quantity": "per pepper", "unit": "piece", "default_location": "Fridge", "note": "Heat and salsa" }
+      ]
+    },
+    {
+      "id": "potato",
+      "name": "Potato",
+      "emoji": "🥔",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-potato-russet", "name": "Russet Potato", "quantity": "per potato", "unit": "piece", "default_location": "Pantry", "note": "Baking and mashing" },
+        { "id": "ref-potato-red", "name": "Red Potato", "quantity": "per potato", "unit": "piece", "default_location": "Pantry", "note": "Roasting and salads" },
+        { "id": "ref-potato-sweet", "name": "Sweet Potato", "quantity": "per potato", "unit": "piece", "default_location": "Pantry", "note": "Separate from white potatoes" }
+      ]
+    },
+    {
+      "id": "onion-garlic",
+      "name": "Onion & Garlic",
+      "emoji": "🧅",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-onion-yellow", "name": "Yellow Onion", "quantity": "per onion", "unit": "piece", "default_location": "Pantry", "note": "All-purpose cooking onion" },
+        { "id": "ref-onion-red", "name": "Red Onion", "quantity": "per onion", "unit": "piece", "default_location": "Pantry", "note": "Salads and pickles" },
+        { "id": "ref-onion-garlic-bulb", "name": "Garlic Bulb", "quantity": "per bulb", "unit": "bulb", "default_location": "Pantry", "note": "Whole garlic head" }
+      ]
+    },
+    {
+      "id": "carrot",
+      "name": "Carrot",
+      "emoji": "🥕",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-carrot-whole", "name": "Whole Carrots", "quantity": "per carrot", "unit": "piece", "default_location": "Fridge", "note": "Bunched or loose" },
+        { "id": "ref-carrot-baby", "name": "Baby Carrots", "quantity": "per bag", "unit": "bag", "default_location": "Fridge", "note": "Snack-size bag" }
+      ]
+    },
+    {
+      "id": "broccoli-cauliflower",
+      "name": "Broccoli & Cauliflower",
+      "emoji": "🥦",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-crucifer-broccoli", "name": "Broccoli", "quantity": "per head", "unit": "head", "default_location": "Fridge", "note": "Whole crown or head" },
+        { "id": "ref-crucifer-cauliflower", "name": "Cauliflower", "quantity": "per head", "unit": "head", "default_location": "Fridge", "note": "Whole head" }
+      ]
+    },
+    {
+      "id": "mushrooms",
+      "name": "Mushrooms",
+      "emoji": "🍄",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-mushroom-white", "name": "White Button Mushrooms", "quantity": "per pack", "unit": "pack", "default_location": "Fridge", "note": "Standard pack" },
+        { "id": "ref-mushroom-cremini", "name": "Cremini Mushrooms", "quantity": "per pack", "unit": "pack", "default_location": "Fridge", "note": "Earthier brown mushrooms" },
+        { "id": "ref-mushroom-portobello", "name": "Portobello Cap", "quantity": "per cap", "unit": "piece", "default_location": "Fridge", "note": "Grill-sized cap" }
+      ]
+    },
+    {
+      "id": "avocado",
+      "name": "Avocado",
+      "emoji": "🥑",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-avocado-hass", "name": "Hass Avocado", "quantity": "per avocado", "unit": "piece", "default_location": "Counter", "note": "Ripen on counter" },
+        { "id": "ref-avocado-large", "name": "Large Avocado", "quantity": "per avocado", "unit": "piece", "default_location": "Counter", "note": "When size matters" }
+      ]
+    },
+    {
+      "id": "cucumber",
+      "name": "Cucumber",
+      "emoji": "🥒",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-cucumber-english", "name": "English Cucumber", "quantity": "per cucumber", "unit": "piece", "default_location": "Fridge", "note": "Long seedless style" },
+        { "id": "ref-cucumber-persian", "name": "Persian Cucumber", "quantity": "per cucumber", "unit": "piece", "default_location": "Fridge", "note": "Small snacking cucumber" }
+      ]
+    },
+    {
+      "id": "lemon-lime",
+      "name": "Lemon & Lime",
+      "emoji": "🍋",
+      "group": "produce",
+      "variants": [
+        { "id": "ref-citrus-lemon", "name": "Lemon", "quantity": "per lemon", "unit": "piece", "default_location": "Fridge", "note": "Cooking and drinks" },
+        { "id": "ref-citrus-lime", "name": "Lime", "quantity": "per lime", "unit": "piece", "default_location": "Fridge", "note": "Tacos and cocktails" }
+      ]
+    },
+    {
+      "id": "eggs",
+      "name": "Eggs",
+      "emoji": "🥚",
+      "group": "fridge",
+      "variants": [
+        { "id": "ref-eggs-large", "name": "Large Eggs", "quantity": "per egg", "unit": "egg", "default_location": "Fridge", "note": "Standard carton eggs" },
+        { "id": "ref-eggs-free-range", "name": "Free Range Eggs", "quantity": "per egg", "unit": "egg", "default_location": "Fridge", "note": "When label matters" },
+        { "id": "ref-eggs-jumbo", "name": "Jumbo Eggs", "quantity": "per egg", "unit": "egg", "default_location": "Fridge", "note": "Bigger baking eggs" }
+      ]
+    },
+    {
+      "id": "milk",
+      "name": "Milk",
+      "emoji": "🥛",
+      "group": "fridge",
+      "variants": [
+        { "id": "ref-milk-whole", "name": "Whole Milk", "quantity": "per bottle", "unit": "bottle", "default_location": "Fridge", "note": "Refill or loose dairy" },
+        { "id": "ref-milk-2-percent", "name": "2% Milk", "quantity": "per bottle", "unit": "bottle", "default_location": "Fridge", "note": "Reduced-fat milk" },
+        { "id": "ref-milk-oat", "name": "Oat Milk", "quantity": "per carton", "unit": "carton", "default_location": "Fridge", "note": "Plant milk refill" }
+      ]
+    },
+    {
+      "id": "yogurt",
+      "name": "Yogurt",
+      "emoji": "🥣",
+      "group": "fridge",
+      "variants": [
+        { "id": "ref-yogurt-plain", "name": "Plain Yogurt", "quantity": "per tub", "unit": "tub", "default_location": "Fridge", "note": "Bulk tub or cup" },
+        { "id": "ref-yogurt-greek", "name": "Greek Yogurt", "quantity": "per tub", "unit": "tub", "default_location": "Fridge", "note": "Thicker style yogurt" }
+      ]
+    },
+    {
+      "id": "butter-cream",
+      "name": "Butter & Cream",
+      "emoji": "🧈",
+      "group": "fridge",
+      "variants": [
+        { "id": "ref-dairy-butter", "name": "Butter", "quantity": "per stick", "unit": "stick", "default_location": "Fridge", "note": "Counter or fridge butter" },
+        { "id": "ref-dairy-heavy-cream", "name": "Heavy Cream", "quantity": "per pint", "unit": "pint", "default_location": "Fridge", "note": "Cooking cream" }
+      ]
+    },
+    {
+      "id": "cheese",
+      "name": "Cheese",
+      "emoji": "🧀",
+      "group": "fridge",
+      "variants": [
+        { "id": "ref-cheese-cheddar", "name": "Cheddar Block", "quantity": "per wedge", "unit": "piece", "default_location": "Fridge", "note": "Deli or block cut" },
+        { "id": "ref-cheese-mozzarella-fresh", "name": "Fresh Mozzarella", "quantity": "per ball", "unit": "piece", "default_location": "Fridge", "note": "Soft fresh cheese" }
+      ]
+    },
+    {
+      "id": "rice",
+      "name": "Rice",
+      "emoji": "🍚",
+      "group": "dry",
+      "variants": [
+        { "id": "ref-rice-jasmine", "name": "Jasmine Rice", "quantity": "per scoop", "unit": "cup", "default_location": "Pantry", "note": "Loose bin refill" },
+        { "id": "ref-rice-basmati", "name": "Basmati Rice", "quantity": "per scoop", "unit": "cup", "default_location": "Pantry", "note": "Long-grain pantry rice" },
+        { "id": "ref-rice-long-grain", "name": "Long-Grain White Rice", "quantity": "per scoop", "unit": "cup", "default_location": "Pantry", "note": "Everyday white rice" }
+      ]
+    },
+    {
+      "id": "pasta",
+      "name": "Pasta",
+      "emoji": "🍝",
+      "group": "dry",
+      "variants": [
+        { "id": "ref-pasta-spaghetti", "name": "Spaghetti", "quantity": "per serving", "unit": "cup", "default_location": "Pantry", "note": "Bulk dry pasta" },
+        { "id": "ref-pasta-penne", "name": "Penne", "quantity": "per serving", "unit": "cup", "default_location": "Pantry", "note": "Short tube pasta" },
+        { "id": "ref-pasta-egg-noodles", "name": "Egg Noodles", "quantity": "per serving", "unit": "cup", "default_location": "Pantry", "note": "Wide noodle style" }
+      ]
+    },
+    {
+      "id": "flour",
+      "name": "Flour",
+      "emoji": "🌾",
+      "group": "dry",
+      "variants": [
+        { "id": "ref-flour-all-purpose", "name": "All-Purpose Flour", "quantity": "per scoop", "unit": "cup", "default_location": "Pantry", "note": "Baking staple" },
+        { "id": "ref-flour-bread", "name": "Bread Flour", "quantity": "per scoop", "unit": "cup", "default_location": "Pantry", "note": "Higher-protein flour" }
+      ]
+    },
+    {
+      "id": "beans-lentils",
+      "name": "Beans & Lentils",
+      "emoji": "🫘",
+      "group": "dry",
+      "variants": [
+        { "id": "ref-legume-black-beans", "name": "Black Beans (dry)", "quantity": "per scoop", "unit": "cup", "default_location": "Pantry", "note": "Bulk dry beans" },
+        { "id": "ref-legume-red-lentils", "name": "Red Lentils", "quantity": "per scoop", "unit": "cup", "default_location": "Pantry", "note": "Quick-cooking lentils" },
+        { "id": "ref-legume-chickpeas", "name": "Chickpeas (dry)", "quantity": "per scoop", "unit": "cup", "default_location": "Pantry", "note": "Dry garbanzo beans" }
+      ]
+    },
+    {
+      "id": "nuts-seeds",
+      "name": "Nuts & Seeds",
+      "emoji": "🥜",
+      "group": "dry",
+      "variants": [
+        { "id": "ref-nuts-almonds", "name": "Almonds", "quantity": "per scoop", "unit": "cup", "default_location": "Pantry", "note": "Bulk bin nuts" },
+        { "id": "ref-nuts-walnuts", "name": "Walnuts", "quantity": "per scoop", "unit": "cup", "default_location": "Pantry", "note": "Baking nuts" },
+        { "id": "ref-nuts-sunflower-seeds", "name": "Sunflower Seeds", "quantity": "per scoop", "unit": "cup", "default_location": "Pantry", "note": "Salad and snack seeds" }
+      ]
+    },
+    {
+      "id": "oats-grains",
+      "name": "Oats & Grains",
+      "emoji": "🌾",
+      "group": "dry",
+      "variants": [
+        { "id": "ref-grain-rolled-oats", "name": "Rolled Oats", "quantity": "per scoop", "unit": "cup", "default_location": "Pantry", "note": "Breakfast oats" },
+        { "id": "ref-grain-quinoa", "name": "Quinoa", "quantity": "per scoop", "unit": "cup", "default_location": "Pantry", "note": "Whole grain staple" }
+      ]
+    },
+    {
+      "id": "bread",
+      "name": "Bread",
+      "emoji": "🍞",
+      "group": "bakery",
+      "variants": [
+        { "id": "ref-bread-sourdough", "name": "Sourdough Loaf", "quantity": "per loaf", "unit": "loaf", "default_location": "Counter", "note": "Bakery counter loaf" },
+        { "id": "ref-bread-whole-wheat", "name": "Whole Wheat Bread", "quantity": "per loaf", "unit": "loaf", "default_location": "Counter", "note": "Sliced or unsliced loaf" },
+        { "id": "ref-bread-baguette", "name": "Baguette", "quantity": "per baguette", "unit": "piece", "default_location": "Counter", "note": "Same-day bakery bread" }
+      ]
+    }
+  ]
+}
