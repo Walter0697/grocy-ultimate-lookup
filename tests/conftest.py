@@ -18,6 +18,7 @@ os.environ.update(
         "COMMUNITY_CATALOG_PATH": str(TEST_DATA_DIR / "community-catalog"),
         "COMMUNITY_CATALOG_QUEUE_PATH": str(TEST_DATA_DIR / "community-catalog-queue.sqlite3"),
         "COMMUNITY_CATALOG_WORKDIR": str(TEST_DATA_DIR / "community-catalog-workdir"),
+        "MANUAL_CATEGORIES_PATH": str(TEST_DATA_DIR / "manual-categories.sqlite3"),
         "SCANNER_DEVICE_TOKENS": "",
     }
 )
