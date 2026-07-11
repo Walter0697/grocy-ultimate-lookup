@@ -27,32 +27,51 @@ class CommunityCatalogQueue:
                     barcode TEXT PRIMARY KEY,
                     product_json TEXT NOT NULL,
                     local_image_path TEXT,
+                    export_reason TEXT NOT NULL DEFAULT 'confirmed',
+                    original_source TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
+            columns = {row[1] for row in db.execute("PRAGMA table_info(pending_catalog_products)").fetchall()}
+            if "export_reason" not in columns:
+                db.execute(
+                    "ALTER TABLE pending_catalog_products ADD COLUMN export_reason TEXT NOT NULL DEFAULT 'confirmed'"
+                )
+            if "original_source" not in columns:
+                db.execute("ALTER TABLE pending_catalog_products ADD COLUMN original_source TEXT")
 
-    def upsert(self, barcode: str, product: ConfirmedProductRequest, *, local_image_path: str | None = None) -> None:
+    def upsert(
+        self,
+        barcode: str,
+        product: ConfirmedProductRequest,
+        *,
+        local_image_path: str | None = None,
+        export_reason: str = "confirmed",
+        original_source: str | None = None,
+    ) -> None:
         safe_barcode = sanitize_barcode(barcode)
         with self._connect() as db:
             db.execute(
                 """
-                INSERT INTO pending_catalog_products (barcode, product_json, local_image_path)
-                VALUES (?, ?, ?)
+                INSERT INTO pending_catalog_products (barcode, product_json, local_image_path, export_reason, original_source)
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(barcode) DO UPDATE SET
                     product_json = excluded.product_json,
                     local_image_path = excluded.local_image_path,
+                    export_reason = excluded.export_reason,
+                    original_source = excluded.original_source,
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                (safe_barcode, product.model_dump_json(), local_image_path),
+                (safe_barcode, product.model_dump_json(), local_image_path, export_reason, original_source),
             )
 
     def list(self) -> list[dict]:
         with self._connect() as db:
             rows = db.execute(
                 """
-                SELECT barcode, product_json, local_image_path, created_at, updated_at
+                SELECT barcode, product_json, local_image_path, export_reason, original_source, created_at, updated_at
                 FROM pending_catalog_products
                 ORDER BY updated_at DESC, barcode ASC
                 """
@@ -93,4 +112,6 @@ class CommunityCatalogQueue:
             "files": files,
             "product": product,
             "local_image_path": row["local_image_path"],
+            "export_reason": row["export_reason"] or "confirmed",
+            "original_source": row["original_source"],
         }

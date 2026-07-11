@@ -532,6 +532,62 @@ def test_runtime_allows_manual_confirm_even_when_ai_auto_push_disabled(tmp_path)
     assert (tmp_path / "catalog" / "products" / "627" / "985" / "627985000070" / "product.json").exists()
 
 
+def test_exporter_marks_modified_product_with_original_source(tmp_path) -> None:
+    exporter = CommunityCatalogExporter(path=tmp_path, enabled=True)
+
+    result = exporter.export_confirmed_product(
+        "627985000070",
+        ConfirmedProductRequest(name="Edited Product"),
+        export_reason="modified",
+        original_source="open_food_facts",
+    )
+
+    assert result.exported is True
+    payload = json.loads((tmp_path / "products" / "627" / "985" / "627985000070" / "product.json").read_text())
+    assert payload["source"] == "user_modified"
+    assert payload["original_source"] == "open_food_facts"
+    assert "modified_at" in payload
+    assert "confirmed_at" not in payload
+
+
+def test_runtime_blocks_modified_product_auto_push_when_disabled(tmp_path) -> None:
+    from app.app_settings import CommunityCatalogSettings
+
+    class Store:
+        def get_community_catalog(self):
+            return CommunityCatalogSettings(
+                enabled=True,
+                repository_url="https://github.com/example/catalog.git",
+                github_pat=None,
+                branch="main",
+                workdir=str(tmp_path / "workdir"),
+                path=str(tmp_path / "workdir"),
+                export_images=True,
+                auto_commit=False,
+                auto_push=True,
+                auto_push_ai_results=True,
+                auto_push_modified_products=False,
+                git_remote="origin",
+                git_branch="main",
+                author_name=None,
+                author_email=None,
+            )
+
+    queue = CommunityCatalogQueue(tmp_path / "queue.sqlite3")
+    runtime = RuntimeCommunityCatalogExporter(Store(), queue_store=queue)
+
+    result = runtime.export_confirmed_product(
+        "627985000070",
+        ConfirmedProductRequest(name="Edited Product"),
+        export_reason="modified",
+        original_source="community_catalog",
+    )
+
+    assert result.exported is False
+    assert runtime.pending_products() == []
+    assert not (tmp_path / "workdir").exists()
+
+
 def test_exporter_bootstraps_existing_empty_remote_checkout(tmp_path) -> None:
     runner = FakeGitRunner(fail_fetch_missing_branch=True)
     checkout = tmp_path / "checkout"

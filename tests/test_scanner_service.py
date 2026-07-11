@@ -30,10 +30,10 @@ class FakeCommunityCatalog:
         self.error = error
         self.exported = []
 
-    def export_confirmed_product(self, barcode, product, *, result_source=None):
+    def export_confirmed_product(self, barcode, product, *, result_source=None, export_reason="confirmed", original_source=None):
         if self.error:
             raise self.error
-        self.exported.append((barcode, product, result_source))
+        self.exported.append((barcode, product, result_source, export_reason, original_source))
         return SimpleNamespace(warnings=())
 
 
@@ -459,6 +459,69 @@ def test_edit_dashboard_product_updates_existing_grocy_product(tmp_path) -> None
     assert grocy.updated[0][0] == 7
     assert grocy.updated[0][1] == "123456"
     assert grocy.updated[0][2].description == "Fixed details"
+
+
+def test_edit_dashboard_product_exports_modified_product_with_original_source(tmp_path) -> None:
+    catalog = FakeCommunityCatalog()
+    grocy = EditableGrocy()
+    scanner = service(
+        tmp_path,
+        grocy,
+        FakeLookup(LookupResponse(barcode="123456", found=False)),
+        community_catalog=catalog,
+    )
+    scanner.auto_created_store.upsert(product_id=7, barcode="123456", source="open_food_facts")
+
+    updated = run(
+        scanner.update_dashboard_product(
+            7,
+            DashboardProductUpdate(
+                name="Corrected Product",
+                description="Fixed details",
+                brand="Brand",
+                quantity="1 box",
+                image_url=None,
+                location_id=4,
+                qu_id_stock=7,
+                qu_id_purchase=7,
+                qu_factor_purchase_to_stock=1,
+            ),
+        )
+    )
+
+    assert updated["product"]["name"] == "Corrected Product"
+    assert len(catalog.exported) == 1
+    barcode, product, result_source, export_reason, original_source = catalog.exported[0]
+    assert barcode == "123456"
+    assert product.name == "Corrected Product"
+    assert product.notes == "Fixed details"
+    assert result_source is None
+    assert export_reason == "modified"
+    assert original_source == "open_food_facts"
+
+
+def test_attach_image_to_event_exports_modified_product_with_original_source(tmp_path) -> None:
+    catalog = FakeCommunityCatalog()
+    grocy = EditableGrocy()
+    scanner = service(
+        tmp_path,
+        grocy,
+        FakeLookup(LookupResponse(barcode="123456", found=False)),
+        community_catalog=catalog,
+    )
+    scanner.auto_created_store.upsert(product_id=7, barcode="123456", source="community_catalog")
+    event = run(scanner.request_image_review(7))
+
+    updated = run(scanner.attach_image_to_event(event["event_id"], "http://lookup.test/uploaded-images/new-image.jpg"))
+
+    assert updated["status"] == "dismissed"
+    assert len(catalog.exported) == 1
+    barcode, product, result_source, export_reason, original_source = catalog.exported[0]
+    assert barcode == "123456"
+    assert str(product.image_url) == "http://lookup.test/uploaded-images/new-image.jpg"
+    assert result_source is None
+    assert export_reason == "modified"
+    assert original_source == "community_catalog"
 
 
 def test_edit_dashboard_product_returns_backfill_summary(tmp_path) -> None:
@@ -1046,6 +1109,7 @@ def test_dashboard_confirm_uses_edited_product_before_applying_scan(tmp_path) ->
     assert scanner.grocy.created[0][1].qu_factor_purchase_to_stock == 12
     assert scanner.grocy.operations[0][1].location_id == 4
     assert catalog.exported[0][1].name == "Edited Product"
+    assert catalog.exported[0][3] == "confirmed"
     assert (
         str(catalog.exported[0][1].image_url)
         == "http://host.docker.internal:9290/uploaded-images/edited-product.jpg"
@@ -1309,12 +1373,14 @@ def test_confirm_exports_user_confirmed_product_to_catalog(tmp_path) -> None:
     )
 
     assert len(catalog.exported) == 1
-    barcode, product, result_source = catalog.exported[0]
+    barcode, product, result_source, export_reason, original_source = catalog.exported[0]
     assert barcode == "123456"
     assert product.name == "Confirmed Product"
     assert product.brand == "Confirmed Brand"
     assert product.quantity == "500 mL"
     assert result_source is None
+    assert export_reason == "confirmed"
+    assert original_source is None
 
 
 def test_confirm_exports_ai_search_result_to_catalog_with_source(tmp_path) -> None:
@@ -1355,10 +1421,12 @@ def test_confirm_exports_ai_search_result_to_catalog_with_source(tmp_path) -> No
     )
 
     assert len(catalog.exported) == 1
-    barcode, product, result_source = catalog.exported[0]
+    barcode, product, result_source, export_reason, original_source = catalog.exported[0]
     assert barcode == "123456"
     assert product.name == "Confirmed Product"
     assert result_source == "llm_fallback"
+    assert export_reason == "confirmed"
+    assert original_source is None
 
 
 def test_dashboard_confirm_exports_ai_search_result_to_catalog_with_source(tmp_path) -> None:
@@ -1395,10 +1463,12 @@ def test_dashboard_confirm_exports_ai_search_result_to_catalog_with_source(tmp_p
 
     assert event["status"] == "applied"
     assert len(catalog.exported) == 1
-    barcode, product, result_source = catalog.exported[0]
+    barcode, product, result_source, export_reason, original_source = catalog.exported[0]
     assert barcode == "123456"
     assert product.name == "Lookup Product"
     assert result_source == "web_search"
+    assert export_reason == "confirmed"
+    assert original_source is None
 
 
 def test_confirm_still_applies_scan_when_catalog_export_fails(tmp_path) -> None:

@@ -243,9 +243,11 @@ COMMUNITY_CATALOG_AUTHOR_NAME=Grocy Ultimate Lookup
 COMMUNITY_CATALOG_AUTHOR_EMAIL=grocy-lookup@example.local
 ```
 
-When enabled, only user-confirmed products are exported. Trusted auto-created
-lookup results, web guesses, and agent guesses are not exported in this first
-version.
+When enabled, user-confirmed products are exported. You can separately allow
+auto-pushing AI-searched results and auto-pushing later dashboard edits of an
+existing product. Modified-product exports are marked as `source:
+user_modified`, and when Grocy Ultimate Lookup knows the upstream origin it
+also records `original_source` in `product.json`.
 
 Records are written using two three-digit shards plus the full barcode folder:
 

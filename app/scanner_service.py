@@ -257,6 +257,7 @@ class ScannerService:
         barcode, existing = await self._load_dashboard_product(product_id)
 
         before_snapshot = self._dashboard_product_snapshot(existing)
+        original_source = self._original_product_source(product_id, before_snapshot)
         update_payload = update.model_dump()
         if before_snapshot.get("image_url") and str(update.image_url or "") == str(before_snapshot["image_url"]):
             update_payload["image_url"] = None
@@ -271,6 +272,7 @@ class ScannerService:
             before_snapshot=before_snapshot,
             updated=updated,
             source="dashboard",
+            original_source=original_source,
         )
 
     async def request_image_review(self, product_id: int) -> dict:
@@ -306,6 +308,7 @@ class ScannerService:
 
         barcode, existing = await self._load_dashboard_product(int(product_id), barcode=updated_event.get("barcode"))
         before_snapshot = self._dashboard_product_snapshot(existing)
+        original_source = self._original_product_source(int(product_id), before_snapshot)
         update_payload = PendingProductConfirmation(
             name=before_snapshot.get("name") or updated_event.get("product_name") or "Unnamed product",
             description=before_snapshot.get("description"),
@@ -325,6 +328,7 @@ class ScannerService:
             updated=updated,
             source="telegram_review_upload",
             related_event_id=event_id,
+            original_source=original_source,
         )
         completed_event = self.store.update(
             event_id,
@@ -358,6 +362,7 @@ class ScannerService:
         updated: dict,
         source: str,
         related_event_id: str | None = None,
+        original_source: str | None = None,
     ) -> dict:
         after_snapshot = self._dashboard_product_snapshot(updated)
         product = self._dashboard_product_summary(updated)
@@ -389,6 +394,13 @@ class ScannerService:
             )
         except Exception as exc:
             logger.warning("Applied scan event backfill failed for %s: %s", barcode, exc)
+
+        if changed_fields:
+            self._export_modified_product(
+                barcode=barcode,
+                snapshot=after_snapshot,
+                original_source=original_source,
+            )
 
         return DashboardProductEditResult(
             product=DashboardProductEditProductSummary.model_validate(product),
@@ -539,6 +551,52 @@ class ScannerService:
             "qu_id_purchase": product_data.get("qu_id_purchase"),
             "qu_factor_purchase_to_stock": product_data.get("qu_factor_purchase_to_stock"),
         }
+
+    def _export_modified_product(
+        self,
+        *,
+        barcode: str,
+        snapshot: dict,
+        original_source: str | None,
+    ) -> None:
+        export_product = ConfirmedProductRequest(
+            name=snapshot.get("name") or "Unnamed product",
+            brand=snapshot.get("brand"),
+            quantity=snapshot.get("quantity"),
+            image_url=snapshot.get("image_url"),
+            notes=snapshot.get("description"),
+        )
+        try:
+            result = self.community_catalog.export_confirmed_product(
+                barcode,
+                export_product,
+                export_reason="modified",
+                original_source=original_source,
+            )
+            for warning in result.warnings:
+                logger.warning("Community catalog export warning for modified %s: %s", barcode, warning)
+        except Exception as exc:
+            logger.warning("Community catalog export failed for modified %s: %s", barcode, exc)
+
+    def _original_product_source(self, product_id: int, snapshot: dict) -> str | None:
+        try:
+            record = self.auto_created_store.get_by_product_id(product_id)
+        except Exception as exc:
+            logger.warning("Auto-created product ownership read failed for %s: %s", product_id, exc)
+            record = None
+        if record is not None:
+            source = record.get("source")
+            if isinstance(source, str) and source.strip():
+                return source.strip()
+        description = snapshot.get("description")
+        if not isinstance(description, str):
+            return None
+        for line in description.splitlines():
+            if not line.startswith("Lookup source:"):
+                continue
+            source = line.split(":", 1)[1].strip()
+            return source or None
+        return None
 
     async def _ensure_missing_image_review(
         self,

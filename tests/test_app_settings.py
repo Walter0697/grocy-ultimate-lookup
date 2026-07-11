@@ -183,6 +183,25 @@ def test_app_settings_store_persists_auto_push_ai_results(tmp_path) -> None:
     assert reopened.auto_push_ai_results is False
 
 
+def test_app_settings_store_persists_auto_push_modified_products(tmp_path) -> None:
+    store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
+
+    saved = store.update_community_catalog(
+        CommunityCatalogSettingsUpdate(
+            enabled=True,
+            repository_url="https://github.com/example/catalog.git",
+            github_pat="secret-token",
+            branch="main",
+            auto_push=True,
+            auto_push_modified_products=True,
+        )
+    )
+    reopened = AppSettingsStore(str(tmp_path / "settings.sqlite3")).get_community_catalog()
+
+    assert saved.auto_push_modified_products is True
+    assert reopened.auto_push_modified_products is True
+
+
 def test_app_settings_store_persists_ordered_community_catalog_sources(tmp_path) -> None:
     store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
 
