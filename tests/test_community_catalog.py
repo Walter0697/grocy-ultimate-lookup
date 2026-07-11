@@ -12,6 +12,8 @@ from app.community_catalog import (
     CommunityCatalogExporter,
     CommunityCatalogSourceRegistry,
     RuntimeCommunityCatalogExporter,
+    catalog_item_dir,
+    catalog_item_slug,
     catalog_product_dir,
 )
 from app.community_catalog_queue import CommunityCatalogQueue
@@ -530,6 +532,70 @@ def test_runtime_allows_manual_confirm_even_when_ai_auto_push_disabled(tmp_path)
 
     assert result.exported is True
     assert (tmp_path / "catalog" / "products" / "627" / "985" / "627985000070" / "product.json").exists()
+
+
+def test_exporter_writes_manual_item_to_items_directory(tmp_path) -> None:
+    exporter = CommunityCatalogExporter(path=tmp_path, enabled=True, export_images=False)
+
+    result = exporter.export_manual_item(
+        {
+            "id": "custom-item-1",
+            "category_id": "custom-herbs",
+            "name": "Basil",
+            "quantity": "per bunch",
+            "unit": "bunch",
+            "note": "Fresh basil",
+            "image_url": "/uploaded-images/basil.jpg",
+        },
+        category={"id": "custom-herbs", "name": "Herbs", "group": "other"},
+    )
+
+    assert result.exported is True
+    payload = json.loads(
+        (tmp_path / catalog_item_dir("custom-herbs", catalog_item_slug({"id": "custom-item-1", "name": "Basil"})) / "item.json").read_text()
+    )
+    assert payload["name"] == "Basil"
+    assert payload["category"]["name"] == "Herbs"
+    assert payload["source"] == "user_created_manual_item"
+
+
+def test_runtime_manual_item_export_respects_auto_push_manual_items(tmp_path) -> None:
+    class Store:
+        def get_community_catalog(self):
+            return CommunityCatalogSettings(
+                enabled=True,
+                repository_url=None,
+                github_pat=None,
+                branch="main",
+                workdir=str(tmp_path / "workdir"),
+                path=str(tmp_path / "catalog"),
+                export_images=False,
+                auto_commit=False,
+                auto_push=True,
+                auto_push_manual_items=True,
+                git_remote="origin",
+                git_branch="main",
+                author_name=None,
+                author_email=None,
+            )
+
+    runtime = RuntimeCommunityCatalogExporter(Store())
+
+    result = runtime.export_manual_item(
+        {
+            "id": "custom-item-1",
+            "category_id": "custom-herbs",
+            "name": "Basil",
+            "quantity": "per bunch",
+            "unit": "bunch",
+            "note": None,
+            "image_url": "/uploaded-images/basil.jpg",
+        },
+        category={"id": "custom-herbs", "name": "Herbs", "group": "other"},
+    )
+
+    assert result.exported is True
+    assert (tmp_path / "catalog" / "items" / "custom-herbs" / "basil" / "item.json").exists()
 
 
 def test_exporter_marks_modified_product_with_original_source(tmp_path) -> None:

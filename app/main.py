@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 import shutil
 import tomllib
@@ -24,6 +25,7 @@ from app.app_settings import (
     public_community_catalog_settings,
     public_lookup_settings,
 )
+from app.adapters.community_catalog import CommunityCatalogAdapter
 from app.config import settings
 from app.community_catalog import CommunityCatalogSourceRegistry, RuntimeCommunityCatalogExporter, exporter_from_settings
 from app.grocy import GrocyError
@@ -56,6 +58,8 @@ from app.models import (
 from app.orchestrator import LookupOrchestrator
 from app.scanner_devices import ScannerDeviceRegistry, expected_device_token
 from app.scanner_service import ScannerService
+
+logger = logging.getLogger(__name__)
 
 
 def get_app_version() -> str:
@@ -680,12 +684,18 @@ async def list_manual_category_items(
     return manual_category_store.list_items(category_id)
 
 
+@app.get("/dashboard/community-catalog-items")
+async def list_community_catalog_items() -> list[dict]:
+    adapter = CommunityCatalogAdapter(settings_store=app_settings_store)
+    return await adapter.list_items()
+
+
 @app.post("/dashboard/manual-categories/{category_id}/items", response_model=ManualCategoryItem)
 async def create_manual_category_item(
     category_id: str,
     item: ManualCategoryItemCreate,
 ) -> ManualCategoryItem:
-    return manual_category_store.create_item(
+    created = manual_category_store.create_item(
         category_id=category_id,
         name=item.name,
         quantity=item.quantity,
@@ -696,6 +706,12 @@ async def create_manual_category_item(
         image_url=item.image_url,
         favorite=item.favorite,
     )
+    category = manual_category_store.get_category(category_id)
+    try:
+        community_catalog_runtime.export_manual_item(created, category=category)
+    except Exception as exc:
+        logger.warning("Manual item catalog export failed for %s: %s", created.get("id"), exc)
+    return created
 
 
 @app.get("/dashboard/options")

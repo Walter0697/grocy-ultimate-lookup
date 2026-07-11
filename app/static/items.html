@@ -33,7 +33,13 @@
         <span>Search</span>
         <input id="items-search-input" type="text" placeholder="Find produce, eggs, rice, bread...">
       </label>
-      <button type="button" id="open-add-category" class="secondary items-add-category">Add category</button>
+      <div class="items-toolbar-actions">
+        <button type="button" id="open-add-category" class="secondary items-add-category">Add category</button>
+        <span id="items-external-catalog-status" class="items-external-catalog-status hidden" aria-live="polite">
+          <i></i>
+          Loading external catalog...
+        </span>
+      </div>
     </section>
     <div id="items-grid" class="event-grid items-category-grid" aria-live="polite"></div>
   </main>

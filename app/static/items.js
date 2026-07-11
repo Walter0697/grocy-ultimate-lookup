@@ -117,6 +117,12 @@ function toast(message) {
   setTimeout(() => node.classList.remove("show"), 3200);
 }
 
+function setExternalCatalogLoading(loading) {
+  const node = $("#items-external-catalog-status");
+  if (!node) return;
+  node.classList.toggle("hidden", !loading);
+}
+
 async function api(path, init, json = true) {
   const response = await fetch(path, { headers: json ? { "Content-Type": "application/json" } : {}, ...init });
   if (!response.ok) {
@@ -685,7 +691,42 @@ async function loadCustomItems() {
   }
 }
 
+async function loadCommunityCatalogCategories() {
+  try {
+    const response = await fetch("/dashboard/community-catalog-items");
+    if (!response.ok) throw new Error("Failed to load subscribed catalog items");
+    const data = await response.json();
+    return (Array.isArray(data) ? data : []).map(category => ({
+      ...category,
+      custom: false,
+      community_catalog: true,
+      variants: (category.variants || []).map(normalizeReferenceVariant),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 async function loadCategories() {
+  const [referenceCategories, communityCatalogCategories, customCategories, customItems] = await Promise.all([
+    loadReference(),
+    loadCommunityCatalogCategories(),
+    loadCustomCategories(),
+    loadCustomItems(),
+  ]);
+  const merged = [
+    ...referenceCategories,
+    ...communityCatalogCategories,
+    ...customCategories.map(category => ({
+      ...category,
+      custom: true,
+      variants: [],
+    })),
+  ];
+  categories = applyVariantOverridesToList(mergeCustomItems(merged, customItems));
+}
+
+async function loadLocalCategories() {
   const [referenceCategories, customCategories, customItems] = await Promise.all([
     loadReference(),
     loadCustomCategories(),
@@ -700,6 +741,42 @@ async function loadCategories() {
     })),
   ];
   categories = applyVariantOverridesToList(mergeCustomItems(merged, customItems));
+}
+
+function categoryMergeKey(category) {
+  return String(category?.name || "").trim().toLowerCase();
+}
+
+function mergeCategoryLists(baseCategories, incomingCategories) {
+  const merged = [...baseCategories];
+  const byKey = new Map(merged.map(category => [categoryMergeKey(category), category]));
+  for (const incoming of incomingCategories) {
+    const key = categoryMergeKey(incoming);
+    if (!key) {
+      merged.push(incoming);
+      continue;
+    }
+    const existing = byKey.get(key);
+    if (!existing) {
+      merged.push(incoming);
+      byKey.set(key, incoming);
+      continue;
+    }
+    existing.group = existing.group || incoming.group;
+    existing.emoji = existing.emoji || incoming.emoji;
+    existing.image_url = existing.image_url || incoming.image_url;
+    existing.community_catalog = Boolean(existing.community_catalog || incoming.community_catalog);
+    existing.variants = [...(existing.variants || []), ...(incoming.variants || [])];
+  }
+  return merged;
+}
+
+async function mergeCommunityCatalogCategories() {
+  const communityCatalogCategories = await loadCommunityCatalogCategories();
+  if (!communityCatalogCategories.length) return;
+  categories = applyVariantOverridesToList(
+    mergeCategoryLists(categories.filter(category => !category.community_catalog), communityCatalogCategories)
+  );
 }
 
 async function loadOptions() {
@@ -967,8 +1044,25 @@ async function init() {
   renderCategoryEmojiPanel();
   resetAddCategoryForm();
   resetAddItemForm();
-  await Promise.all([loadCategories(), loadOptions()]);
-  renderCategories();
+  try {
+    await Promise.all([loadLocalCategories(), loadOptions()]);
+    renderCategories();
+  } catch (error) {
+    $("#items-grid").innerHTML = `<div class="empty">Could not load catalog.</div>`;
+    toast(error.message || "Could not load catalog.");
+    return;
+  }
+  setExternalCatalogLoading(true);
+  mergeCommunityCatalogCategories()
+    .then(() => {
+      renderCategories();
+    })
+    .catch(error => {
+      toast(error.message || "Could not load subscribed catalog items.");
+    })
+    .finally(() => {
+      setExternalCatalogLoading(false);
+    });
 }
 
 function renderCategoryEmojiPanel() {

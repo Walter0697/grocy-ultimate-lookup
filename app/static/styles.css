@@ -19,3 +19,8 @@ body.items-dialog-open #items-main{pointer-events:none;user-select:none}
 .items-item-photo-preview.items-image-waiting{outline:2px dashed var(--yellow);outline-offset:-2px}
 .items-item-photo-preview.items-image-waiting::after{content:"Waiting for external image";position:absolute;bottom:10px;left:10px;right:10px;text-align:center;font:600 9px "IBM Plex Mono";color:var(--ink);background:#faf7efcc;padding:6px}
 .items-variant-detail{margin-bottom:14px}
+.items-toolbar-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.items-external-catalog-status{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font:600 9px "IBM Plex Mono";letter-spacing:.06em;white-space:nowrap}
+.items-external-catalog-status.hidden{display:none}
+.items-external-catalog-status i{display:inline-block;width:10px;height:10px;border:2px solid var(--line);border-top-color:var(--blue);border-radius:50%;animation:itemsSpin .8s linear infinite}
+@keyframes itemsSpin{to{transform:rotate(360deg)}}

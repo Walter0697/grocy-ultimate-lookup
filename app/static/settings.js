@@ -137,6 +137,7 @@ function formData() {
     auto_push: form.auto_push.checked,
     auto_push_ai_results: form.auto_push_ai_results.checked,
     auto_push_modified_products: form.auto_push_modified_products.checked,
+    auto_push_manual_items: form.auto_push_manual_items.checked,
     author_name: form.author_name.value.trim() || null,
     author_email: form.author_email.value.trim() || null
   };
@@ -196,6 +197,7 @@ function fillForm(settings) {
   form.auto_push.checked = settings.auto_push;
   form.auto_push_ai_results.checked = settings.auto_push_ai_results;
   form.auto_push_modified_products.checked = settings.auto_push_modified_products;
+  form.auto_push_manual_items.checked = settings.auto_push_manual_items;
   form.author_name.value = settings.author_name || "";
   form.author_email.value = settings.author_email || "";
   updateCatalogConfigState();
@@ -248,6 +250,8 @@ function updateCatalogConfigState() {
   form.auto_push_ai_results.closest(".switch-row").classList.toggle("is-dimmed", !form.auto_push.checked);
   form.auto_push_modified_products.disabled = !form.auto_push.checked;
   form.auto_push_modified_products.closest(".switch-row").classList.toggle("is-dimmed", !form.auto_push.checked);
+  form.auto_push_manual_items.disabled = !form.auto_push.checked;
+  form.auto_push_manual_items.closest(".switch-row").classList.toggle("is-dimmed", !form.auto_push.checked);
   const reviewActions = $("#pending-review-actions");
   reviewActions.classList.toggle("is-dimmed", form.auto_push.checked);
   reviewActions.querySelectorAll("button").forEach(button => {

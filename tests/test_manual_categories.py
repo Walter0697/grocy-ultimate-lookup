@@ -196,3 +196,77 @@ def test_create_manual_category_item_with_lookup_image(manual_category_store) ->
 
     assert response.status_code == 200
     assert response.json()["image_url"] == "/uploaded-images/basil.jpg"
+
+
+def test_create_manual_category_item_triggers_catalog_export(monkeypatch, manual_category_store) -> None:
+    category = manual_category_store.create_category(
+        name="Herbs",
+        group="other",
+        emoji="🌿",
+    )
+    calls = []
+
+    class Exporter:
+        def export_manual_item(self, item, *, category=None):
+            calls.append((item, category))
+            return None
+
+    monkeypatch.setattr(main, "community_catalog_runtime", Exporter())
+
+    async def request():
+        transport = httpx.ASGITransport(app=main.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.post(
+                f"/dashboard/manual-categories/{category['id']}/items",
+                json={
+                    "name": "Basil",
+                    "quantity": "per bunch",
+                    "unit": "bunch",
+                    "default_location": "Fridge",
+                    "image_url": "/uploaded-images/basil.jpg",
+                },
+            )
+
+    response = run(request())
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+    assert calls[0][0]["name"] == "Basil"
+    assert calls[0][1]["id"] == category["id"]
+
+
+def test_list_community_catalog_items(monkeypatch, manual_category_store) -> None:
+    class Adapter:
+        def __init__(self, settings_store=None):
+            pass
+
+        async def list_items(self):
+            return [
+                {
+                    "id": "catalog-source-herbs",
+                    "name": "Herbs",
+                    "group": "other",
+                    "variants": [
+                        {
+                            "id": "catalog-source-basil",
+                            "name": "Basil",
+                            "quantity": "per bunch",
+                            "unit": "bunch",
+                        }
+                    ],
+                }
+            ]
+
+    monkeypatch.setattr(main, "CommunityCatalogAdapter", Adapter)
+
+    async def request():
+        transport = httpx.ASGITransport(app=main.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.get("/dashboard/community-catalog-items")
+
+    response = run(request())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body[0]["name"] == "Herbs"
+    assert body[0]["variants"][0]["name"] == "Basil"

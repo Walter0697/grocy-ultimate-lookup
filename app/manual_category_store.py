@@ -63,6 +63,18 @@ class ManualCategoryStore:
             ).fetchall()
         return [self._to_category(row) for row in rows]
 
+    def get_category(self, category_id: str) -> dict | None:
+        with self._connect() as db:
+            row = db.execute(
+                """
+                SELECT id, name, group_name, emoji, image_url, created_at
+                FROM manual_categories
+                WHERE id = ?
+                """,
+                (category_id,),
+            ).fetchone()
+        return self._to_category(row) if row else None
+
     def list_items(self, category_id: str | None = None) -> list[dict]:
         query = """
             SELECT id, category_id, name, quantity, unit, default_location, note, emoji, image_url, favorite, created_at

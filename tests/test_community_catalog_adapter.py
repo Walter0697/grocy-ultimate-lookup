@@ -83,6 +83,42 @@ async def run_lookup(tmp_path, *, github_pat: str | None, seen_requests: list[ht
         await client.aclose()
 
 
+async def run_list_items(tmp_path, *, github_pat: str | None, handler):
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = CommunityCatalogAdapter(store_with_source(tmp_path, github_pat=github_pat), client=client)
+    try:
+        return await adapter.list_items()
+    finally:
+        await client.aclose()
+
+
+async def run_list_items_from_configured_repo(tmp_path, *, github_pat: str | None, handler):
+    store = AppSettingsStore(
+        str(tmp_path / "settings.sqlite3"),
+        community_catalog_defaults=CommunityCatalogSettings(
+            enabled=True,
+            repository_url="https://github.com/example/my-catalog.git",
+            github_pat=github_pat,
+            branch="main",
+            workdir=str(tmp_path / "workdir"),
+            path=str(tmp_path / "catalog"),
+            export_images=True,
+            auto_commit=False,
+            auto_push=False,
+            git_remote="origin",
+            git_branch="main",
+            author_name=None,
+            author_email=None,
+        ),
+    )
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = CommunityCatalogAdapter(store, client=client)
+    try:
+        return await adapter.list_items()
+    finally:
+        await client.aclose()
+
+
 def test_parse_github_repository_url_supports_https_and_ssh() -> None:
     assert parse_github_repository_url("https://github.com/example/catalog.git").owner == "example"
     assert parse_github_repository_url("git@github.com:example/catalog.git").repo == "catalog"
@@ -241,3 +277,74 @@ def test_community_catalog_adapter_skips_invalid_sources(tmp_path) -> None:
     assert result is not None
     assert all("/repos/example/valid-catalog/" in request for request in seen_requests)
     assert all("/repos/example/invalid-catalog/" not in request for request in seen_requests)
+
+
+def test_community_catalog_adapter_lists_manual_items_from_subscribed_sources(tmp_path) -> None:
+    import asyncio
+
+    seen_requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append(str(request.url))
+        path = str(request.url)
+        if path.endswith("/contents/items?ref=main"):
+            return httpx.Response(200, json=[{"type": "dir", "path": "items/custom-herbs"}])
+        if path.endswith("/contents/items/custom-herbs?ref=main"):
+            return httpx.Response(200, json=[{"type": "dir", "path": "items/custom-herbs/basil"}])
+        if path.endswith("/contents/items/custom-herbs/basil/item.json?ref=main"):
+            return github_content_response(
+                {
+                    "schema_version": 1,
+                    "id": "custom-item-1",
+                    "category_id": "custom-herbs",
+                    "name": "Basil",
+                    "quantity": "per bunch",
+                    "unit": "bunch",
+                    "note": "Fresh basil",
+                    "category": {"id": "custom-herbs", "name": "Herbs", "group": "other"},
+                }
+            )
+        return httpx.Response(404)
+
+    categories = asyncio.run(run_list_items(tmp_path, github_pat=None, handler=handler))
+
+    assert len(categories) == 1
+    assert categories[0]["name"] == "Herbs"
+    assert categories[0]["community_catalog"] is True
+    assert categories[0]["variants"][0]["name"] == "Basil"
+    assert categories[0]["variants"][0]["community_catalog"] is True
+
+
+def test_community_catalog_adapter_lists_items_from_configured_repo_without_source_entry(tmp_path) -> None:
+    import asyncio
+
+    seen_requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append(str(request.url))
+        path = str(request.url)
+        if path.endswith("/repos/example/my-catalog/contents/items?ref=main"):
+            return httpx.Response(200, json=[{"type": "dir", "path": "items/banana"}])
+        if path.endswith("/repos/example/my-catalog/contents/items/banana?ref=main"):
+            return httpx.Response(200, json=[{"type": "dir", "path": "items/banana/random-thing"}])
+        if path.endswith("/repos/example/my-catalog/contents/items/banana/random-thing/item.json?ref=main"):
+            return github_content_response(
+                {
+                    "schema_version": 1,
+                    "id": "custom-item-random-thing",
+                    "category_id": "banana",
+                    "name": "Random Thing",
+                    "quantity": "1",
+                    "unit": "piece",
+                    "note": "Added as a sample manual item under Banana.",
+                    "category": {"id": "banana", "name": "Banana", "group": "produce"},
+                }
+            )
+        return httpx.Response(404)
+
+    categories = asyncio.run(run_list_items_from_configured_repo(tmp_path, github_pat=None, handler=handler))
+
+    assert len(categories) == 1
+    assert categories[0]["name"] == "Banana"
+    assert categories[0]["variants"][0]["name"] == "Random Thing"
+    assert any("/repos/example/my-catalog/" in request for request in seen_requests)
