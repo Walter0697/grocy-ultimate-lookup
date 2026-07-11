@@ -869,11 +869,6 @@ function openVariantDialog(variantId) {
 
 $("#items-search-input").addEventListener("input", event => {
   activeSearch = event.target.value.trim().toLowerCase();
-  if (expansionEl && activeCategoryId) {
-    const category = activeCategory();
-    if (category) refreshExpansionContent(category);
-    return;
-  }
   renderCategories();
 });
 
