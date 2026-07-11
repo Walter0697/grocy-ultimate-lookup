@@ -88,6 +88,7 @@ function image(event) {
   return `<div class="placeholder barcode-art"><i></i></div>`;
 }
 function operationBadge(event) {
+  if (event.review_kind === "image_update") return "Photo review";
   if (event.status === "processing") return "Working...";
   if (event.status === "researching") return event.product_name ? "Review match" : "Unknown";
   if (event.status === "pending") return event.product_name ? "Review match" : "Unknown";
@@ -108,6 +109,7 @@ function title(event) {
 }
 function captionStatus(event, review) {
   if (isLoading(event)) return "IN PROGRESS";
+  if (event.review_kind === "image_update") return "PHOTO REQUEST";
   if (review) return event.status === "failed" ? "NEEDS ATTENTION" : "ACTION NEEDED";
   return "APPLIED";
 }
@@ -126,6 +128,7 @@ function eventSignature(event) {
     stock_after: event.stock_after,
     lookup_payload: event.lookup_payload,
     error: event.error,
+    review_kind: event.review_kind,
     created_at: event.created_at
   };
 }
@@ -234,7 +237,7 @@ function productEditDialog(product, event) {
       <label>Description<textarea name="description">${escapeHtml(product.description || "")}</textarea></label>
       <div class="form-pair"><label>Default location<select name="location_id">${locationOptions}</select></label><span></span></div>
       ${conversionRow(stockUnitOptions, purchaseUnitOptions, product.qu_factor_purchase_to_stock || 1)}
-      <button type="submit">Save product</button>
+      <div class="review-dialog-actions"><button type="submit">Save product</button><button type="button" class="secondary request-image-review">Request Telegram photo</button></div>
     </form>`;
 }
 function openProductEditDialog(productId, eventId = null) {
@@ -264,7 +267,15 @@ function render() {
   renderScannerStatus();
   $("#event-grid").innerHTML = visible.length ? visible.map(card).join("") : `<div class="empty">No scans in this view yet.</div>`;
 }
+function imageReviewForm(event) {
+  return `<div class="drawer-image">${image(event)}<span class="drawer-badge ${operationClass(event)}">${escapeHtml(operationBadge(event))}</span></div>
+    <p class="drawer-kicker">IMAGE REVIEW · ${escapeHtml(event.barcode)}</p><h2>${escapeHtml(event.product_name || "Product review")}</h2>
+    <p class="drawer-operation">Waiting for a photo upload from Telegram or another remote client.</p>
+    <div class="review-dialog-actions">${event.product_id ? `<button type="button" class="secondary open-product-editor" data-product-id="${escapeHtml(event.product_id)}">Open product editor</button>` : ""}<button type="button" class="secondary danger dialog-delete-action delete-event" data-event="${escapeHtml(event.event_id)}">Dismiss from review</button></div>
+    <form method="dialog" class="review-form"><label>Current image URL<input value="${escapeHtml(event.image_url || "")}" readonly></label><button type="submit">Close</button></form>`;
+}
 function reviewForm(event) {
+  if (event.review_kind === "image_update") return imageReviewForm(event);
   const result = event.lookup_payload?.result || {};
   const alternate = result.alternate_names ? Object.entries(result.alternate_names).map(([lang, name]) => `Alternate (${lang.toUpperCase()}): ${name}`).join("\n") : "";
   const description = [alternate, result.source ? `Lookup source: ${result.source}` : "", event.error || ""].filter(Boolean).join("\n");
@@ -411,6 +422,23 @@ document.addEventListener("click", async event => {
   if (event.target.matches("#close-scan-dialog")) { $("#scan-dialog").close(); return $("#quick-scan input").focus(); }
   if (event.target.matches("#close-product-edit-dialog")) { $("#product-edit-dialog").close(); activeProduct = null; activeProductEvent = null; return $("#quick-scan input").focus(); }
   if (event.target.matches("#close-review-dialog")) return closeReviewDialog();
+  if (event.target.matches(".open-product-editor")) {
+    const productId = event.target.dataset.productId;
+    $("#review-dialog").close();
+    return openProductEditDialog(productId, resolveEventId(event.target));
+  }
+  if (event.target.matches(".request-image-review")) {
+    if (!activeProduct?.product_id) return toast("No active product selected.");
+    try {
+      await api(`/dashboard/products/${activeProduct.product_id}/request-image-review`, { method: "POST" });
+      $("#product-edit-dialog").close();
+      activeProduct = null;
+      activeProductEvent = null;
+      await load();
+      toast("Added to Needs review for Telegram photo upload.");
+      return $("#quick-scan input").focus();
+    } catch (error) { toast(error.message); }
+  }
   if (event.target.matches(".refresh-event")) {
     const eventId = resolveEventId(event.target.closest("form"));
     try { await api(`/scan-events/${eventId}/refresh`, { method: "POST" }); closeReviewDialog(); await load(); } catch (error) { toast(error.message); }

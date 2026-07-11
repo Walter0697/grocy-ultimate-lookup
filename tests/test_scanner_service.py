@@ -216,6 +216,28 @@ class PreserveImageGrocy(EditableGrocy):
         return self.product
 
 
+class PreserveAppliedImageGrocy(EditableGrocy):
+    async def apply_stock_operation(self, product_id: int, event: ScanEventRequest):
+        self.operations.append((product_id, event))
+        if self.fail_apply:
+            raise self.fail_apply
+        name = self.product["product"]["name"]
+        self.product = editable_details(
+            product_id=product_id,
+            name=name,
+            description=self.product["product"].get("description"),
+            brand=self.product["product"].get("brand"),
+            quantity=self.product["product"].get("quantity"),
+            image_url=self.product.get("image_url"),
+            location_id=self.product["product"].get("location_id", 2),
+            qu_id_stock=self.product["product"].get("qu_id_stock", 7),
+            qu_id_purchase=self.product["product"].get("qu_id_purchase", 7),
+            qu_factor_purchase_to_stock=self.product["product"].get("qu_factor_purchase_to_stock", 1),
+            stock=event.quantity if event.mode == "set" else 3,
+        )
+        return self.product
+
+
 def request(event_id="event-1"):
     return ScanEventRequest(
         event_id=event_id,
@@ -243,6 +265,60 @@ def run(coro):
     return asyncio.run(coro)
 
 
+def test_request_image_review_creates_pending_review_event(tmp_path) -> None:
+    grocy = EditableGrocy(editable_details(image_url="https://old.example/product.jpg"))
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup)
+
+    event = run(scanner.request_image_review(7))
+
+    assert event["status"] == "pending"
+    assert event["product_id"] == 7
+    assert event["product_name"] == "Known Product"
+    assert event["review_kind"] == "image_update"
+    assert event["image_url"] == "https://old.example/product.jpg"
+
+
+def test_request_image_review_reuses_existing_open_review(tmp_path) -> None:
+    grocy = EditableGrocy(editable_details())
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup)
+
+    first = run(scanner.request_image_review(7))
+    second = run(scanner.request_image_review(7))
+
+    assert second["event_id"] == first["event_id"]
+    assert len(scanner.store.list(status="pending")) == 1
+
+
+def test_attach_image_to_existing_product_review_updates_product_and_history(tmp_path) -> None:
+    grocy = EditableGrocy(editable_details(image_url="https://old.example/product.jpg"))
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    history_store = ProductEditHistoryStore(str(tmp_path / "product-edit-history.sqlite3"))
+    scanner = ScannerService(
+        store=ScanEventStore(str(tmp_path / "events.sqlite3")),
+        grocy=grocy,
+        lookup=lookup,
+        local_store=LocalProductStore(str(tmp_path / "local.sqlite3")),
+        auto_created_store=AutoCreatedProductStore(str(tmp_path / "auto-created.sqlite3")),
+        history_store=history_store,
+    )
+
+    event = run(scanner.request_image_review(7))
+    updated = run(scanner.attach_image_to_event(event["event_id"], "http://lookup.test/uploaded-images/new-image.jpg"))
+
+    assert updated["image_url"] == "http://lookup.test/uploaded-images/new-image.jpg"
+    assert updated["status"] == "dismissed"
+    assert updated["review_dismissed"] is True
+    assert grocy.updated[-1][0] == 7
+    assert str(grocy.updated[-1][2].image_url) == "http://lookup.test/uploaded-images/new-image.jpg"
+    assert scanner.store.get(event["event_id"]) is None
+    history = history_store.list(limit=10)
+    assert history.items[0].source == "telegram_review_upload"
+    assert history.items[0].related_event_id == event["event_id"]
+    assert history.items[0].after["image_url"] == "http://lookup.test/uploaded-images/new-image.jpg"
+
+
 def test_known_grocy_product_is_applied_before_external_lookup(tmp_path) -> None:
     grocy = FakeGrocy(details())
     lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
@@ -256,6 +332,33 @@ def test_known_grocy_product_is_applied_before_external_lookup(tmp_path) -> None
     assert lookup.calls == []
     assert len(grocy.operations) == 1
     assert grocy.operations[0][1].location_id == 2
+
+
+def test_applied_product_without_image_auto_creates_photo_review(tmp_path) -> None:
+    grocy = EditableGrocy(editable_details(image_url=None))
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup)
+
+    result = run(scanner.process(request()))
+
+    assert result["status"] == "applied"
+    pending = scanner.store.list(status="pending")
+    assert len(pending) == 1
+    assert pending[0]["review_kind"] == "image_update"
+    assert pending[0]["product_id"] == 7
+    assert pending[0]["product_name"] == "Known Product"
+    assert pending[0]["barcode"] == "123456"
+
+
+def test_applied_product_with_image_does_not_create_photo_review(tmp_path) -> None:
+    grocy = PreserveAppliedImageGrocy(editable_details(image_url="https://example.test/product.jpg"))
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup)
+
+    result = run(scanner.process(request()))
+
+    assert result["status"] == "applied"
+    assert scanner.store.list(status="pending") == []
 
 
 def test_device_scan_generates_event_id_and_returns_compact_response(tmp_path) -> None:

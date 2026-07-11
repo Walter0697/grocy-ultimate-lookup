@@ -44,6 +44,7 @@ class Settings(BaseSettings):
         default="http://localhost:9290/uploaded-images",
         alias="UPLOADED_IMAGES_BASE_URL",
     )
+    gul_api_key: str | None = Field(default=None, alias="GUL_API_KEY")
     scanner_device_tokens: str = Field(default="", alias="SCANNER_DEVICE_TOKENS")
     scanner_device_offline_after_seconds: int = Field(default=120, alias="SCANNER_DEVICE_OFFLINE_AFTER_SECONDS")
     community_catalog_enabled: bool = Field(default=False, alias="COMMUNITY_CATALOG_ENABLED")

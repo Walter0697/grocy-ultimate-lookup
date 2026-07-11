@@ -254,14 +254,7 @@ class ScannerService:
         }
 
     async def update_dashboard_product(self, product_id: int, update: DashboardProductUpdate) -> dict:
-        record = self.auto_created_store.get_by_product_id(product_id)
-        barcode = record["barcode"] if record is not None else await self.grocy.get_product_barcode(product_id)
-        if barcode is None:
-            raise KeyError(product_id)
-
-        existing = await self.grocy.find_product_by_barcode(barcode)
-        if existing is None or int(existing["product"]["id"]) != product_id:
-            raise KeyError(product_id)
+        barcode, existing = await self._load_dashboard_product(product_id)
 
         before_snapshot = self._dashboard_product_snapshot(existing)
         update_payload = update.model_dump()
@@ -272,23 +265,119 @@ class ScannerService:
             barcode,
             PendingProductConfirmation(**update_payload),
         )
+        return self._finalize_dashboard_product_update(
+            product_id=product_id,
+            barcode=barcode,
+            before_snapshot=before_snapshot,
+            updated=updated,
+            source="dashboard",
+        )
+
+    async def request_image_review(self, product_id: int) -> dict:
+        existing_review = self.store.get_open_review(product_id=product_id, review_kind="image_update")
+        if existing_review is not None:
+            return existing_review
+
+        barcode, product = await self._load_dashboard_product(product_id)
+        card = self.grocy.product_card(product)
+        snapshot = self._dashboard_product_snapshot(product)
+        return self.store.create_review_event(
+            event_id=f"review-image-{uuid4().hex}",
+            device_id="dashboard-review",
+            barcode=barcode,
+            location_id=snapshot.get("location_id"),
+            product_id=product_id,
+            product_name=card.get("name"),
+            image_url=card.get("image_url"),
+            review_kind="image_update",
+            lookup_payload={
+                "review_only": True,
+                "review_kind": "image_update",
+                "product": snapshot,
+            },
+        )
+
+    async def attach_image_to_event(self, event_id: str, image_url: str) -> dict:
+        event = self._required(event_id)
+        updated_event = self.store.update(event_id, image_url=image_url)
+        product_id = updated_event.get("product_id")
+        if product_id is None:
+            return updated_event
+
+        barcode, existing = await self._load_dashboard_product(int(product_id), barcode=updated_event.get("barcode"))
+        before_snapshot = self._dashboard_product_snapshot(existing)
+        update_payload = PendingProductConfirmation(
+            name=before_snapshot.get("name") or updated_event.get("product_name") or "Unnamed product",
+            description=before_snapshot.get("description"),
+            brand=before_snapshot.get("brand"),
+            quantity=before_snapshot.get("quantity"),
+            image_url=image_url,
+            location_id=int(before_snapshot.get("location_id") or updated_event.get("location_id") or 1),
+            qu_id_stock=int(before_snapshot.get("qu_id_stock") or 1),
+            qu_id_purchase=int(before_snapshot.get("qu_id_purchase") or 1),
+            qu_factor_purchase_to_stock=float(before_snapshot.get("qu_factor_purchase_to_stock") or 1),
+        )
+        updated = await self.grocy.update_product(int(product_id), barcode, update_payload)
+        result = self._finalize_dashboard_product_update(
+            product_id=int(product_id),
+            barcode=barcode,
+            before_snapshot=before_snapshot,
+            updated=updated,
+            source="telegram_review_upload",
+            related_event_id=event_id,
+        )
+        completed_event = self.store.update(
+            event_id,
+            status="applied",
+            product_name=result["product"]["name"],
+            image_url=result["product"].get("image_url"),
+            error=None,
+        )
+        self.store.delete(event_id)
+        completed_event["status"] = "dismissed"
+        completed_event["review_dismissed"] = True
+        return completed_event
+
+    async def _load_dashboard_product(self, product_id: int, *, barcode: str | None = None) -> tuple[str, dict]:
+        record = self.auto_created_store.get_by_product_id(product_id)
+        resolved_barcode = barcode or (record["barcode"] if record is not None else await self.grocy.get_product_barcode(product_id))
+        if resolved_barcode is None:
+            raise KeyError(product_id)
+
+        existing = await self.grocy.find_product_by_barcode(resolved_barcode)
+        if existing is None or int(existing["product"]["id"]) != product_id:
+            raise KeyError(product_id)
+        return resolved_barcode, existing
+
+    def _finalize_dashboard_product_update(
+        self,
+        *,
+        product_id: int,
+        barcode: str,
+        before_snapshot: dict,
+        updated: dict,
+        source: str,
+        related_event_id: str | None = None,
+    ) -> dict:
         after_snapshot = self._dashboard_product_snapshot(updated)
         product = self._dashboard_product_summary(updated)
         changed_fields = sorted(
             field for field in before_snapshot.keys() | after_snapshot.keys() if before_snapshot.get(field) != after_snapshot.get(field)
         )
         history_entry = None
-        try:
-            history_entry = self.history_store.create(
-                product_id=product_id,
-                barcode=barcode,
-                source="dashboard",
-                changed_fields=changed_fields,
-                before={field: before_snapshot.get(field) for field in changed_fields},
-                after={field: after_snapshot.get(field) for field in changed_fields},
-            )
-        except Exception as exc:
-            logger.warning("Product edit history write failed for %s: %s", barcode, exc)
+        if changed_fields:
+            try:
+                history_entry = self.history_store.create(
+                    product_id=product_id,
+                    barcode=barcode,
+                    source=source,
+                    changed_fields=changed_fields,
+                    before={field: before_snapshot.get(field) for field in changed_fields},
+                    after={field: after_snapshot.get(field) for field in changed_fields},
+                    related_event_id=related_event_id,
+                )
+            except Exception as exc:
+                logger.warning("Product edit history write failed for %s: %s", barcode, exc)
 
         updated_event_count = 0
         try:
@@ -347,7 +436,7 @@ class ScannerService:
                 error=str(exc),
             )
         card = self.grocy.product_card(updated)
-        return self.store.update(
+        event = self.store.update(
             request.event_id,
             status="applied",
             product_id=card["product_id"],
@@ -357,6 +446,12 @@ class ScannerService:
             stock_after=float(card["stock_amount"] or 0),
             error=None,
         )
+        await self._ensure_missing_image_review(
+            product_id=int(card["product_id"]),
+            barcode=request.barcode,
+            grocy_product=updated,
+        )
+        return event
 
     def _required(self, event_id: str) -> dict:
         event = self.store.get(event_id)
@@ -444,3 +539,33 @@ class ScannerService:
             "qu_id_purchase": product_data.get("qu_id_purchase"),
             "qu_factor_purchase_to_stock": product_data.get("qu_factor_purchase_to_stock"),
         }
+
+    async def _ensure_missing_image_review(
+        self,
+        *,
+        product_id: int,
+        barcode: str,
+        grocy_product: dict,
+    ) -> None:
+        card = self.grocy.product_card(grocy_product)
+        if card.get("image_url"):
+            return
+        if self.store.get_open_review(product_id=product_id, review_kind="image_update") is not None:
+            return
+        snapshot = self._dashboard_product_snapshot(grocy_product)
+        self.store.create_review_event(
+            event_id=f"review-image-{uuid4().hex}",
+            device_id="auto-image-review",
+            barcode=barcode,
+            location_id=snapshot.get("location_id"),
+            product_id=product_id,
+            product_name=card.get("name"),
+            image_url=None,
+            review_kind="image_update",
+            lookup_payload={
+                "review_only": True,
+                "review_kind": "image_update",
+                "reason": "missing_product_image",
+                "product": snapshot,
+            },
+        )

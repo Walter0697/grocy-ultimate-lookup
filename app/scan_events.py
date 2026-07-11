@@ -36,6 +36,7 @@ class ScanEventStore:
                     stock_after REAL,
                     lookup_payload TEXT,
                     error TEXT,
+                    review_kind TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
@@ -44,6 +45,8 @@ class ScanEventStore:
             columns = {row["name"] for row in db.execute("PRAGMA table_info(scan_events)")}
             if "location_id" not in columns:
                 db.execute("ALTER TABLE scan_events ADD COLUMN location_id INTEGER")
+            if "review_kind" not in columns:
+                db.execute("ALTER TABLE scan_events ADD COLUMN review_kind TEXT")
 
     def create(self, event: ScanEventRequest) -> tuple[dict, bool]:
         existing = self.get(event.event_id)
@@ -63,6 +66,71 @@ class ScanEventStore:
         with self._connect() as db:
             row = db.execute("SELECT * FROM scan_events WHERE event_id = ?", (event_id,)).fetchone()
         return self._row(row) if row else None
+
+    def get_open_review(self, *, product_id: int, review_kind: str) -> dict | None:
+        with self._connect() as db:
+            row = db.execute(
+                """
+                SELECT *
+                FROM scan_events
+                WHERE product_id = ?
+                  AND review_kind = ?
+                  AND status IN ('pending', 'researching', 'failed', 'processing')
+                ORDER BY updated_at DESC, created_at DESC
+                LIMIT 1
+                """,
+                (product_id, review_kind),
+            ).fetchone()
+        return self._row(row) if row else None
+
+    def create_review_event(
+        self,
+        *,
+        event_id: str,
+        device_id: str,
+        barcode: str,
+        location_id: int | None,
+        product_id: int,
+        product_name: str | None,
+        image_url: str | None,
+        review_kind: str,
+        lookup_payload: dict | None = None,
+    ) -> dict:
+        with self._connect() as db:
+            db.execute(
+                """
+                INSERT INTO scan_events (
+                    event_id,
+                    device_id,
+                    barcode,
+                    mode,
+                    quantity,
+                    location_id,
+                    status,
+                    product_id,
+                    product_name,
+                    image_url,
+                    lookup_payload,
+                    review_kind
+                )
+                VALUES (?, ?, ?, 'set', 0, ?, 'pending', ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    device_id,
+                    barcode,
+                    location_id,
+                    product_id,
+                    product_name,
+                    image_url,
+                    json.dumps(lookup_payload) if lookup_payload is not None else None,
+                    review_kind,
+                ),
+            )
+        created = self.get(event_id)
+        if created is None:
+            raise RuntimeError("Review event disappeared")
+        return created
 
     def list(self, status: str | None = None, limit: int = 100) -> list[dict]:
         query = "SELECT * FROM scan_events"
@@ -86,6 +154,7 @@ class ScanEventStore:
             "stock_after",
             "lookup_payload",
             "error",
+            "review_kind",
         }
         updates = {key: value for key, value in values.items() if key in allowed}
         if "lookup_payload" in updates and not isinstance(updates["lookup_payload"], str):

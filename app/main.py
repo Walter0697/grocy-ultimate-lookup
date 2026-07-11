@@ -378,8 +378,7 @@ async def confirm_dashboard_scan(confirmation: DashboardScanConfirmation) -> dic
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
-@app.post("/product-image-uploads")
-async def upload_product_image(file: UploadFile = File(...)) -> dict[str, str]:
+async def save_uploaded_product_image(file: UploadFile) -> dict[str, str]:
     allowed_extensions = {
         "image/jpeg": ".jpg",
         "image/png": ".png",
@@ -402,6 +401,76 @@ async def upload_product_image(file: UploadFile = File(...)) -> dict[str, str]:
         "image_url": f"{settings.uploaded_images_base_url.rstrip('/')}/{file_name}",
         "preview_url": f"/uploaded-images/{file_name}",
     }
+
+
+@app.post("/product-image-uploads")
+async def upload_product_image(file: UploadFile = File(...)) -> dict[str, str]:
+    return await save_uploaded_product_image(file)
+
+
+@app.post("/dashboard/products/{product_id}/request-image-review")
+async def dashboard_request_image_review(product_id: int) -> dict:
+    try:
+        return await scanner.request_image_review(product_id)
+    except KeyError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard product not found")
+    except GrocyError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@app.post("/scan-events/{event_id}/image")
+async def attach_scan_event_image(event_id: str, file: UploadFile = File(...)) -> dict:
+    uploaded = await save_uploaded_product_image(file)
+    try:
+        return await scanner.attach_image_to_event(event_id, uploaded["image_url"])
+    except KeyError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan event not found")
+    except GrocyError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@app.get("/external/scan-events")
+async def external_list_scan_events(
+    event_status: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=100, ge=1, le=500),
+    x_gul_api_key: str | None = Header(default=None),
+) -> list[dict]:
+    require_gul_api_key(x_gul_api_key)
+    return scanner.store.list(status=event_status, limit=limit)
+
+
+@app.get("/external/scan-events/{event_id}")
+async def external_get_scan_event(event_id: str, x_gul_api_key: str | None = Header(default=None)) -> dict:
+    require_gul_api_key(x_gul_api_key)
+    event = scanner.store.get(event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan event not found")
+    return event
+
+
+@app.post("/external/scan-events/{event_id}/image")
+async def external_attach_scan_event_image(
+    event_id: str,
+    file: UploadFile = File(...),
+    x_gul_api_key: str | None = Header(default=None),
+) -> dict:
+    require_gul_api_key(x_gul_api_key)
+    return await attach_scan_event_image(event_id, file)
+
+
+@app.get("/external/dashboard/products")
+async def external_dashboard_products(x_gul_api_key: str | None = Header(default=None)) -> list[dict]:
+    require_gul_api_key(x_gul_api_key)
+    return await dashboard_products()
+
+
+@app.post("/external/dashboard/products/{product_id}/request-image-review")
+async def external_dashboard_request_image_review(
+    product_id: int,
+    x_gul_api_key: str | None = Header(default=None),
+) -> dict:
+    require_gul_api_key(x_gul_api_key)
+    return await dashboard_request_image_review(product_id)
 
 
 @app.post("/scanner/scan", response_model=DeviceScanResponse)
@@ -435,6 +504,16 @@ def require_scanner_token(device_id: str, token: str | None) -> None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Scanner token is required")
     if token != expected:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid scanner token")
+
+
+def require_gul_api_key(api_key: str | None) -> None:
+    expected = settings.gul_api_key
+    if not expected:
+        return
+    if api_key is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="GUL API key is required")
+    if api_key != expected:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid GUL API key")
 
 
 @app.get("/scan-preview/{barcode}")
