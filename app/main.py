@@ -84,7 +84,7 @@ async def dashboard() -> HTMLResponse:
 
 def versioned_index_html() -> str:
     html = (static_path / "index.html").read_text()
-    for asset in ("styles.css", "scan-dialog.css", "app.js"):
+    for asset in ("styles.css", "scan-dialog.css", "stock-confirm.js", "app.js"):
         version = str(int((static_path / asset).stat().st_mtime))
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
     html = html.replace("{{APP_VERSION_BADGE}}", render_app_version_badge())
@@ -102,6 +102,23 @@ async def logs_page() -> HTMLResponse:
 def versioned_logs_html() -> str:
     html = (static_path / "logs.html").read_text()
     for asset in ("styles.css", "logs.js"):
+        version = str(int((static_path / asset).stat().st_mtime))
+        html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
+    html = html.replace("{{APP_VERSION_BADGE}}", render_app_version_badge())
+    return html
+
+
+@app.get("/items", include_in_schema=False)
+async def items_page() -> HTMLResponse:
+    return HTMLResponse(
+        versioned_items_html(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def versioned_items_html() -> str:
+    html = (static_path / "items.html").read_text()
+    for asset in ("styles.css", "scan-dialog.css", "stock-confirm.js", "items.js"):
         version = str(int((static_path / asset).stat().st_mtime))
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
     html = html.replace("{{APP_VERSION_BADGE}}", render_app_version_badge())

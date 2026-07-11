@@ -344,7 +344,6 @@ function conversionRow(stockUnitOptions, purchaseUnitOptions = stockUnitOptions,
 function previewDialog(preview) {
   const product = preview.product || {};
   const source = preview.resolution === "grocy" ? "Existing Grocy product" : preview.resolution === "lookup" ? `Suggested by ${product.source || "Ultimate Lookup"}` : "Unknown product";
-  const locationButtons = options.locations.map(x => `<button type="button" class="choice location-choice" data-value="${x.id}">${escapeHtml(x.name)}</button>`).join("");
   const locationOptions = options.locations.map((x, index) => `<option value="${x.id}" ${index === 0 ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("");
   const unitOptions = options.quantity_units.map((x, index) => `<option value="${x.id}" ${index === 0 ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("");
   const productFields = previewNeedsProductConfirmation(preview)
@@ -355,17 +354,15 @@ function previewDialog(preview) {
     : `<p class="current-stock">Existing Grocy units and conversion will be used for this scan.</p>`;
   return `<div class="preview-photo">${previewImage(product)}</div><p class="drawer-kicker">${escapeHtml(source)}</p><h2>${escapeHtml(product.name || "Unknown product")}</h2>
     <p class="preview-barcode">${escapeHtml(preview.barcode)}</p>${product.stock_amount != null ? `<p class="current-stock">Current stock: <b>${product.stock_amount}</b> ${escapeHtml(product.quantity_unit || "")}</p>` : ""}
-    <form id="preview-confirm-form">
-      <fieldset><legend>Operation</legend><div class="choice-group"><button type="button" class="choice mode-choice selected add-choice" data-value="add">＋ Add</button><button type="button" class="choice mode-choice remove-choice" data-value="remove">− Remove</button><button type="button" class="choice mode-choice set-choice" data-value="set">◎ Manage / Set</button></div></fieldset>
-      <fieldset><legend>Quantity</legend><div class="choice-group quantity-group"><button type="button" class="choice quantity-choice selected" data-value="1">1</button><button type="button" class="choice quantity-choice" data-value="2">2</button><button type="button" class="choice quantity-choice" data-value="3">3</button><input id="custom-quantity" type="number" min="0" step="0.01" value="1" aria-label="Custom quantity"></div></fieldset>
-      <fieldset><legend>Stock location</legend><div class="choice-group location-group"><button type="button" class="choice location-choice selected" data-value="">Product default</button>${locationButtons}</div></fieldset>
-      <button type="submit" class="confirm-scan">Confirm Add 1</button>
-      ${productFields}</form>`;
+    ${StockConfirm.formMarkup({
+      formId: "preview-confirm-form",
+      locations: options.locations,
+      quantity: "1",
+      extraFieldsHtml: productFields,
+    })}`;
 }
 function updateConfirmLabel() {
-  const form = $("#preview-confirm-form"); if (!form) return;
-  const mode = form.querySelector(".mode-choice.selected")?.dataset.value || "add";
-  form.querySelector(".confirm-scan").textContent = `Confirm ${{ add: "Add", remove: "Remove", set: "Set stock to" }[mode]} ${$("#custom-quantity").value}`;
+  StockConfirm.updateConfirmLabel($("#preview-confirm-form"));
 }
 function openScanDialog(preview) {
   activePreview = preview; $("#scan-preview-content").innerHTML = previewDialog(preview); $("#scan-dialog").showModal(); updateConfirmLabel();
@@ -416,8 +413,11 @@ document.addEventListener("click", async event => {
   const appliedPolaroid = event.target.closest(".polaroid.applied"); if (appliedPolaroid?.dataset.productId) return openProductEditDialog(appliedPolaroid.dataset.productId, appliedPolaroid.dataset.event);
   const choice = event.target.closest(".choice");
   if (choice) {
-    choice.closest(".choice-group").querySelectorAll(".choice").forEach(x => x.classList.remove("selected")); choice.classList.add("selected");
-    if (choice.classList.contains("quantity-choice")) $("#custom-quantity").value = choice.dataset.value; return updateConfirmLabel();
+    const form = StockConfirm.findForm(choice);
+    if (form && StockConfirm.handleChoiceClick(choice)) {
+      StockConfirm.updateConfirmLabel(form);
+      return;
+    }
   }
   if (event.target.matches("#close-scan-dialog")) { $("#scan-dialog").close(); return $("#quick-scan input").focus(); }
   if (event.target.matches("#close-product-edit-dialog")) { $("#product-edit-dialog").close(); activeProduct = null; activeProductEvent = null; return $("#quick-scan input").focus(); }
@@ -450,7 +450,11 @@ document.addEventListener("click", async event => {
   }
 });
 document.addEventListener("input", event => {
-  if (event.target.matches("#custom-quantity")) { event.target.closest(".quantity-group").querySelectorAll(".choice").forEach(x => x.classList.toggle("selected", x.dataset.value === event.target.value)); updateConfirmLabel(); }
+  const form = StockConfirm.findForm(event.target);
+  if (form && StockConfirm.handleQuantityInput(event.target)) {
+    StockConfirm.updateConfirmLabel(form);
+    return;
+  }
 });
 document.addEventListener("change", event => {
   if (event.target.matches('input[name="image_upload"]')) return uploadProductImage(event.target);
@@ -466,12 +470,10 @@ document.addEventListener("change", event => {
 document.addEventListener("submit", async event => {
   if (event.target.matches("#preview-confirm-form")) {
     event.preventDefault();
-    const mode = event.target.querySelector(".mode-choice.selected").dataset.value;
-    const location = event.target.querySelector(".location-choice.selected").dataset.value;
-    const quantity = Number($("#custom-quantity").value);
+    const { mode, quantity, location_id } = StockConfirm.readValues(event.target);
     if (mode === "set" && !confirm(`Set stock to ${quantity}?`)) return;
     const data = { event_id: `dashboard-manual-${Date.now()}`, device_id: "dashboard-manual", barcode: activePreview.barcode, mode, quantity };
-    if (location) data.location_id = Number(location);
+    if (location_id) data.location_id = location_id;
     const button = event.target.querySelector(".confirm-scan"); setButtonBusy(button, true, "Updating Grocy...");
     try {
       if (previewNeedsProductConfirmation(activePreview)) {

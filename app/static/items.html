@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pantry Signal Items</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600;9..144,800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/scan-dialog.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="identity">
+      <p>MANUAL CATALOG</p>
+      <h1>Quick add items</h1>
+    </div>
+    <nav class="filters page-tabs">
+      <a href="/">Scan</a>
+      <a class="active" href="/items">Items</a>
+      <a href="/logs">Logs</a>
+      <a href="/settings">Settings</a>
+    </nav>
+    <div class="header-actions">
+      <span class="online"><i></i> Mockup mode</span>
+    </div>
+  </header>
+
+  <main class="items-main">
+    <section class="items-toolbar">
+      <label class="items-search">
+        <span>Search</span>
+        <input id="items-search-input" type="text" placeholder="Find apples, eggs, rice, herbs...">
+      </label>
+    </section>
+    <div id="items-grid" class="event-grid items-category-grid" aria-live="polite"></div>
+  </main>
+
+  <dialog id="items-dialog" class="scan-dialog">
+    <button id="close-items-dialog" class="close">Close</button>
+    <div id="items-dialog-content"></div>
+  </dialog>
+  <div id="toast"></div>
+  {{APP_VERSION_BADGE}}
+  <script src="/static/stock-confirm.js"></script>
+  <script src="/static/items.js"></script>
+</body>
+</html>
