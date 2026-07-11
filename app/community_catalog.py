@@ -705,7 +705,7 @@ class RuntimeCommunityCatalogExporter:
         current = self.settings_store.get_community_catalog()
         if not current.enabled:
             return CommunityCatalogExportResult(exported=False)
-        if not self._is_export_allowed(current, result_source, export_reason):
+        if not self._is_export_allowed(current, barcode, result_source, export_reason):
             return CommunityCatalogExportResult(exported=False)
         local_image_path = self._local_uploaded_image_path(product)
         if current.repository_url and not current.auto_push:
@@ -815,7 +815,7 @@ class RuntimeCommunityCatalogExporter:
     def _is_ai_search_result(result_source: str | None) -> bool:
         return result_source in AI_SEARCH_SOURCES
 
-    def _is_export_allowed(self, current, result_source: str | None, export_reason: str) -> bool:
+    def _is_export_allowed(self, current, barcode: str, result_source: str | None, export_reason: str) -> bool:
         if (
             current.repository_url
             and current.auto_push
@@ -827,10 +827,19 @@ class RuntimeCommunityCatalogExporter:
             current.repository_url
             and current.auto_push
             and export_reason == "modified"
+            and not self._catalog_contains_barcode(current, barcode)
             and not current.auto_push_modified_products
         ):
             return False
         return True
+
+    @staticmethod
+    def _catalog_root(current) -> Path:
+        return Path(current.workdir if current.repository_url else current.path)
+
+    def _catalog_contains_barcode(self, current, barcode: str) -> bool:
+        product_json = self._catalog_root(current) / catalog_product_dir(barcode) / "product.json"
+        return product_json.is_file()
 
 
 class CommunityCatalogSourceRegistry:
