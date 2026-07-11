@@ -42,6 +42,7 @@ function syncItemsPageInert() {
 
 function bindDialogCancelHandlers() {
   $("#items-dialog")?.addEventListener("cancel", () => {
+    stopCatalogImagePoll();
     dialogVariantId = null;
   });
   $("#add-item-dialog")?.addEventListener("cancel", () => {
@@ -61,6 +62,8 @@ let categoryIconMode = "emoji";
 let categoryImagePreviewUrl = "";
 let addItemCategoryId = null;
 let itemImagePreviewUrl = "";
+let catalogImagePollTimer = null;
+let activeCatalogImageEventId = null;
 
 const VARIANT_OVERRIDE_KEY = "items-variant-overrides";
 
@@ -209,6 +212,116 @@ async function submitVariantStock(variant, detail, stockValues, barcode) {
   if (stockValues.location_id) payload.location_id = stockValues.location_id;
 
   return api("/dashboard/scan-confirm", { method: "POST", body: JSON.stringify(payload) });
+}
+
+function catalogImagePreviewUrl(imageUrl) {
+  const trimmed = String(imageUrl || "").trim();
+  if (!trimmed) return "";
+  try {
+    const url = new URL(trimmed, window.location.origin);
+    if (url.pathname.startsWith("/uploaded-images/")) return url.pathname;
+    return trimmed;
+  } catch {
+    return trimmed;
+  }
+}
+
+function stopCatalogImagePoll() {
+  if (catalogImagePollTimer) {
+    clearInterval(catalogImagePollTimer);
+    catalogImagePollTimer = null;
+  }
+  activeCatalogImageEventId = null;
+  const button = $("#request-catalog-image-button");
+  if (button) {
+    button.disabled = false;
+    button.classList.remove("busy-button");
+    if (button.dataset.label) button.textContent = button.dataset.label;
+  }
+  $("#variant-image-preview")?.classList.remove("items-image-waiting");
+}
+
+function applyCatalogImageToDialog(variantId, imageUrl) {
+  const previewUrl = catalogImagePreviewUrl(imageUrl);
+  const category = categoryByVariantId(variantId);
+  $("#variant-image-url-input").value = previewUrl;
+  const preview = $("#variant-image-preview");
+  if (preview && category) {
+    preview.innerHTML = variantImagePreviewMarkup(category, { image_url: previewUrl });
+    preview.classList.remove("items-image-waiting");
+  }
+}
+
+function setCatalogImageWaiting(waiting) {
+  const button = $("#request-catalog-image-button");
+  const status = $("#catalog-image-status");
+  const preview = $("#variant-image-preview");
+  if (button) {
+    if (waiting) {
+      if (!button.dataset.label) button.dataset.label = button.textContent;
+      button.disabled = true;
+      button.classList.add("busy-button");
+      button.textContent = "Waiting for image…";
+    } else {
+      button.disabled = false;
+      button.classList.remove("busy-button");
+      button.textContent = button.dataset.label || "Request external image";
+    }
+  }
+  if (status) status.textContent = waiting ? "Pending on Dashboard — upload from your external client." : "";
+  preview?.classList.toggle("items-image-waiting", waiting);
+}
+
+async function requestCatalogImageReview(variant) {
+  const detail = readVariantDetailFields();
+  const name = detail.name || variant.name;
+  const barcode = variantBarcode(variant);
+  const locationId = StockConfirm.resolveLocationId(options.locations, variant.location || variant.default_location);
+  const event = await api("/dashboard/catalog-image-review", {
+    method: "POST",
+    body: JSON.stringify({
+      barcode,
+      product_name: name,
+      variant_id: variant.id,
+      location_id: locationId ? Number(locationId) : null,
+    }),
+  });
+  activeCatalogImageEventId = event.event_id;
+  if (event.image_url) {
+    applyCatalogImageToDialog(variant.id, event.image_url);
+    toast("External image already available.");
+    return;
+  }
+  if (event.status !== "pending") return;
+  toast("Waiting for external image — see Dashboard Needs review.");
+  startCatalogImagePoll(event.event_id, variant.id);
+}
+
+function startCatalogImagePoll(eventId, variantId) {
+  stopCatalogImagePoll();
+  activeCatalogImageEventId = eventId;
+  setCatalogImageWaiting(true);
+  const poll = async () => {
+    if (dialogVariantId !== variantId || activeCatalogImageEventId !== eventId) {
+      stopCatalogImagePoll();
+      return;
+    }
+    try {
+      const event = await api(`/scan-events/${eventId}`);
+      if (event.image_url) {
+        applyCatalogImageToDialog(variantId, event.image_url);
+        stopCatalogImagePoll();
+        api(`/scan-events/${eventId}`, { method: "DELETE" }).catch(() => {});
+        toast("External image received.");
+      } else if (!["pending", "researching", "processing"].includes(event.status)) {
+        stopCatalogImagePoll();
+      }
+    } catch {
+      stopCatalogImagePoll();
+    }
+  };
+  poll();
+  catalogImagePollTimer = setInterval(poll, 2500);
 }
 
 function filteredCategories() {
@@ -613,6 +726,8 @@ function variantDetailFieldsMarkup(category, variant) {
       <p class="items-photo-help">Shown in your catalog and sent to Grocy when you confirm stock.</p>
       <div id="variant-image-preview" class="items-item-photo-preview" aria-live="polite">${variantImagePreviewMarkup(category, variant)}</div>
       <label class="items-upload-label">Upload image<input type="file" id="variant-image-upload" accept="image/*"></label>
+      <button type="button" id="request-catalog-image-button" class="secondary">Request external image</button>
+      <p id="catalog-image-status" class="items-photo-help" aria-live="polite"></p>
       <button type="button" id="clear-variant-image-button" class="secondary items-clear-photo-button">Remove photo</button>
       <input type="hidden" id="variant-image-url-input" value="${escapeHtml(variant.image_url || "")}">
     </fieldset>
@@ -787,11 +902,21 @@ document.addEventListener("submit", async event => {
 });
 
 $("#close-items-dialog").addEventListener("click", () => {
+  stopCatalogImagePoll();
   dialogVariantId = null;
   $("#items-dialog").close();
   syncItemsPageInert();
 });
 $("#items-dialog").addEventListener("click", event => {
+  if (event.target.matches("#request-catalog-image-button")) {
+    const variant = variantById(dialogVariantId);
+    if (!variant) return;
+    requestCatalogImageReview(variant).catch(error => {
+      stopCatalogImagePoll();
+      toast(error.message);
+    });
+    return;
+  }
   if (event.target.matches("#clear-variant-image-button")) {
     $("#variant-image-url-input").value = "";
     $("#variant-image-upload").value = "";
@@ -800,6 +925,7 @@ $("#items-dialog").addEventListener("click", event => {
     return;
   }
   if (event.target === $("#items-dialog")) {
+    stopCatalogImagePoll();
     dialogVariantId = null;
     $("#items-dialog").close();
     syncItemsPageInert();

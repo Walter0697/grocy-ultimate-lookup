@@ -163,6 +163,22 @@
         </div>
       </form>
     </details>
+    <details class="settings-section" id="pending-review-section">
+      <summary class="settings-summary">
+        <span>
+          <p class="drawer-kicker">DASHBOARD REVIEW</p>
+          <h2>Pending review queue</h2>
+        </span>
+      </summary>
+      <div class="settings-form">
+        <p class="settings-note">Photo requests and scans waiting for review on the Dashboard. Dismiss here without hunting for the product card.</p>
+        <div class="settings-actions">
+          <button type="button" class="secondary" id="refresh-pending-reviews">Refresh list</button>
+          <button type="button" class="secondary danger" id="dismiss-all-pending-reviews" disabled>Dismiss all</button>
+        </div>
+        <div id="pending-review-list" class="pending-review-list"></div>
+      </div>
+    </details>
     <details class="settings-section">
       <summary class="settings-summary">
         <span>

@@ -81,13 +81,21 @@ async function uploadProductImage(input) {
   finally { input.disabled = false; }
 }
 function isLoading(event) { return event.status === "processing"; }
+function isDismissed(event) { return event.status === "dismissed"; }
+function isCatalogImageReview(event) { return event.review_kind === "catalog_image"; }
 function needsReview(event) { return ["pending", "researching", "failed"].includes(event.status); }
+function showOnDashboard(event) {
+  if (isDismissed(event)) return false;
+  if (isCatalogImageReview(event) && !needsReview(event)) return false;
+  return true;
+}
 function image(event) {
   if (event.image_url) return `<img src="${escapeHtml(event.image_url)}" alt="">`;
   if (isLoading(event)) return `<div class="placeholder"><strong>...</strong><i class="scan-beam"></i></div>`;
   return `<div class="placeholder barcode-art"><i></i></div>`;
 }
 function operationBadge(event) {
+  if (event.review_kind === "catalog_image") return "Catalog photo";
   if (event.review_kind === "image_update") return "Photo review";
   if (event.status === "processing") return "Working...";
   if (event.status === "researching") return event.product_name ? "Review match" : "Unknown";
@@ -109,6 +117,7 @@ function title(event) {
 }
 function captionStatus(event, review) {
   if (isLoading(event)) return "IN PROGRESS";
+  if (event.review_kind === "catalog_image") return review ? "CATALOG PHOTO" : "CATALOG PHOTO READY";
   if (event.review_kind === "image_update") return "PHOTO REQUEST";
   if (review) return event.status === "failed" ? "NEEDS ATTENTION" : "ACTION NEEDED";
   return "APPLIED";
@@ -261,21 +270,33 @@ function card(event, index) {
       ${review && !isLoading(event) ? `<button class="review-button">Review details</button>` : ""}</div></article>`;
 }
 function render() {
-  const visible = events.filter(event => activeFilter === "review" ? needsReview(event) : activeFilter === "applied" ? event.status === "applied" : activeFilter === "failed" ? event.status === "failed" : true);
-  $("#all-count").textContent = events.length;
-  $("#review-count").textContent = events.filter(needsReview).length;
+  const visible = events.filter(event => {
+    if (!showOnDashboard(event)) return false;
+    if (activeFilter === "review") return needsReview(event);
+    if (activeFilter === "applied") return event.status === "applied";
+    if (activeFilter === "failed") return event.status === "failed";
+    return true;
+  });
+  const dashboardEvents = events.filter(showOnDashboard);
+  $("#all-count").textContent = dashboardEvents.length;
+  $("#review-count").textContent = dashboardEvents.filter(needsReview).length;
   renderScannerStatus();
   $("#event-grid").innerHTML = visible.length ? visible.map(card).join("") : `<div class="empty">No scans in this view yet.</div>`;
 }
 function imageReviewForm(event) {
+  const catalogImage = event.review_kind === "catalog_image";
+  const waitingCopy = catalogImage
+    ? "Waiting for a catalog photo from an external client. Grocy is updated when stock is confirmed from Items."
+    : "Waiting for a photo upload from an external client.";
+  const kicker = catalogImage ? "CATALOG IMAGE" : "IMAGE REVIEW";
   return `<div class="drawer-image">${image(event)}<span class="drawer-badge ${operationClass(event)}">${escapeHtml(operationBadge(event))}</span></div>
-    <p class="drawer-kicker">IMAGE REVIEW · ${escapeHtml(event.barcode)}</p><h2>${escapeHtml(event.product_name || "Product review")}</h2>
-    <p class="drawer-operation">Waiting for a photo upload from an external client.</p>
+    <p class="drawer-kicker">${kicker} · ${escapeHtml(event.barcode)}</p><h2>${escapeHtml(event.product_name || "Product review")}</h2>
+    <p class="drawer-operation">${waitingCopy}</p>
     <div class="review-dialog-actions">${event.product_id ? `<button type="button" class="secondary open-product-editor" data-product-id="${escapeHtml(event.product_id)}">Open product editor</button>` : ""}<button type="button" class="secondary danger dialog-delete-action delete-event" data-event="${escapeHtml(event.event_id)}">Dismiss from review</button></div>
     <form method="dialog" class="review-form"><label>Current image URL<input value="${escapeHtml(event.image_url || "")}" readonly></label><button type="submit">Close</button></form>`;
 }
 function reviewForm(event) {
-  if (event.review_kind === "image_update") return imageReviewForm(event);
+  if (event.review_kind === "image_update" || event.review_kind === "catalog_image") return imageReviewForm(event);
   const result = event.lookup_payload?.result || {};
   const alternate = result.alternate_names ? Object.entries(result.alternate_names).map(([lang, name]) => `Alternate (${lang.toUpperCase()}): ${name}`).join("\n") : "";
   const description = [alternate, result.source ? `Lookup source: ${result.source}` : "", event.error || ""].filter(Boolean).join("\n");

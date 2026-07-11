@@ -304,8 +304,57 @@ class ScannerService:
             },
         )
 
+    def request_catalog_image_review(
+        self,
+        *,
+        barcode: str,
+        product_name: str,
+        variant_id: str,
+        location_id: int | None = None,
+    ) -> dict:
+        existing_review = self.store.get_open_review_by_barcode(
+            barcode=barcode,
+            review_kind="catalog_image",
+        )
+        if existing_review is not None:
+            return existing_review
+
+        return self.store.create_review_event(
+            event_id=f"review-catalog-image-{uuid4().hex}",
+            device_id="items-page",
+            barcode=barcode,
+            location_id=location_id,
+            product_id=None,
+            product_name=product_name,
+            image_url=None,
+            review_kind="catalog_image",
+            lookup_payload={
+                "review_only": True,
+                "review_kind": "catalog_image",
+                "variant_id": variant_id,
+            },
+        )
+
     async def attach_image_to_event(self, event_id: str, image_url: str) -> dict:
         event = self._required(event_id)
+        if event.get("review_kind") == "catalog_image":
+            payload = event.get("lookup_payload") or {}
+            if not isinstance(payload, dict):
+                payload = {}
+            completed = self.store.update(
+                event_id,
+                status="dismissed",
+                image_url=image_url,
+                lookup_payload={
+                    **payload,
+                    "catalog_image_ready": True,
+                    "review_kind": "catalog_image",
+                },
+                error=None,
+            )
+            completed["review_dismissed"] = True
+            return completed
+
         updated_event = self.store.update(event_id, image_url=image_url)
         product_id = updated_event.get("product_id")
         if product_id is None:

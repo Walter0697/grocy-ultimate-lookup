@@ -346,6 +346,14 @@ def test_dashboard_scan_confirm_uses_preview_lookup_source_without_self_referenc
     assert "lookup_source: product.source || null" not in script
 
 
+def test_dashboard_hides_catalog_image_review_events() -> None:
+    script = (static_path / "app.js").read_text()
+
+    assert "isCatalogImageReview" in script
+    assert "showOnDashboard" in script
+    assert "isCatalogImageReview(event) && !needsReview(event)" in script
+
+
 def test_dashboard_links_to_settings_page() -> None:
     index = (static_path / "index.html").read_text()
     settings_html = (static_path / "settings.html").read_text()
@@ -410,11 +418,15 @@ def test_settings_page_uses_pending_product_review_dialog() -> None:
 
     assert 'id="review-community-catalog"' in settings_html
     assert 'id="pending-products-dialog"' in settings_html
+    assert 'id="pending-review-section"' in settings_html
+    assert 'id="pending-review-list"' in settings_html
     assert 'id="push-community-catalog"' not in settings_html
     assert 'id="discard-community-catalog"' not in settings_html
     assert "/settings/community-catalog/pending-products" in settings_script
     assert "/settings/community-catalog/push-products" in settings_script
     assert "/settings/community-catalog/discard-products" in settings_script
+    assert "/scan-events?limit=200" in settings_script
+    assert "dismissPendingReview" in settings_script
     assert "bindBackdropClose" in settings_script
     assert 'event.target === dialog' in settings_script
 

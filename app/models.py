@@ -100,6 +100,13 @@ class DeviceScanResponse(BaseModel):
     message: str
 
 
+class CatalogImageReviewRequest(BaseModel):
+    barcode: str = Field(min_length=1, max_length=120)
+    product_name: str = Field(min_length=1, max_length=120)
+    variant_id: str = Field(min_length=1, max_length=120)
+    location_id: int | None = Field(default=None, gt=0)
+
+
 class DashboardScanConfirmation(BaseModel):
     event_id: str = Field(min_length=1, max_length=120)
     device_id: str = Field(min_length=1, max_length=120)

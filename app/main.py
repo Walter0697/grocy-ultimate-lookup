@@ -30,6 +30,7 @@ from app.grocy import GrocyError
 from app.grocy_units import seed_units
 from app.manual_category_store import ManualCategoryStore
 from app.models import (
+    CatalogImageReviewRequest,
     ConfirmedProduct,
     ConfirmedProductRequest,
     DashboardProductUpdate,
@@ -439,6 +440,16 @@ async def dashboard_request_image_review(product_id: int) -> dict:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard product not found")
     except GrocyError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+@app.post("/dashboard/catalog-image-review")
+async def dashboard_request_catalog_image_review(request: CatalogImageReviewRequest) -> dict:
+    return scanner.request_catalog_image_review(
+        barcode=request.barcode,
+        product_name=request.product_name,
+        variant_id=request.variant_id,
+        location_id=request.location_id,
+    )
 
 
 @app.post("/scan-events/{event_id}/image")

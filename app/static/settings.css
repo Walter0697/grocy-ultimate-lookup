@@ -353,6 +353,53 @@ dialog::backdrop {
   padding-top: 4px;
 }
 
+.pending-review-list {
+  display: grid;
+  gap: 10px;
+}
+
+.pending-review-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: white;
+  padding: 12px;
+}
+
+.pending-review-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pending-review-main strong {
+  font: 700 15px "DM Sans";
+}
+
+.pending-review-main em {
+  color: var(--green);
+  font: 600 9px "IBM Plex Mono";
+  font-style: normal;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.pending-review-main small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.pending-review-card .dismiss-pending-review {
+  border: 1px solid #9c3d2f;
+  background: transparent;
+  color: #9c3d2f;
+  padding: 10px 12px;
+  font: 600 10px "IBM Plex Mono";
+  white-space: nowrap;
+}
+
 .catalog-source-card,
 .search-provider-card {
   border: 1px solid var(--line);

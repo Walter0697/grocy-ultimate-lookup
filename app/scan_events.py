@@ -83,6 +83,22 @@ class ScanEventStore:
             ).fetchone()
         return self._row(row) if row else None
 
+    def get_open_review_by_barcode(self, *, barcode: str, review_kind: str) -> dict | None:
+        with self._connect() as db:
+            row = db.execute(
+                """
+                SELECT *
+                FROM scan_events
+                WHERE barcode = ?
+                  AND review_kind = ?
+                  AND status IN ('pending', 'researching', 'failed', 'processing')
+                ORDER BY updated_at DESC, created_at DESC
+                LIMIT 1
+                """,
+                (barcode, review_kind),
+            ).fetchone()
+        return self._row(row) if row else None
+
     def create_review_event(
         self,
         *,
@@ -90,7 +106,7 @@ class ScanEventStore:
         device_id: str,
         barcode: str,
         location_id: int | None,
-        product_id: int,
+        product_id: int | None,
         product_name: str | None,
         image_url: str | None,
         review_kind: str,
