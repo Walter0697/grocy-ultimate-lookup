@@ -237,7 +237,7 @@ function productEditDialog(product, event) {
       <label>Description<textarea name="description">${escapeHtml(product.description || "")}</textarea></label>
       <div class="form-pair"><label>Default location<select name="location_id">${locationOptions}</select></label><span></span></div>
       ${conversionRow(stockUnitOptions, purchaseUnitOptions, product.qu_factor_purchase_to_stock || 1)}
-      <div class="review-dialog-actions"><button type="submit">Save product</button><button type="button" class="secondary request-image-review">Request Telegram photo</button></div>
+      <div class="review-dialog-actions"><button type="submit">Save product</button><button type="button" class="secondary request-image-review">Request external image</button></div>
     </form>`;
 }
 function openProductEditDialog(productId, eventId = null) {
@@ -270,7 +270,7 @@ function render() {
 function imageReviewForm(event) {
   return `<div class="drawer-image">${image(event)}<span class="drawer-badge ${operationClass(event)}">${escapeHtml(operationBadge(event))}</span></div>
     <p class="drawer-kicker">IMAGE REVIEW · ${escapeHtml(event.barcode)}</p><h2>${escapeHtml(event.product_name || "Product review")}</h2>
-    <p class="drawer-operation">Waiting for a photo upload from Telegram or another remote client.</p>
+    <p class="drawer-operation">Waiting for a photo upload from an external client.</p>
     <div class="review-dialog-actions">${event.product_id ? `<button type="button" class="secondary open-product-editor" data-product-id="${escapeHtml(event.product_id)}">Open product editor</button>` : ""}<button type="button" class="secondary danger dialog-delete-action delete-event" data-event="${escapeHtml(event.event_id)}">Dismiss from review</button></div>
     <form method="dialog" class="review-form"><label>Current image URL<input value="${escapeHtml(event.image_url || "")}" readonly></label><button type="submit">Close</button></form>`;
 }
@@ -435,7 +435,7 @@ document.addEventListener("click", async event => {
       activeProduct = null;
       activeProductEvent = null;
       await load();
-      toast("Added to Needs review for Telegram photo upload.");
+      toast("Added to Needs review for external image upload.");
       return $("#quick-scan input").focus();
     } catch (error) { toast(error.message); }
   }

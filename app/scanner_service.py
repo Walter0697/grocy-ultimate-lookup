@@ -31,11 +31,13 @@ class ScannerService:
         store: ScanEventStore | None = None,
         grocy: GrocyClient | None = None,
         lookup: LookupOrchestrator | None = None,
+        settings_store: AppSettingsStore | None = None,
         local_store: LocalProductStore | None = None,
         auto_created_store: AutoCreatedProductStore | None = None,
         history_store: ProductEditHistoryStore | None = None,
         community_catalog=None,
     ) -> None:
+        self.settings_store = settings_store or AppSettingsStore(settings.app_settings_path)
         self.store = store or ScanEventStore(settings.scan_events_path)
         self.grocy = grocy or GrocyClient()
         self.lookup = lookup or LookupOrchestrator()
@@ -44,7 +46,7 @@ class ScannerService:
         history_path = self.store.path.parent / "product-edit-history.sqlite3"
         self.history_store = history_store or ProductEditHistoryStore(str(history_path))
         self.community_catalog = community_catalog or RuntimeCommunityCatalogExporter(
-            AppSettingsStore(settings.app_settings_path)
+            self.settings_store
         )
 
     async def process(self, request: ScanEventRequest) -> dict:
@@ -612,6 +614,8 @@ class ScannerService:
         barcode: str,
         grocy_product: dict,
     ) -> None:
+        if not self.settings_store.get_lookup().auto_request_missing_images:
+            return
         card = self.grocy.product_card(grocy_product)
         if card.get("image_url"):
             return

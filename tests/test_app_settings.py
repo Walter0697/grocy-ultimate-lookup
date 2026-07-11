@@ -243,6 +243,7 @@ def test_app_settings_store_persists_lookup_settings_and_preserves_llm_key(tmp_p
             enable_open_facts=False,
             enable_upcitemdb=True,
             enable_web_search=True,
+            auto_request_missing_images=True,
             web_search_provider="searxng",
             searxng_base_url="http://searxng:8080",
             enable_llm_fallback=True,
@@ -265,6 +266,8 @@ def test_app_settings_store_persists_lookup_settings_and_preserves_llm_key(tmp_p
 
     assert first.llm_api_key == "secret-key"
     assert second.llm_api_key == "secret-key"
+    assert first.auto_request_missing_images is True
+    assert second.auto_request_missing_images is False
     assert second.enable_open_facts is True
     assert second.enable_upcitemdb is False
     assert second.enable_web_search is False

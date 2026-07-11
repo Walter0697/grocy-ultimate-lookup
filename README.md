@@ -277,6 +277,7 @@ The dashboard uses one newest-first Gallery Wall:
 - the preview popup selects add/remove/manage, quantity, and location before confirmation
 - lookup and Grocy write controls show progress and prevent duplicate submissions while requests run
 - set-mode submissions require explicit browser confirmation
+- products without images can optionally auto-create an external image-review task when enabled in Lookup settings
 
 Preview a barcode without creating a scan event or changing stock:
 

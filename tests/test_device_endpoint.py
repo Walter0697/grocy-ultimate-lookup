@@ -312,7 +312,7 @@ def test_dashboard_static_includes_product_editor_controls() -> None:
     assert "openReviewDialog" in script
     assert 'id="product-edit-form"' in script
     assert "Save product" in script
-    assert "Request Telegram photo" in script
+    assert "Request external image" in script
     assert "request-image-review" in script
     assert "/dashboard/products" in script
     assert ".polaroid.applied" in script

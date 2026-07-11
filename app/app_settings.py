@@ -149,6 +149,7 @@ class LookupSettings(BaseModel):
     enable_open_facts: bool = True
     enable_upcitemdb: bool = True
     enable_web_search: bool = True
+    auto_request_missing_images: bool = False
     search_providers: list[SearchProviderSetting] = Field(default_factory=list)
     web_search_provider: str = "duckduckgo"
     searxng_base_url: str | None = None
@@ -162,6 +163,7 @@ class LookupSettingsResponse(BaseModel):
     enable_open_facts: bool
     enable_upcitemdb: bool
     enable_web_search: bool
+    auto_request_missing_images: bool
     search_providers: list[SearchProviderSetting]
     web_search_provider: str
     searxng_base_url: str | None
@@ -175,6 +177,7 @@ class LookupSettingsUpdate(BaseModel):
     enable_open_facts: bool = True
     enable_upcitemdb: bool = True
     enable_web_search: bool = True
+    auto_request_missing_images: bool = False
     search_providers: list[SearchProviderSetting] = []
     web_search_provider: str = "duckduckgo"
     searxng_base_url: str | None = None
@@ -208,6 +211,7 @@ def default_lookup_settings() -> LookupSettings:
             enable_open_facts=settings.enable_open_facts,
             enable_upcitemdb=settings.enable_upcitemdb,
             enable_web_search=settings.enable_web_search,
+            auto_request_missing_images=False,
             web_search_provider=settings.web_search_provider,
             searxng_base_url=settings.searxng_base_url,
             enable_llm_fallback=settings.enable_llm_fallback,
@@ -239,6 +243,7 @@ def public_lookup_settings(settings_value: LookupSettings) -> LookupSettingsResp
         enable_open_facts=settings_value.enable_open_facts,
         enable_upcitemdb=settings_value.enable_upcitemdb,
         enable_web_search=settings_value.enable_web_search,
+        auto_request_missing_images=settings_value.auto_request_missing_images,
         search_providers=settings_value.search_providers,
         web_search_provider=settings_value.web_search_provider,
         searxng_base_url=settings_value.searxng_base_url,
@@ -385,6 +390,7 @@ class AppSettingsStore:
                 "enable_open_facts": value.enable_open_facts,
                 "enable_upcitemdb": value.enable_upcitemdb,
                 "enable_web_search": value.enable_web_search,
+                "auto_request_missing_images": value.auto_request_missing_images,
                 "search_providers": normalize_lookup_settings(LookupSettings.model_validate(value.model_dump())).search_providers,
                 "web_search_provider": provider,
                 "searxng_base_url": value.searxng_base_url.strip() if value.searxng_base_url else None,

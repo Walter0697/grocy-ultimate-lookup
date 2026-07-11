@@ -18,6 +18,7 @@ from app.models import (
     PendingProductConfirmation,
     ScanEventRequest,
 )
+from app.app_settings import AppSettingsStore, LookupSettingsUpdate
 from app.auto_created_store import AutoCreatedProductStore
 from app.local_store import LocalProductStore
 from app.product_edit_history import ProductEditHistoryStore
@@ -268,11 +269,14 @@ def request(event_id="event-1"):
     )
 
 
-def service(tmp_path, grocy, lookup, community_catalog=None):
+def service(tmp_path, grocy, lookup, community_catalog=None, *, auto_request_missing_images=False):
+    settings_store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
+    settings_store.update_lookup(LookupSettingsUpdate(auto_request_missing_images=auto_request_missing_images))
     scanner = ScannerService(
         store=ScanEventStore(str(tmp_path / "events.sqlite3")),
         grocy=grocy,
         lookup=lookup,
+        settings_store=settings_store,
         local_store=LocalProductStore(str(tmp_path / "local.sqlite3")),
         auto_created_store=AutoCreatedProductStore(str(tmp_path / "auto-created.sqlite3")),
         community_catalog=community_catalog,
@@ -373,10 +377,21 @@ def test_known_grocy_product_is_applied_before_external_lookup(tmp_path) -> None
     assert grocy.operations[0][1].location_id == 2
 
 
-def test_applied_product_without_image_auto_creates_photo_review(tmp_path) -> None:
+def test_applied_product_without_image_does_not_auto_create_review_by_default(tmp_path) -> None:
     grocy = EditableGrocy(editable_details(image_url=None))
     lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
     scanner = service(tmp_path, grocy, lookup)
+
+    result = run(scanner.process(request()))
+
+    assert result["status"] == "applied"
+    assert scanner.store.list(status="pending") == []
+
+
+def test_applied_product_without_image_auto_creates_external_image_review_when_enabled(tmp_path) -> None:
+    grocy = EditableGrocy(editable_details(image_url=None))
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup, auto_request_missing_images=True)
 
     result = run(scanner.process(request()))
 

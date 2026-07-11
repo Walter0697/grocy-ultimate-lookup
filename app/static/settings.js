@@ -102,6 +102,7 @@ function lookupFormData() {
     enable_open_facts: searchProviders.some(provider => provider.id.startsWith("open_") && provider.enabled),
     enable_upcitemdb: searchProviders.some(provider => provider.id === "upcitemdb" && provider.enabled),
     enable_web_search: searchProviders.some(provider => provider.id === "web_search" && provider.enabled),
+    auto_request_missing_images: form.auto_request_missing_images.checked,
     search_providers: searchProviders,
     web_search_provider: form.web_search_provider.value,
     searxng_base_url: form.searxng_base_url.value.trim() || null,
@@ -174,6 +175,7 @@ function fillGithubAccessForm(settings) {
 function fillLookupForm(settings) {
   const form = $("#lookup-form");
   searchProviders = settings.search_providers || [];
+  form.auto_request_missing_images.checked = settings.auto_request_missing_images;
   form.web_search_provider.value = settings.web_search_provider || "duckduckgo";
   form.searxng_base_url.value = settings.searxng_base_url || "";
   form.llm_base_url.value = settings.llm_base_url || "https://api.openai.com/v1";
