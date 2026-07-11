@@ -37,6 +37,7 @@ def test_settings_page_includes_settings_script() -> None:
     assert "/static/settings.js?v=" in html
     assert "/static/settings.css?v=" in html
     assert "/static/vendor/sortable.min.js?v=" in html
+    assert "auto_request_missing_images" in html
 
 
 def test_settings_page_renders_subtle_app_version_badge() -> None:
@@ -60,6 +61,7 @@ def test_community_catalog_settings_endpoint_reads_and_saves(monkeypatch, tmp_pa
                 export_images=True,
                 auto_push=False,
                 auto_push_ai_results=False,
+                auto_push_modified_products=True,
                 author_name="Walter",
                 author_email="walter@example.test",
             )
@@ -70,9 +72,11 @@ def test_community_catalog_settings_endpoint_reads_and_saves(monkeypatch, tmp_pa
     assert saved.enabled is True
     assert saved.github_pat_set is True
     assert saved.auto_push_ai_results is False
+    assert saved.auto_push_modified_products is True
     assert loaded.github_pat_set is True
     assert loaded.repository_url == "https://github.com/example/catalog.git"
     assert loaded.auto_push_ai_results is False
+    assert loaded.auto_push_modified_products is True
     assert not hasattr(loaded, "github_pat")
 
 
@@ -284,6 +288,7 @@ def test_lookup_settings_endpoint_reads_and_saves_without_exposing_api_key(monke
                 enable_open_facts=False,
                 enable_upcitemdb=True,
                 enable_web_search=True,
+                auto_request_missing_images=True,
                 web_search_provider="searxng",
                 searxng_base_url="http://searxng:8080",
                 enable_llm_fallback=True,
@@ -296,9 +301,11 @@ def test_lookup_settings_endpoint_reads_and_saves_without_exposing_api_key(monke
     loaded = run(get_lookup_settings())
 
     assert saved.enable_open_facts is False
+    assert saved.auto_request_missing_images is True
     assert saved.web_search_provider == "searxng"
     assert saved.llm_api_key_set is True
     assert loaded.llm_api_key_set is True
+    assert loaded.auto_request_missing_images is True
     assert not hasattr(loaded, "llm_api_key")
 
 

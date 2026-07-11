@@ -18,6 +18,7 @@ from app.models import (
     PendingProductConfirmation,
     ScanEventRequest,
 )
+from app.app_settings import AppSettingsStore, LookupSettingsUpdate
 from app.auto_created_store import AutoCreatedProductStore
 from app.local_store import LocalProductStore
 from app.product_edit_history import ProductEditHistoryStore
@@ -30,10 +31,10 @@ class FakeCommunityCatalog:
         self.error = error
         self.exported = []
 
-    def export_confirmed_product(self, barcode, product, *, result_source=None):
+    def export_confirmed_product(self, barcode, product, *, result_source=None, export_reason="confirmed", original_source=None):
         if self.error:
             raise self.error
-        self.exported.append((barcode, product, result_source))
+        self.exported.append((barcode, product, result_source, export_reason, original_source))
         return SimpleNamespace(warnings=())
 
 
@@ -216,6 +217,47 @@ class PreserveImageGrocy(EditableGrocy):
         return self.product
 
 
+class RewrittenImageGrocy(EditableGrocy):
+    async def update_product(self, product_id: int, barcode: str, product: PendingProductConfirmation):
+        self.updated.append((product_id, barcode, product))
+        self.product = editable_details(
+            product_id=product_id,
+            name=product.name,
+            description=product.description,
+            brand=product.brand,
+            quantity=product.quantity,
+            image_url="http://localhost:9283/api/files/productpictures/rewritten.jpg" if product.image_url else None,
+            location_id=product.location_id,
+            qu_id_stock=product.qu_id_stock,
+            qu_id_purchase=product.qu_id_purchase,
+            qu_factor_purchase_to_stock=product.qu_factor_purchase_to_stock,
+            stock=self.product.get("stock_amount", 0),
+        )
+        return self.product
+
+
+class PreserveAppliedImageGrocy(EditableGrocy):
+    async def apply_stock_operation(self, product_id: int, event: ScanEventRequest):
+        self.operations.append((product_id, event))
+        if self.fail_apply:
+            raise self.fail_apply
+        name = self.product["product"]["name"]
+        self.product = editable_details(
+            product_id=product_id,
+            name=name,
+            description=self.product["product"].get("description"),
+            brand=self.product["product"].get("brand"),
+            quantity=self.product["product"].get("quantity"),
+            image_url=self.product.get("image_url"),
+            location_id=self.product["product"].get("location_id", 2),
+            qu_id_stock=self.product["product"].get("qu_id_stock", 7),
+            qu_id_purchase=self.product["product"].get("qu_id_purchase", 7),
+            qu_factor_purchase_to_stock=self.product["product"].get("qu_factor_purchase_to_stock", 1),
+            stock=event.quantity if event.mode == "set" else 3,
+        )
+        return self.product
+
+
 def request(event_id="event-1"):
     return ScanEventRequest(
         event_id=event_id,
@@ -227,11 +269,14 @@ def request(event_id="event-1"):
     )
 
 
-def service(tmp_path, grocy, lookup, community_catalog=None):
+def service(tmp_path, grocy, lookup, community_catalog=None, *, auto_request_missing_images=False):
+    settings_store = AppSettingsStore(str(tmp_path / "settings.sqlite3"))
+    settings_store.update_lookup(LookupSettingsUpdate(auto_request_missing_images=auto_request_missing_images))
     scanner = ScannerService(
         store=ScanEventStore(str(tmp_path / "events.sqlite3")),
         grocy=grocy,
         lookup=lookup,
+        settings_store=settings_store,
         local_store=LocalProductStore(str(tmp_path / "local.sqlite3")),
         auto_created_store=AutoCreatedProductStore(str(tmp_path / "auto-created.sqlite3")),
         community_catalog=community_catalog,
@@ -241,6 +286,80 @@ def service(tmp_path, grocy, lookup, community_catalog=None):
 
 def run(coro):
     return asyncio.run(coro)
+
+
+def test_request_image_review_creates_pending_review_event(tmp_path) -> None:
+    grocy = EditableGrocy(editable_details(image_url="https://old.example/product.jpg"))
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup)
+
+    event = run(scanner.request_image_review(7))
+
+    assert event["status"] == "pending"
+    assert event["product_id"] == 7
+    assert event["product_name"] == "Known Product"
+    assert event["review_kind"] == "image_update"
+    assert event["image_url"] == "https://old.example/product.jpg"
+
+
+def test_request_image_review_reuses_existing_open_review(tmp_path) -> None:
+    grocy = EditableGrocy(editable_details())
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup)
+
+    first = run(scanner.request_image_review(7))
+    second = run(scanner.request_image_review(7))
+
+    assert second["event_id"] == first["event_id"]
+    assert len(scanner.store.list(status="pending")) == 1
+
+
+def test_attach_image_to_existing_product_review_updates_product_and_history(tmp_path) -> None:
+    grocy = EditableGrocy(editable_details(image_url="https://old.example/product.jpg"))
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    history_store = ProductEditHistoryStore(str(tmp_path / "product-edit-history.sqlite3"))
+    scanner = ScannerService(
+        store=ScanEventStore(str(tmp_path / "events.sqlite3")),
+        grocy=grocy,
+        lookup=lookup,
+        local_store=LocalProductStore(str(tmp_path / "local.sqlite3")),
+        auto_created_store=AutoCreatedProductStore(str(tmp_path / "auto-created.sqlite3")),
+        history_store=history_store,
+    )
+
+    event = run(scanner.request_image_review(7))
+    updated = run(scanner.attach_image_to_event(event["event_id"], "http://lookup.test/uploaded-images/new-image.jpg"))
+
+    assert updated["image_url"] == "http://lookup.test/uploaded-images/new-image.jpg"
+    assert updated["status"] == "dismissed"
+    assert updated["review_dismissed"] is True
+    assert grocy.updated[-1][0] == 7
+    assert str(grocy.updated[-1][2].image_url) == "http://lookup.test/uploaded-images/new-image.jpg"
+    assert scanner.store.get(event["event_id"]) is None
+    history = history_store.list(limit=10)
+    assert history.items[0].source == "telegram_review_upload"
+    assert history.items[0].related_event_id == event["event_id"]
+    assert history.items[0].after["image_url"] == "http://lookup.test/uploaded-images/new-image.jpg"
+
+
+def test_attach_image_to_event_exports_original_uploaded_image_when_grocy_rewrites_url(tmp_path) -> None:
+    catalog = FakeCommunityCatalog()
+    grocy = RewrittenImageGrocy(editable_details(image_url="https://old.example/product.jpg"))
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup, community_catalog=catalog)
+    scanner.auto_created_store.upsert(product_id=7, barcode="123456", source="community_catalog")
+
+    event = run(scanner.request_image_review(7))
+    updated = run(scanner.attach_image_to_event(event["event_id"], "http://lookup.test/uploaded-images/new-image.jpg"))
+
+    assert updated["status"] == "dismissed"
+    assert len(catalog.exported) == 1
+    barcode, product, result_source, export_reason, original_source = catalog.exported[0]
+    assert barcode == "123456"
+    assert str(product.image_url) == "http://lookup.test/uploaded-images/new-image.jpg"
+    assert result_source is None
+    assert export_reason == "modified"
+    assert original_source == "community_catalog"
 
 
 def test_known_grocy_product_is_applied_before_external_lookup(tmp_path) -> None:
@@ -256,6 +375,44 @@ def test_known_grocy_product_is_applied_before_external_lookup(tmp_path) -> None
     assert lookup.calls == []
     assert len(grocy.operations) == 1
     assert grocy.operations[0][1].location_id == 2
+
+
+def test_applied_product_without_image_does_not_auto_create_review_by_default(tmp_path) -> None:
+    grocy = EditableGrocy(editable_details(image_url=None))
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup)
+
+    result = run(scanner.process(request()))
+
+    assert result["status"] == "applied"
+    assert scanner.store.list(status="pending") == []
+
+
+def test_applied_product_without_image_auto_creates_external_image_review_when_enabled(tmp_path) -> None:
+    grocy = EditableGrocy(editable_details(image_url=None))
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup, auto_request_missing_images=True)
+
+    result = run(scanner.process(request()))
+
+    assert result["status"] == "applied"
+    pending = scanner.store.list(status="pending")
+    assert len(pending) == 1
+    assert pending[0]["review_kind"] == "image_update"
+    assert pending[0]["product_id"] == 7
+    assert pending[0]["product_name"] == "Known Product"
+    assert pending[0]["barcode"] == "123456"
+
+
+def test_applied_product_with_image_does_not_create_photo_review(tmp_path) -> None:
+    grocy = PreserveAppliedImageGrocy(editable_details(image_url="https://example.test/product.jpg"))
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup)
+
+    result = run(scanner.process(request()))
+
+    assert result["status"] == "applied"
+    assert scanner.store.list(status="pending") == []
 
 
 def test_device_scan_generates_event_id_and_returns_compact_response(tmp_path) -> None:
@@ -356,6 +513,69 @@ def test_edit_dashboard_product_updates_existing_grocy_product(tmp_path) -> None
     assert grocy.updated[0][0] == 7
     assert grocy.updated[0][1] == "123456"
     assert grocy.updated[0][2].description == "Fixed details"
+
+
+def test_edit_dashboard_product_exports_modified_product_with_original_source(tmp_path) -> None:
+    catalog = FakeCommunityCatalog()
+    grocy = EditableGrocy()
+    scanner = service(
+        tmp_path,
+        grocy,
+        FakeLookup(LookupResponse(barcode="123456", found=False)),
+        community_catalog=catalog,
+    )
+    scanner.auto_created_store.upsert(product_id=7, barcode="123456", source="open_food_facts")
+
+    updated = run(
+        scanner.update_dashboard_product(
+            7,
+            DashboardProductUpdate(
+                name="Corrected Product",
+                description="Fixed details",
+                brand="Brand",
+                quantity="1 box",
+                image_url=None,
+                location_id=4,
+                qu_id_stock=7,
+                qu_id_purchase=7,
+                qu_factor_purchase_to_stock=1,
+            ),
+        )
+    )
+
+    assert updated["product"]["name"] == "Corrected Product"
+    assert len(catalog.exported) == 1
+    barcode, product, result_source, export_reason, original_source = catalog.exported[0]
+    assert barcode == "123456"
+    assert product.name == "Corrected Product"
+    assert product.notes == "Fixed details"
+    assert result_source is None
+    assert export_reason == "modified"
+    assert original_source == "open_food_facts"
+
+
+def test_attach_image_to_event_exports_modified_product_with_original_source(tmp_path) -> None:
+    catalog = FakeCommunityCatalog()
+    grocy = EditableGrocy()
+    scanner = service(
+        tmp_path,
+        grocy,
+        FakeLookup(LookupResponse(barcode="123456", found=False)),
+        community_catalog=catalog,
+    )
+    scanner.auto_created_store.upsert(product_id=7, barcode="123456", source="community_catalog")
+    event = run(scanner.request_image_review(7))
+
+    updated = run(scanner.attach_image_to_event(event["event_id"], "http://lookup.test/uploaded-images/new-image.jpg"))
+
+    assert updated["status"] == "dismissed"
+    assert len(catalog.exported) == 1
+    barcode, product, result_source, export_reason, original_source = catalog.exported[0]
+    assert barcode == "123456"
+    assert str(product.image_url) == "http://lookup.test/uploaded-images/new-image.jpg"
+    assert result_source is None
+    assert export_reason == "modified"
+    assert original_source == "community_catalog"
 
 
 def test_edit_dashboard_product_returns_backfill_summary(tmp_path) -> None:
@@ -943,6 +1163,7 @@ def test_dashboard_confirm_uses_edited_product_before_applying_scan(tmp_path) ->
     assert scanner.grocy.created[0][1].qu_factor_purchase_to_stock == 12
     assert scanner.grocy.operations[0][1].location_id == 4
     assert catalog.exported[0][1].name == "Edited Product"
+    assert catalog.exported[0][3] == "confirmed"
     assert (
         str(catalog.exported[0][1].image_url)
         == "http://host.docker.internal:9290/uploaded-images/edited-product.jpg"
@@ -1206,12 +1427,14 @@ def test_confirm_exports_user_confirmed_product_to_catalog(tmp_path) -> None:
     )
 
     assert len(catalog.exported) == 1
-    barcode, product, result_source = catalog.exported[0]
+    barcode, product, result_source, export_reason, original_source = catalog.exported[0]
     assert barcode == "123456"
     assert product.name == "Confirmed Product"
     assert product.brand == "Confirmed Brand"
     assert product.quantity == "500 mL"
     assert result_source is None
+    assert export_reason == "confirmed"
+    assert original_source is None
 
 
 def test_confirm_exports_ai_search_result_to_catalog_with_source(tmp_path) -> None:
@@ -1252,10 +1475,12 @@ def test_confirm_exports_ai_search_result_to_catalog_with_source(tmp_path) -> No
     )
 
     assert len(catalog.exported) == 1
-    barcode, product, result_source = catalog.exported[0]
+    barcode, product, result_source, export_reason, original_source = catalog.exported[0]
     assert barcode == "123456"
     assert product.name == "Confirmed Product"
     assert result_source == "llm_fallback"
+    assert export_reason == "confirmed"
+    assert original_source is None
 
 
 def test_dashboard_confirm_exports_ai_search_result_to_catalog_with_source(tmp_path) -> None:
@@ -1292,10 +1517,12 @@ def test_dashboard_confirm_exports_ai_search_result_to_catalog_with_source(tmp_p
 
     assert event["status"] == "applied"
     assert len(catalog.exported) == 1
-    barcode, product, result_source = catalog.exported[0]
+    barcode, product, result_source, export_reason, original_source = catalog.exported[0]
     assert barcode == "123456"
     assert product.name == "Lookup Product"
     assert result_source == "web_search"
+    assert export_reason == "confirmed"
+    assert original_source is None
 
 
 def test_confirm_still_applies_scan_when_catalog_export_fails(tmp_path) -> None:

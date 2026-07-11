@@ -10,8 +10,14 @@ from app.main import (
     app,
     create_device_scan,
     dashboard_edit_product,
+    dashboard_products,
     dashboard_options,
     delete_scan_event,
+    external_attach_scan_event_image,
+    external_dashboard_products,
+    external_dashboard_request_image_review,
+    external_get_scan_event,
+    external_list_scan_events,
     list_scanner_devices,
     preview_scan,
     product_edit_history_barcodes,
@@ -22,6 +28,8 @@ from app.main import (
     scanner_heartbeat,
     static_path,
     get_app_version,
+    attach_scan_event_image,
+    dashboard_request_image_review,
     upload_product_image,
     uploaded_images_path,
     versioned_index_html,
@@ -142,6 +150,64 @@ def test_scanner_devices_lists_last_heartbeat(monkeypatch) -> None:
     assert device.mode == "remove"
 
 
+def test_external_endpoint_rejects_missing_api_key_when_configured(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "gul_api_key", "gul-secret")
+
+    try:
+        run(external_list_scan_events(x_gul_api_key=None))
+    except HTTPException as exc:
+        assert exc.status_code == 401
+    else:
+        raise AssertionError("missing GUL API key was accepted")
+
+
+def test_external_endpoint_rejects_wrong_api_key_when_configured(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "gul_api_key", "gul-secret")
+
+    try:
+        run(external_dashboard_products(x_gul_api_key="wrong-key"))
+    except HTTPException as exc:
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("wrong GUL API key was accepted")
+
+
+def test_external_dashboard_products_accepts_matching_api_key(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "gul_api_key", "gul-secret")
+
+    async def fake_dashboard_products():
+        return [{"product_id": 7, "name": "Test Product"}]
+
+    monkeypatch.setattr("app.main.dashboard_products", fake_dashboard_products)
+
+    response = run(external_dashboard_products(x_gul_api_key="gul-secret"))
+
+    assert response[0]["product_id"] == 7
+
+
+def test_external_request_image_review_accepts_matching_api_key(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "gul_api_key", "gul-secret")
+
+    async def fake_dashboard_request_image_review(product_id: int):
+        assert product_id == 7
+        return {"event_id": "review-image-1"}
+
+    monkeypatch.setattr("app.main.dashboard_request_image_review", fake_dashboard_request_image_review)
+
+    response = run(external_dashboard_request_image_review(7, x_gul_api_key="gul-secret"))
+
+    assert response["event_id"] == "review-image-1"
+
+
+def test_external_get_scan_event_accepts_matching_api_key(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "gul_api_key", "gul-secret")
+    monkeypatch.setattr(scanner.store, "get", lambda event_id: {"event_id": event_id, "status": "pending"})
+
+    response = run(external_get_scan_event("event-1", x_gul_api_key="gul-secret"))
+
+    assert response["event_id"] == "event-1"
+
+
 def test_dashboard_uses_versioned_local_assets() -> None:
     response = versioned_index_html()
 
@@ -178,6 +244,57 @@ def test_dashboard_static_includes_scanner_device_status_panel() -> None:
     assert "scanner_devices" in script
 
 
+def test_request_image_review_endpoint_delegates_to_scanner(monkeypatch) -> None:
+    async def fake_request_image_review(product_id):
+        assert product_id == 7
+        return {"event_id": "review-image-1", "status": "pending", "review_kind": "image_update"}
+
+    monkeypatch.setattr(scanner, "request_image_review", fake_request_image_review)
+
+    response = run(dashboard_request_image_review(7))
+
+    assert response["event_id"] == "review-image-1"
+
+
+def test_attach_scan_event_image_endpoint_uploads_and_delegates(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings, "uploaded_images_path", str(tmp_path))
+    monkeypatch.setattr(settings, "uploaded_images_base_url", "http://lookup.test/uploaded-images")
+    from app import main as app_main
+    monkeypatch.setattr(app_main, "uploaded_images_path", tmp_path)
+
+    async def fake_attach_image(event_id, image_url):
+        assert event_id == "event-1"
+        assert image_url.startswith("http://lookup.test/uploaded-images/")
+        return {"event_id": event_id, "image_url": image_url}
+
+    monkeypatch.setattr(scanner, "attach_image_to_event", fake_attach_image)
+
+    upload = UploadFile(filename="product.jpg", file=BytesIO(b"fake-image"), headers=Headers({"content-type": "image/jpeg"}))
+    response = run(attach_scan_event_image("event-1", upload))
+
+    assert response["event_id"] == "event-1"
+    assert response["image_url"].startswith("http://lookup.test/uploaded-images/")
+
+
+def test_external_attach_scan_event_image_uploads_and_delegates(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings, "gul_api_key", "gul-secret")
+    monkeypatch.setattr(settings, "uploaded_images_path", str(tmp_path))
+    monkeypatch.setattr(settings, "uploaded_images_base_url", "http://lookup.test/uploaded-images")
+    from app import main as app_main
+    monkeypatch.setattr(app_main, "uploaded_images_path", tmp_path)
+
+    async def fake_attach_scan_event_image(event_id, file):
+        assert event_id == "event-1"
+        return {"event_id": event_id, "image_url": "http://lookup.test/uploaded-images/uploaded.jpg"}
+
+    monkeypatch.setattr("app.main.attach_scan_event_image", fake_attach_scan_event_image)
+
+    upload = UploadFile(filename="product.jpg", file=BytesIO(b"fake-image"), headers=Headers({"content-type": "image/jpeg"}))
+    response = run(external_attach_scan_event_image("event-1", upload, x_gul_api_key="gul-secret"))
+
+    assert response["event_id"] == "event-1"
+
+
 def test_dashboard_static_includes_product_editor_controls() -> None:
     index = (static_path / "index.html").read_text()
     script = (static_path / "app.js").read_text()
@@ -195,6 +312,8 @@ def test_dashboard_static_includes_product_editor_controls() -> None:
     assert "openReviewDialog" in script
     assert 'id="product-edit-form"' in script
     assert "Save product" in script
+    assert "Request external image" in script
+    assert "request-image-review" in script
     assert "/dashboard/products" in script
     assert ".polaroid.applied" in script
     assert "Scan context" in script

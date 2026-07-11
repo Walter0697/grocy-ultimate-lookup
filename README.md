@@ -243,9 +243,11 @@ COMMUNITY_CATALOG_AUTHOR_NAME=Grocy Ultimate Lookup
 COMMUNITY_CATALOG_AUTHOR_EMAIL=grocy-lookup@example.local
 ```
 
-When enabled, only user-confirmed products are exported. Trusted auto-created
-lookup results, web guesses, and agent guesses are not exported in this first
-version.
+When enabled, user-confirmed products are exported. You can separately allow
+auto-pushing AI-searched results and auto-pushing later dashboard edits of an
+existing product. Modified-product exports are marked as `source:
+user_modified`, and when Grocy Ultimate Lookup knows the upstream origin it
+also records `original_source` in `product.json`.
 
 Records are written using two three-digit shards plus the full barcode folder:
 
@@ -275,6 +277,7 @@ The dashboard uses one newest-first Gallery Wall:
 - the preview popup selects add/remove/manage, quantity, and location before confirmation
 - lookup and Grocy write controls show progress and prevent duplicate submissions while requests run
 - set-mode submissions require explicit browser confirmation
+- products without images can optionally auto-create an external image-review task when enabled in Lookup settings
 
 Preview a barcode without creating a scan event or changing stock:
 
@@ -286,6 +289,7 @@ Scanner configuration:
 
 ```text
 SCAN_EVENTS_PATH=/data/scan-events.sqlite3
+GUL_API_KEY=
 SCANNER_DEVICE_TOKENS=kitchen-pi:secret-token
 SCANNER_DEVICE_OFFLINE_AFTER_SECONDS=120
 GROCY_URL=http://host.docker.internal:9283/api
@@ -297,6 +301,17 @@ Set `GROCY_API_KEY` when Grocy authentication is enabled. Set
 `SCANNER_DEVICE_TOKENS` to require `X-Scanner-Token` for `/scanner/scan` and
 `/scanner/heartbeat`. Leave it empty for local unauthenticated testing. Multiple
 devices use comma-separated `device_id:token` pairs.
+
+Set `GUL_API_KEY` to protect the dedicated integration endpoints under `/external/*`
+with `X-GUL-API-Key`. The normal dashboard pages and browser-driven dashboard
+API remain unchanged, while external tools such as the Grocy Telegram agent can
+use the protected external-integration namespace:
+
+- `GET /external/scan-events`
+- `GET /external/scan-events/{event_id}`
+- `POST /external/scan-events/{event_id}/image`
+- `GET /external/dashboard/products`
+- `POST /external/dashboard/products/{product_id}/request-image-review`
 
 ## Response Shape
 

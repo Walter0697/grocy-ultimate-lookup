@@ -115,6 +115,8 @@ class CommunityCatalogExporter:
         product: ConfirmedProductRequest,
         *,
         local_image_path: str | Path | None = None,
+        export_reason: str = "confirmed",
+        original_source: str | None = None,
         sync_checkout: bool = True,
     ) -> CommunityCatalogExportResult:
         if not self.enabled:
@@ -129,7 +131,13 @@ class CommunityCatalogExporter:
         product_dir = self.path / catalog_product_dir(barcode)
         product_dir.mkdir(parents=True, exist_ok=True)
         product_json_path = product_dir / "product.json"
-        payload = self._product_payload(barcode, product, local_image_path=local_image_path)
+        payload = self._product_payload(
+            barcode,
+            product,
+            local_image_path=local_image_path,
+            export_reason=export_reason,
+            original_source=original_source,
+        )
         product_json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
         if self.export_images and (product.image_url is not None or local_image_path is not None):
@@ -225,6 +233,8 @@ class CommunityCatalogExporter:
         product: ConfirmedProductRequest,
         *,
         local_image_path: str | Path | None = None,
+        export_reason: str = "confirmed",
+        original_source: str | None = None,
     ) -> dict:
         payload = {
             "schema_version": 1,
@@ -236,9 +246,15 @@ class CommunityCatalogExporter:
             "count": product.count,
             "variant": product.variant,
             "notes": product.notes,
-            "source": "user_confirmed",
-            "confirmed_at": datetime.now(UTC).isoformat(),
+            "source": "user_modified" if export_reason == "modified" else "user_confirmed",
         }
+        timestamp = datetime.now(UTC).isoformat()
+        if export_reason == "modified":
+            payload["modified_at"] = timestamp
+        else:
+            payload["confirmed_at"] = timestamp
+        if original_source:
+            payload["original_source"] = original_source
         if local_image_path is None and product.image_url is not None and not self._is_uploaded_image_url(str(product.image_url)):
             payload["image_url"] = str(product.image_url)
         return payload
@@ -683,21 +699,41 @@ class RuntimeCommunityCatalogExporter:
         product: ConfirmedProductRequest,
         *,
         result_source: str | None = None,
+        export_reason: str = "confirmed",
+        original_source: str | None = None,
     ) -> CommunityCatalogExportResult:
         current = self.settings_store.get_community_catalog()
         if not current.enabled:
             return CommunityCatalogExportResult(exported=False)
-        if not self._is_export_allowed(current, result_source):
+        if not self._is_export_allowed(current, barcode, result_source, export_reason):
             return CommunityCatalogExportResult(exported=False)
         local_image_path = self._local_uploaded_image_path(product)
         if current.repository_url and not current.auto_push:
-            self._queue().upsert(barcode, product, local_image_path=str(local_image_path) if local_image_path else None)
+            self._queue().upsert(
+                barcode,
+                product,
+                local_image_path=str(local_image_path) if local_image_path else None,
+                export_reason=export_reason,
+                original_source=original_source,
+            )
             return CommunityCatalogExportResult(exported=True)
 
         exporter = self._exporter(current)
-        result = exporter.export_confirmed_product(barcode, product, local_image_path=local_image_path)
+        result = exporter.export_confirmed_product(
+            barcode,
+            product,
+            local_image_path=local_image_path,
+            export_reason=export_reason,
+            original_source=original_source,
+        )
         if result.warnings:
-            self._queue().upsert(barcode, product, local_image_path=str(local_image_path) if local_image_path else None)
+            self._queue().upsert(
+                barcode,
+                product,
+                local_image_path=str(local_image_path) if local_image_path else None,
+                export_reason=export_reason,
+                original_source=original_source,
+            )
         return result
 
     def pending_products(self) -> list[dict]:
@@ -719,6 +755,8 @@ class RuntimeCommunityCatalogExporter:
                 item["barcode"],
                 item["product"],
                 local_image_path=item["local_image_path"],
+                export_reason=item.get("export_reason") or "confirmed",
+                original_source=item.get("original_source"),
                 sync_checkout=False,
             )
             if result.warnings:
@@ -777,13 +815,31 @@ class RuntimeCommunityCatalogExporter:
     def _is_ai_search_result(result_source: str | None) -> bool:
         return result_source in AI_SEARCH_SOURCES
 
-    def _is_export_allowed(self, current, result_source: str | None) -> bool:
-        return not (
+    def _is_export_allowed(self, current, barcode: str, result_source: str | None, export_reason: str) -> bool:
+        if (
             current.repository_url
             and current.auto_push
             and self._is_ai_search_result(result_source)
             and not current.auto_push_ai_results
-        )
+        ):
+            return False
+        if (
+            current.repository_url
+            and current.auto_push
+            and export_reason == "modified"
+            and not self._catalog_contains_barcode(current, barcode)
+            and not current.auto_push_modified_products
+        ):
+            return False
+        return True
+
+    @staticmethod
+    def _catalog_root(current) -> Path:
+        return Path(current.workdir if current.repository_url else current.path)
+
+    def _catalog_contains_barcode(self, current, barcode: str) -> bool:
+        product_json = self._catalog_root(current) / catalog_product_dir(barcode) / "product.json"
+        return product_json.is_file()
 
 
 class CommunityCatalogSourceRegistry:

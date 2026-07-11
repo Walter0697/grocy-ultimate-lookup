@@ -22,6 +22,7 @@ class CommunityCatalogSettings(BaseModel):
     auto_commit: bool = False
     auto_push: bool = True
     auto_push_ai_results: bool = True
+    auto_push_modified_products: bool = False
     git_remote: str = "origin"
     git_branch: str = "main"
     author_name: str | None = None
@@ -45,6 +46,7 @@ class CommunityCatalogSettingsResponse(BaseModel):
     export_images: bool
     auto_push: bool
     auto_push_ai_results: bool
+    auto_push_modified_products: bool
     author_name: str | None
     author_email: str | None
     github_pat_set: bool
@@ -58,6 +60,7 @@ class CommunityCatalogSettingsUpdate(BaseModel):
     export_images: bool = True
     auto_push: bool = True
     auto_push_ai_results: bool = True
+    auto_push_modified_products: bool = False
     author_name: str | None = None
     author_email: str | None = None
 
@@ -146,6 +149,7 @@ class LookupSettings(BaseModel):
     enable_open_facts: bool = True
     enable_upcitemdb: bool = True
     enable_web_search: bool = True
+    auto_request_missing_images: bool = False
     search_providers: list[SearchProviderSetting] = Field(default_factory=list)
     web_search_provider: str = "duckduckgo"
     searxng_base_url: str | None = None
@@ -159,6 +163,7 @@ class LookupSettingsResponse(BaseModel):
     enable_open_facts: bool
     enable_upcitemdb: bool
     enable_web_search: bool
+    auto_request_missing_images: bool
     search_providers: list[SearchProviderSetting]
     web_search_provider: str
     searxng_base_url: str | None
@@ -172,6 +177,7 @@ class LookupSettingsUpdate(BaseModel):
     enable_open_facts: bool = True
     enable_upcitemdb: bool = True
     enable_web_search: bool = True
+    auto_request_missing_images: bool = False
     search_providers: list[SearchProviderSetting] = []
     web_search_provider: str = "duckduckgo"
     searxng_base_url: str | None = None
@@ -205,6 +211,7 @@ def default_lookup_settings() -> LookupSettings:
             enable_open_facts=settings.enable_open_facts,
             enable_upcitemdb=settings.enable_upcitemdb,
             enable_web_search=settings.enable_web_search,
+            auto_request_missing_images=False,
             web_search_provider=settings.web_search_provider,
             searxng_base_url=settings.searxng_base_url,
             enable_llm_fallback=settings.enable_llm_fallback,
@@ -223,6 +230,7 @@ def public_community_catalog_settings(settings_value: CommunityCatalogSettings) 
         export_images=settings_value.export_images,
         auto_push=settings_value.auto_push,
         auto_push_ai_results=settings_value.auto_push_ai_results,
+        auto_push_modified_products=settings_value.auto_push_modified_products,
         author_name=settings_value.author_name,
         author_email=settings_value.author_email,
         github_pat_set=bool(settings_value.github_pat),
@@ -235,6 +243,7 @@ def public_lookup_settings(settings_value: LookupSettings) -> LookupSettingsResp
         enable_open_facts=settings_value.enable_open_facts,
         enable_upcitemdb=settings_value.enable_upcitemdb,
         enable_web_search=settings_value.enable_web_search,
+        auto_request_missing_images=settings_value.auto_request_missing_images,
         search_providers=settings_value.search_providers,
         web_search_provider=settings_value.web_search_provider,
         searxng_base_url=settings_value.searxng_base_url,
@@ -350,6 +359,7 @@ class AppSettingsStore:
                 "auto_commit": value.auto_push,
                 "auto_push": value.auto_push,
                 "auto_push_ai_results": value.auto_push_ai_results,
+                "auto_push_modified_products": value.auto_push_modified_products,
                 "author_name": value.author_name.strip() if value.author_name else DEFAULT_CATALOG_AUTHOR_NAME,
                 "author_email": value.author_email.strip() if value.author_email else DEFAULT_CATALOG_AUTHOR_EMAIL,
                 "path": current.workdir,
@@ -380,6 +390,7 @@ class AppSettingsStore:
                 "enable_open_facts": value.enable_open_facts,
                 "enable_upcitemdb": value.enable_upcitemdb,
                 "enable_web_search": value.enable_web_search,
+                "auto_request_missing_images": value.auto_request_missing_images,
                 "search_providers": normalize_lookup_settings(LookupSettings.model_validate(value.model_dump())).search_providers,
                 "web_search_provider": provider,
                 "searxng_base_url": value.searxng_base_url.strip() if value.searxng_base_url else None,

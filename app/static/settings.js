@@ -82,6 +82,7 @@ function formData() {
     export_images: form.export_images.checked,
     auto_push: form.auto_push.checked,
     auto_push_ai_results: form.auto_push_ai_results.checked,
+    auto_push_modified_products: form.auto_push_modified_products.checked,
     author_name: form.author_name.value.trim() || null,
     author_email: form.author_email.value.trim() || null
   };
@@ -101,6 +102,7 @@ function lookupFormData() {
     enable_open_facts: searchProviders.some(provider => provider.id.startsWith("open_") && provider.enabled),
     enable_upcitemdb: searchProviders.some(provider => provider.id === "upcitemdb" && provider.enabled),
     enable_web_search: searchProviders.some(provider => provider.id === "web_search" && provider.enabled),
+    auto_request_missing_images: form.auto_request_missing_images.checked,
     search_providers: searchProviders,
     web_search_provider: form.web_search_provider.value,
     searxng_base_url: form.searxng_base_url.value.trim() || null,
@@ -139,6 +141,7 @@ function fillForm(settings) {
   form.export_images.checked = settings.export_images;
   form.auto_push.checked = settings.auto_push;
   form.auto_push_ai_results.checked = settings.auto_push_ai_results;
+  form.auto_push_modified_products.checked = settings.auto_push_modified_products;
   form.author_name.value = settings.author_name || "";
   form.author_email.value = settings.author_email || "";
   updateCatalogConfigState();
@@ -172,6 +175,7 @@ function fillGithubAccessForm(settings) {
 function fillLookupForm(settings) {
   const form = $("#lookup-form");
   searchProviders = settings.search_providers || [];
+  form.auto_request_missing_images.checked = settings.auto_request_missing_images;
   form.web_search_provider.value = settings.web_search_provider || "duckduckgo";
   form.searxng_base_url.value = settings.searxng_base_url || "";
   form.llm_base_url.value = settings.llm_base_url || "https://api.openai.com/v1";
@@ -188,6 +192,8 @@ function updateCatalogConfigState() {
   $("#community-catalog-config").classList.toggle("is-dimmed", !form.enabled.checked);
   form.auto_push_ai_results.disabled = !form.auto_push.checked;
   form.auto_push_ai_results.closest(".switch-row").classList.toggle("is-dimmed", !form.auto_push.checked);
+  form.auto_push_modified_products.disabled = !form.auto_push.checked;
+  form.auto_push_modified_products.closest(".switch-row").classList.toggle("is-dimmed", !form.auto_push.checked);
   const reviewActions = $("#pending-review-actions");
   reviewActions.classList.toggle("is-dimmed", form.auto_push.checked);
   reviewActions.querySelectorAll("button").forEach(button => {
