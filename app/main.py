@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 import shutil
 import tomllib
@@ -24,11 +25,14 @@ from app.app_settings import (
     public_community_catalog_settings,
     public_lookup_settings,
 )
+from app.adapters.community_catalog import CommunityCatalogAdapter
 from app.config import settings
 from app.community_catalog import CommunityCatalogSourceRegistry, RuntimeCommunityCatalogExporter, exporter_from_settings
 from app.grocy import GrocyError
 from app.grocy_units import seed_units
+from app.manual_category_store import ManualCategoryStore
 from app.models import (
+    CatalogImageReviewRequest,
     ConfirmedProduct,
     ConfirmedProductRequest,
     DashboardProductUpdate,
@@ -39,16 +43,23 @@ from app.models import (
     DeviceScanResponse,
     DeviceStatus,
     LookupResponse,
+    ManualCategory,
+    ManualCategoryCreate,
+    ManualCategoryItem,
+    ManualCategoryItemCreate,
     PendingProductConfirmation,
     ProductEditHistoryBarcodeListResponse,
     ProductEditHistoryDetailResponse,
     ProductEditHistoryEntry,
     ProductEditHistoryListResponse,
+    ScanEventListResponse,
     ScanEventRequest,
 )
 from app.orchestrator import LookupOrchestrator
 from app.scanner_devices import ScannerDeviceRegistry, expected_device_token
 from app.scanner_service import ScannerService
+
+logger = logging.getLogger(__name__)
 
 
 def get_app_version() -> str:
@@ -67,6 +78,7 @@ catalog_source_registry = CommunityCatalogSourceRegistry(app_settings_store)
 orchestrator = LookupOrchestrator(settings_store=app_settings_store)
 scanner = ScannerService(lookup=orchestrator)
 scanner_devices = ScannerDeviceRegistry()
+manual_category_store = ManualCategoryStore(settings.manual_categories_path)
 static_path = Path(__file__).parent / "static"
 uploaded_images_path = Path(settings.uploaded_images_path)
 uploaded_images_path.mkdir(parents=True, exist_ok=True)
@@ -84,7 +96,7 @@ async def dashboard() -> HTMLResponse:
 
 def versioned_index_html() -> str:
     html = (static_path / "index.html").read_text()
-    for asset in ("styles.css", "scan-dialog.css", "app.js"):
+    for asset in ("styles.css", "scan-dialog.css", "stock-confirm.js", "app.js"):
         version = str(int((static_path / asset).stat().st_mtime))
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
     html = html.replace("{{APP_VERSION_BADGE}}", render_app_version_badge())
@@ -102,6 +114,23 @@ async def logs_page() -> HTMLResponse:
 def versioned_logs_html() -> str:
     html = (static_path / "logs.html").read_text()
     for asset in ("styles.css", "logs.js"):
+        version = str(int((static_path / asset).stat().st_mtime))
+        html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
+    html = html.replace("{{APP_VERSION_BADGE}}", render_app_version_badge())
+    return html
+
+
+@app.get("/items", include_in_schema=False)
+async def items_page() -> HTMLResponse:
+    return HTMLResponse(
+        versioned_items_html(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def versioned_items_html() -> str:
+    html = (static_path / "items.html").read_text()
+    for asset in ("styles.css", "scan-dialog.css", "stock-confirm.js", "items-reference.json", "items.js"):
         version = str(int((static_path / asset).stat().st_mtime))
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
     html = html.replace("{{APP_VERSION_BADGE}}", render_app_version_badge())
@@ -418,6 +447,16 @@ async def dashboard_request_image_review(product_id: int) -> dict:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
+@app.post("/dashboard/catalog-image-review")
+async def dashboard_request_catalog_image_review(request: CatalogImageReviewRequest) -> dict:
+    return scanner.request_catalog_image_review(
+        barcode=request.barcode,
+        product_name=request.product_name,
+        variant_id=request.variant_id,
+        location_id=request.location_id,
+    )
+
+
 @app.post("/scan-events/{event_id}/image")
 async def attach_scan_event_image(event_id: str, file: UploadFile = File(...)) -> dict:
     uploaded = await save_uploaded_product_image(file)
@@ -524,12 +563,13 @@ async def preview_scan(barcode: str) -> dict:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
-@app.get("/scan-events")
+@app.get("/scan-events", response_model=ScanEventListResponse)
 async def list_scan_events(
-    event_status: str | None = Query(default=None, alias="status"),
+    event_filter: str = Query(default="all", alias="filter", pattern="^(all|review|applied|failed)$"),
     limit: int = Query(default=100, ge=1, le=500),
-) -> list[dict]:
-    return scanner.store.list(status=event_status, limit=limit)
+    offset: int = Query(default=0, ge=0),
+) -> ScanEventListResponse:
+    return scanner.store.dashboard_page(event_filter=event_filter, limit=limit, offset=offset)
 
 
 @app.get("/scan-events/{event_id}")
@@ -620,6 +660,58 @@ async def product_edit_history_detail(history_id: int) -> ProductEditHistoryDeta
     if detail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product edit history not found")
     return detail
+
+
+@app.get("/dashboard/manual-categories", response_model=list[ManualCategory])
+async def list_manual_categories() -> list[ManualCategory]:
+    return manual_category_store.list_categories()
+
+
+@app.post("/dashboard/manual-categories", response_model=ManualCategory)
+async def create_manual_category(category: ManualCategoryCreate) -> ManualCategory:
+    return manual_category_store.create_category(
+        name=category.name,
+        group=category.group,
+        emoji=category.emoji,
+        image_url=category.image_url,
+    )
+
+
+@app.get("/dashboard/manual-category-items", response_model=list[ManualCategoryItem])
+async def list_manual_category_items(
+    category_id: str | None = Query(default=None),
+) -> list[ManualCategoryItem]:
+    return manual_category_store.list_items(category_id)
+
+
+@app.get("/dashboard/community-catalog-items")
+async def list_community_catalog_items() -> list[dict]:
+    adapter = CommunityCatalogAdapter(settings_store=app_settings_store)
+    return await adapter.list_items()
+
+
+@app.post("/dashboard/manual-categories/{category_id}/items", response_model=ManualCategoryItem)
+async def create_manual_category_item(
+    category_id: str,
+    item: ManualCategoryItemCreate,
+) -> ManualCategoryItem:
+    created = manual_category_store.create_item(
+        category_id=category_id,
+        name=item.name,
+        quantity=item.quantity,
+        unit=item.unit,
+        default_location=item.default_location,
+        note=item.note,
+        emoji=item.emoji,
+        image_url=item.image_url,
+        favorite=item.favorite,
+    )
+    category = manual_category_store.get_category(category_id)
+    try:
+        community_catalog_runtime.export_manual_item(created, category=category)
+    except Exception as exc:
+        logger.warning("Manual item catalog export failed for %s: %s", created.get("id"), exc)
+    return created
 
 
 @app.get("/dashboard/options")

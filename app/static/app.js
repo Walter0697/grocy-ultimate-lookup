@@ -8,6 +8,7 @@ let activePreview = null;
 let activeProduct = null;
 let activeProductEvent = null;
 let dashboardSignature = "";
+let dashboardState = { limit: 24, offset: 0, total: 0, counts: { all: 0, review: 0, applied: 0, failed: 0 } };
 
 async function api(path, init, json = true) {
   const response = await fetch(path, { headers: json ? { "Content-Type": "application/json" } : {}, ...init });
@@ -81,13 +82,21 @@ async function uploadProductImage(input) {
   finally { input.disabled = false; }
 }
 function isLoading(event) { return event.status === "processing"; }
+function isDismissed(event) { return event.status === "dismissed"; }
+function isCatalogImageReview(event) { return event.review_kind === "catalog_image"; }
 function needsReview(event) { return ["pending", "researching", "failed"].includes(event.status); }
+function showOnDashboard(event) {
+  if (isDismissed(event)) return false;
+  if (isCatalogImageReview(event) && !needsReview(event)) return false;
+  return true;
+}
 function image(event) {
   if (event.image_url) return `<img src="${escapeHtml(event.image_url)}" alt="">`;
   if (isLoading(event)) return `<div class="placeholder"><strong>...</strong><i class="scan-beam"></i></div>`;
   return `<div class="placeholder barcode-art"><i></i></div>`;
 }
 function operationBadge(event) {
+  if (event.review_kind === "catalog_image") return "Catalog photo";
   if (event.review_kind === "image_update") return "Photo review";
   if (event.status === "processing") return "Working...";
   if (event.status === "researching") return event.product_name ? "Review match" : "Unknown";
@@ -109,6 +118,7 @@ function title(event) {
 }
 function captionStatus(event, review) {
   if (isLoading(event)) return "IN PROGRESS";
+  if (event.review_kind === "catalog_image") return review ? "CATALOG PHOTO" : "CATALOG PHOTO READY";
   if (event.review_kind === "image_update") return "PHOTO REQUEST";
   if (review) return event.status === "failed" ? "NEEDS ATTENTION" : "ACTION NEEDED";
   return "APPLIED";
@@ -152,7 +162,8 @@ function dataSignature(nextEvents, nextProducts, nextOptions) {
   return JSON.stringify({
     events: nextEvents.map(eventSignature),
     products: nextProductsSignature(nextProducts),
-    options: optionsSignature(nextOptions)
+    options: optionsSignature(nextOptions),
+    dashboard: dashboardState
   });
 }
 function nextProductsSignature(nextProducts) {
@@ -261,21 +272,34 @@ function card(event, index) {
       ${review && !isLoading(event) ? `<button class="review-button">Review details</button>` : ""}</div></article>`;
 }
 function render() {
-  const visible = events.filter(event => activeFilter === "review" ? needsReview(event) : activeFilter === "applied" ? event.status === "applied" : activeFilter === "failed" ? event.status === "failed" : true);
-  $("#all-count").textContent = events.length;
-  $("#review-count").textContent = events.filter(needsReview).length;
+  const visible = events;
+  $("#all-count").textContent = dashboardState.counts.all || 0;
+  $("#review-count").textContent = dashboardState.counts.review || 0;
   renderScannerStatus();
+  updateDashboardPagination();
   $("#event-grid").innerHTML = visible.length ? visible.map(card).join("") : `<div class="empty">No scans in this view yet.</div>`;
 }
+function updateDashboardPagination() {
+  const start = dashboardState.total === 0 ? 0 : dashboardState.offset + 1;
+  const end = Math.min(dashboardState.offset + dashboardState.limit, dashboardState.total);
+  $("#dashboard-page-status").textContent = dashboardState.total ? `${start}-${end} of ${dashboardState.total}` : "0 results";
+  $("#dashboard-prev").disabled = dashboardState.offset === 0;
+  $("#dashboard-next").disabled = dashboardState.offset + dashboardState.limit >= dashboardState.total;
+}
 function imageReviewForm(event) {
+  const catalogImage = event.review_kind === "catalog_image";
+  const waitingCopy = catalogImage
+    ? "Waiting for a catalog photo from an external client. Grocy is updated when stock is confirmed from Items."
+    : "Waiting for a photo upload from an external client.";
+  const kicker = catalogImage ? "CATALOG IMAGE" : "IMAGE REVIEW";
   return `<div class="drawer-image">${image(event)}<span class="drawer-badge ${operationClass(event)}">${escapeHtml(operationBadge(event))}</span></div>
-    <p class="drawer-kicker">IMAGE REVIEW · ${escapeHtml(event.barcode)}</p><h2>${escapeHtml(event.product_name || "Product review")}</h2>
-    <p class="drawer-operation">Waiting for a photo upload from an external client.</p>
+    <p class="drawer-kicker">${kicker} · ${escapeHtml(event.barcode)}</p><h2>${escapeHtml(event.product_name || "Product review")}</h2>
+    <p class="drawer-operation">${waitingCopy}</p>
     <div class="review-dialog-actions">${event.product_id ? `<button type="button" class="secondary open-product-editor" data-product-id="${escapeHtml(event.product_id)}">Open product editor</button>` : ""}<button type="button" class="secondary danger dialog-delete-action delete-event" data-event="${escapeHtml(event.event_id)}">Dismiss from review</button></div>
     <form method="dialog" class="review-form"><label>Current image URL<input value="${escapeHtml(event.image_url || "")}" readonly></label><button type="submit">Close</button></form>`;
 }
 function reviewForm(event) {
-  if (event.review_kind === "image_update") return imageReviewForm(event);
+  if (event.review_kind === "image_update" || event.review_kind === "catalog_image") return imageReviewForm(event);
   const result = event.lookup_payload?.result || {};
   const alternate = result.alternate_names ? Object.entries(result.alternate_names).map(([lang, name]) => `Alternate (${lang.toUpperCase()}): ${name}`).join("\n") : "";
   const description = [alternate, result.source ? `Lookup source: ${result.source}` : "", event.error || ""].filter(Boolean).join("\n");
@@ -344,7 +368,6 @@ function conversionRow(stockUnitOptions, purchaseUnitOptions = stockUnitOptions,
 function previewDialog(preview) {
   const product = preview.product || {};
   const source = preview.resolution === "grocy" ? "Existing Grocy product" : preview.resolution === "lookup" ? `Suggested by ${product.source || "Ultimate Lookup"}` : "Unknown product";
-  const locationButtons = options.locations.map(x => `<button type="button" class="choice location-choice" data-value="${x.id}">${escapeHtml(x.name)}</button>`).join("");
   const locationOptions = options.locations.map((x, index) => `<option value="${x.id}" ${index === 0 ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("");
   const unitOptions = options.quantity_units.map((x, index) => `<option value="${x.id}" ${index === 0 ? "selected" : ""}>${escapeHtml(x.name)}</option>`).join("");
   const productFields = previewNeedsProductConfirmation(preview)
@@ -355,17 +378,15 @@ function previewDialog(preview) {
     : `<p class="current-stock">Existing Grocy units and conversion will be used for this scan.</p>`;
   return `<div class="preview-photo">${previewImage(product)}</div><p class="drawer-kicker">${escapeHtml(source)}</p><h2>${escapeHtml(product.name || "Unknown product")}</h2>
     <p class="preview-barcode">${escapeHtml(preview.barcode)}</p>${product.stock_amount != null ? `<p class="current-stock">Current stock: <b>${product.stock_amount}</b> ${escapeHtml(product.quantity_unit || "")}</p>` : ""}
-    <form id="preview-confirm-form">
-      <fieldset><legend>Operation</legend><div class="choice-group"><button type="button" class="choice mode-choice selected add-choice" data-value="add">＋ Add</button><button type="button" class="choice mode-choice remove-choice" data-value="remove">− Remove</button><button type="button" class="choice mode-choice set-choice" data-value="set">◎ Manage / Set</button></div></fieldset>
-      <fieldset><legend>Quantity</legend><div class="choice-group quantity-group"><button type="button" class="choice quantity-choice selected" data-value="1">1</button><button type="button" class="choice quantity-choice" data-value="2">2</button><button type="button" class="choice quantity-choice" data-value="3">3</button><input id="custom-quantity" type="number" min="0" step="0.01" value="1" aria-label="Custom quantity"></div></fieldset>
-      <fieldset><legend>Stock location</legend><div class="choice-group location-group"><button type="button" class="choice location-choice selected" data-value="">Product default</button>${locationButtons}</div></fieldset>
-      <button type="submit" class="confirm-scan">Confirm Add 1</button>
-      ${productFields}</form>`;
+    ${StockConfirm.formMarkup({
+      formId: "preview-confirm-form",
+      locations: options.locations,
+      quantity: "1",
+      extraFieldsHtml: productFields,
+    })}`;
 }
 function updateConfirmLabel() {
-  const form = $("#preview-confirm-form"); if (!form) return;
-  const mode = form.querySelector(".mode-choice.selected")?.dataset.value || "add";
-  form.querySelector(".confirm-scan").textContent = `Confirm ${{ add: "Add", remove: "Remove", set: "Set stock to" }[mode]} ${$("#custom-quantity").value}`;
+  StockConfirm.updateConfirmLabel($("#preview-confirm-form"));
 }
 function openScanDialog(preview) {
   activePreview = preview; $("#scan-preview-content").innerHTML = previewDialog(preview); $("#scan-dialog").showModal(); updateConfirmLabel();
@@ -384,7 +405,12 @@ bindBackdropClose($("#review-dialog"), () => {
 });
 async function load() {
   try {
-    const [nextEvents, nextOptions] = await Promise.all([api("/scan-events?limit=200"), api("/dashboard/options")]);
+    const params = new URLSearchParams({
+      filter: activeFilter,
+      limit: String(dashboardState.limit),
+      offset: String(dashboardState.offset),
+    });
+    const [nextEventPage, nextOptions] = await Promise.all([api(`/scan-events?${params.toString()}`), api("/dashboard/options")]);
     let nextProducts = products;
     try {
       nextProducts = await api("/dashboard/products");
@@ -392,10 +418,25 @@ async function load() {
     catch (error) {
       console.warn("Dashboard products refresh failed:", error);
     }
-    const nextSignature = dataSignature(nextEvents, nextProducts, nextOptions);
-    events = nextEvents;
+    if (nextEventPage.total > 0 && dashboardState.offset >= nextEventPage.total) {
+      dashboardState.offset = Math.max(0, Math.floor((nextEventPage.total - 1) / dashboardState.limit) * dashboardState.limit);
+      return load();
+    }
+    const nextDashboardState = {
+      ...dashboardState,
+      total: nextEventPage.total,
+      counts: nextEventPage.counts || dashboardState.counts,
+    };
+    const nextSignature = JSON.stringify({
+      events: nextEventPage.items.map(eventSignature),
+      products: nextProductsSignature(nextProducts),
+      options: optionsSignature(nextOptions),
+      dashboard: nextDashboardState,
+    });
+    events = nextEventPage.items;
     products = nextProducts;
     options = nextOptions;
+    dashboardState = nextDashboardState;
     if (nextSignature === dashboardSignature) return;
     dashboardSignature = nextSignature;
     render();
@@ -411,13 +452,21 @@ $("#quick-scan").addEventListener("submit", async event => {
 });
 document.addEventListener("click", async event => {
   const filter = event.target.closest("[data-filter]");
-  if (filter) { activeFilter = filter.dataset.filter; document.querySelectorAll("[data-filter]").forEach(x => x.classList.toggle("active", x === filter)); return render(); }
+  if (filter) {
+    activeFilter = filter.dataset.filter;
+    dashboardState.offset = 0;
+    document.querySelectorAll("[data-filter]").forEach(x => x.classList.toggle("active", x === filter));
+    return load();
+  }
   const polaroid = event.target.closest(".polaroid.review"); if (polaroid) return openReviewDialog(polaroid.dataset.event);
   const appliedPolaroid = event.target.closest(".polaroid.applied"); if (appliedPolaroid?.dataset.productId) return openProductEditDialog(appliedPolaroid.dataset.productId, appliedPolaroid.dataset.event);
   const choice = event.target.closest(".choice");
   if (choice) {
-    choice.closest(".choice-group").querySelectorAll(".choice").forEach(x => x.classList.remove("selected")); choice.classList.add("selected");
-    if (choice.classList.contains("quantity-choice")) $("#custom-quantity").value = choice.dataset.value; return updateConfirmLabel();
+    const form = StockConfirm.findForm(choice);
+    if (form && StockConfirm.handleChoiceClick(choice)) {
+      StockConfirm.updateConfirmLabel(form);
+      return;
+    }
   }
   if (event.target.matches("#close-scan-dialog")) { $("#scan-dialog").close(); return $("#quick-scan input").focus(); }
   if (event.target.matches("#close-product-edit-dialog")) { $("#product-edit-dialog").close(); activeProduct = null; activeProductEvent = null; return $("#quick-scan input").focus(); }
@@ -448,9 +497,21 @@ document.addEventListener("click", async event => {
     const eventId = resolveEventId(event.target);
     try { await api(`/scan-events/${eventId}`, { method: "DELETE" }); closeReviewDialog(); await load(); } catch (error) { toast(error.message); }
   }
+  if (event.target.matches("#dashboard-prev")) {
+    dashboardState.offset = Math.max(0, dashboardState.offset - dashboardState.limit);
+    return load();
+  }
+  if (event.target.matches("#dashboard-next")) {
+    dashboardState.offset += dashboardState.limit;
+    return load();
+  }
 });
 document.addEventListener("input", event => {
-  if (event.target.matches("#custom-quantity")) { event.target.closest(".quantity-group").querySelectorAll(".choice").forEach(x => x.classList.toggle("selected", x.dataset.value === event.target.value)); updateConfirmLabel(); }
+  const form = StockConfirm.findForm(event.target);
+  if (form && StockConfirm.handleQuantityInput(event.target)) {
+    StockConfirm.updateConfirmLabel(form);
+    return;
+  }
 });
 document.addEventListener("change", event => {
   if (event.target.matches('input[name="image_upload"]')) return uploadProductImage(event.target);
@@ -466,12 +527,10 @@ document.addEventListener("change", event => {
 document.addEventListener("submit", async event => {
   if (event.target.matches("#preview-confirm-form")) {
     event.preventDefault();
-    const mode = event.target.querySelector(".mode-choice.selected").dataset.value;
-    const location = event.target.querySelector(".location-choice.selected").dataset.value;
-    const quantity = Number($("#custom-quantity").value);
+    const { mode, quantity, location_id } = StockConfirm.readValues(event.target);
     if (mode === "set" && !confirm(`Set stock to ${quantity}?`)) return;
     const data = { event_id: `dashboard-manual-${Date.now()}`, device_id: "dashboard-manual", barcode: activePreview.barcode, mode, quantity };
-    if (location) data.location_id = Number(location);
+    if (location_id) data.location_id = location_id;
     const button = event.target.querySelector(".confirm-scan"); setButtonBusy(button, true, "Updating Grocy...");
     try {
       if (previewNeedsProductConfirmation(activePreview)) {

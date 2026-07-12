@@ -17,7 +17,8 @@
       <h1>Settings</h1>
     </div>
     <nav class="filters">
-      <a class="settings-link" href="/">Scan</a>
+      <a class="settings-link" href="/">Dashboard</a>
+      <a class="settings-link" href="/items">Items</a>
       <a class="settings-link" href="/logs">Logs</a>
       <a class="settings-link active" href="/settings">Settings</a>
     </nav>
@@ -69,6 +70,7 @@
             <label class="switch-row"><input name="auto_push" type="checkbox"><span>Auto push</span></label>
             <label class="switch-row"><input name="auto_push_ai_results" type="checkbox"><span>Auto push AI-searched results</span></label>
             <label class="switch-row"><input name="auto_push_modified_products" type="checkbox"><span>Auto push modified products</span></label>
+            <label class="switch-row"><input name="auto_push_manual_items" type="checkbox"><span>Auto push manual items</span></label>
             <div id="pending-review-actions" class="settings-actions review-actions">
               <button type="button" class="secondary" id="review-community-catalog">Review pending products</button>
             </div>
@@ -161,6 +163,22 @@
           <button type="submit">Save lookup methods</button>
         </div>
       </form>
+    </details>
+    <details class="settings-section" id="pending-review-section">
+      <summary class="settings-summary">
+        <span>
+          <p class="drawer-kicker">DASHBOARD REVIEW</p>
+          <h2>Pending review queue</h2>
+        </span>
+      </summary>
+      <div class="settings-form">
+        <p class="settings-note">Photo requests and scans waiting for review on the Dashboard. Dismiss here without hunting for the product card.</p>
+        <div class="settings-actions">
+          <button type="button" class="secondary" id="refresh-pending-reviews">Refresh list</button>
+          <button type="button" class="secondary danger" id="dismiss-all-pending-reviews" disabled>Dismiss all</button>
+        </div>
+        <div id="pending-review-list" class="pending-review-list"></div>
+      </div>
     </details>
     <details class="settings-section">
       <summary class="settings-summary">

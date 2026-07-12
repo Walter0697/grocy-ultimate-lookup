@@ -35,15 +35,7 @@ class CommunityCatalogAdapter(LookupAdapter):
         self.client = client
 
     async def lookup(self, barcode: str) -> LookupResult | None:
-        sources = self.settings_store.get_community_catalog_sources().sources
-        enabled_sources = sorted(
-            (
-                source
-                for source in sources
-                if source.enabled and source.validation_status in {None, "valid", "valid_with_warnings"}
-            ),
-            key=lambda source: source.priority,
-        )
+        enabled_sources = self._enabled_sources()
         if not enabled_sources:
             return None
 
@@ -61,6 +53,55 @@ class CommunityCatalogAdapter(LookupAdapter):
                 if result is not None:
                     return result
         return None
+
+    async def list_items(self) -> list[dict]:
+        enabled_sources = self._enabled_sources()
+        if not enabled_sources:
+            return []
+
+        github_pat = self.settings_store.get_community_catalog().github_pat
+        if self.client is not None:
+            return await self._list_items_from_sources(enabled_sources, github_pat, self.client)
+
+        async with httpx.AsyncClient(timeout=settings.lookup_request_timeout_seconds) as client:
+            return await self._list_items_from_sources(enabled_sources, github_pat, client)
+
+    def _enabled_sources(self) -> list[CommunityCatalogSource]:
+        configured = self.settings_store.get_community_catalog()
+        sources = list(self.settings_store.get_community_catalog_sources().sources)
+        configured_repo = (configured.repository_url or "").strip()
+        if configured.enabled and configured_repo and not sources:
+            known_urls = {source.repository_url.strip().lower() for source in sources}
+            if configured_repo.lower() not in known_urls:
+                sources.append(
+                    CommunityCatalogSource(
+                        id="configured-community-catalog",
+                        name="Configured community catalog",
+                        repository_url=configured_repo,
+                        enabled=True,
+                        priority=len(sources),
+                        validation_status="valid",
+                    )
+                )
+        return sorted(
+            (
+                source
+                for source in sources
+                if source.enabled and source.validation_status in {None, "valid", "valid_with_warnings"}
+            ),
+            key=lambda source: source.priority,
+        )
+
+    async def _list_items_from_sources(
+        self,
+        sources: list[CommunityCatalogSource],
+        github_pat: str | None,
+        client: httpx.AsyncClient,
+    ) -> list[dict]:
+        categories: list[dict] = []
+        for source in sources:
+            categories.extend(await self._list_source_items(source, github_pat, client))
+        return categories
 
     async def _lookup_source(
         self,
@@ -150,6 +191,160 @@ class CommunityCatalogAdapter(LookupAdapter):
         except (KeyError, TypeError, ValueError):
             return None
         return save_catalog_image(source_id, barcode, content)
+
+    async def _list_source_items(
+        self,
+        source: CommunityCatalogSource,
+        github_pat: str | None,
+        client: httpx.AsyncClient,
+    ) -> list[dict]:
+        repo = parse_github_repository_url(source.repository_url)
+        if repo is None:
+            return []
+        source_key = source.id or f"{repo.owner}-{repo.repo}"
+        category_rows = await self._github_directory(repo, "items", github_pat, client)
+        categories: list[dict] = []
+        for category_row in category_rows:
+            if category_row.get("type") != "dir":
+                continue
+            category_dir = category_row.get("path")
+            if not isinstance(category_dir, str):
+                continue
+            item_rows = await self._github_directory(repo, category_dir, github_pat, client)
+            variants: list[dict] = []
+            category_meta: dict | None = None
+            for item_row in item_rows:
+                if item_row.get("type") != "dir":
+                    continue
+                item_dir = item_row.get("path")
+                if not isinstance(item_dir, str):
+                    continue
+                payload = await self._github_json_file(repo, f"{item_dir}/item.json", github_pat, client)
+                if not isinstance(payload, dict):
+                    continue
+                category_meta = payload.get("category") if isinstance(payload.get("category"), dict) else category_meta
+                item_id = str(payload.get("id") or Path(item_dir).name)
+                image_url = external_payload_image_url(payload.get("image_url")) or await self._catalog_item_image_url(
+                    repo,
+                    f"{item_dir}/image.jpg",
+                    source_key,
+                    item_id,
+                    github_pat,
+                    client,
+                )
+                variants.append(
+                    {
+                        "id": f"catalog-{source_key}-{item_id}",
+                        "name": str(payload.get("name") or item_id),
+                        "quantity": str(payload.get("quantity") or ""),
+                        "unit": str(payload.get("unit") or ""),
+                        "default_location": str(payload.get("default_location") or ""),
+                        "note": payload.get("note"),
+                        "image_url": image_url,
+                        "favorite": False,
+                        "custom": False,
+                        "community_catalog": True,
+                        "source_name": source.name or source.repository_url,
+                    }
+                )
+            if not variants:
+                continue
+            base_category_id = (
+                str(category_meta.get("id"))
+                if isinstance(category_meta, dict) and category_meta.get("id")
+                else Path(category_dir).name
+            )
+            categories.append(
+                {
+                    "id": f"catalog-{source_key}-{base_category_id}",
+                    "name": (
+                        str(category_meta.get("name"))
+                        if isinstance(category_meta, dict) and category_meta.get("name")
+                        else Path(category_dir).name.replace("-", " ").title()
+                    ),
+                    "group": (
+                        str(category_meta.get("group"))
+                        if isinstance(category_meta, dict) and category_meta.get("group")
+                        else "other"
+                    ),
+                    "emoji": None,
+                    "image_url": None,
+                    "custom": False,
+                    "community_catalog": True,
+                    "source_name": source.name or source.repository_url,
+                    "variants": variants,
+                }
+            )
+        return categories
+
+    async def _catalog_item_image_url(
+        self,
+        repo: GitHubRepository,
+        image_path: str,
+        source_id: str,
+        item_id: str,
+        github_pat: str | None,
+        client: httpx.AsyncClient,
+    ) -> str | None:
+        url = github_contents_url(repo, image_path)
+        try:
+            response = await client.get(url, headers=github_headers(github_pat))
+        except httpx.HTTPError:
+            return None
+        if response.status_code != 200:
+            return None
+        try:
+            payload = response.json()
+        except (ValueError, TypeError):
+            return None
+        if payload.get("type") != "file":
+            return None
+        try:
+            content = base64.b64decode(str(payload["content"]))
+        except (KeyError, TypeError, ValueError):
+            return None
+        return save_catalog_image(source_id, item_id, content)
+
+    async def _github_directory(
+        self,
+        repo: GitHubRepository,
+        path: str,
+        github_pat: str | None,
+        client: httpx.AsyncClient,
+    ) -> list[dict]:
+        url = github_contents_url(repo, path)
+        try:
+            response = await client.get(url, headers=github_headers(github_pat))
+        except httpx.HTTPError:
+            return []
+        if response.status_code == 404:
+            return []
+        if response.status_code != 200:
+            return []
+        try:
+            payload = response.json()
+        except (ValueError, TypeError):
+            return []
+        return payload if isinstance(payload, list) else []
+
+    async def _github_json_file(
+        self,
+        repo: GitHubRepository,
+        path: str,
+        github_pat: str | None,
+        client: httpx.AsyncClient,
+    ) -> dict | None:
+        url = github_contents_url(repo, path)
+        try:
+            response = await client.get(url, headers=github_headers(github_pat))
+        except httpx.HTTPError:
+            return None
+        if response.status_code != 200:
+            return None
+        try:
+            return decode_github_contents_json(response.json())
+        except (KeyError, ValueError, TypeError, json.JSONDecodeError):
+            return None
 
 
 def parse_github_repository_url(repository_url: str) -> GitHubRepository | None:

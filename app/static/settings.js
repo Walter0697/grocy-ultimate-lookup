@@ -8,6 +8,7 @@ let searchProviderSortable = null;
 let unavailableSearchProviders = {};
 let metadataLoaded = false;
 let metadataAvailable = false;
+let pendingReviews = [];
 
 const SEARCH_PROVIDER_LABELS = {
   grocy_current: "Grocy current data",
@@ -72,6 +73,59 @@ function setButtonBusy(button, busy, label) {
   button.textContent = busy ? label : button.dataset.label || button.textContent;
 }
 
+function needsDashboardReview(event) {
+  return ["pending", "researching", "failed"].includes(event.status);
+}
+
+function reviewKindLabel(event) {
+  if (event.review_kind === "catalog_image") return "Catalog photo";
+  if (event.review_kind === "image_update") return "Grocy photo review";
+  if (event.status === "failed") return "Failed scan";
+  if (event.status === "researching") return "Researching";
+  return "Product review";
+}
+
+function renderPendingReviews() {
+  const node = $("#pending-review-list");
+  const dismissAll = $("#dismiss-all-pending-reviews");
+  if (!node) return;
+  if (!pendingReviews.length) {
+    node.innerHTML = `<div class="pending-empty">No pending dashboard reviews.</div>`;
+    if (dismissAll) dismissAll.disabled = true;
+    return;
+  }
+  if (dismissAll) dismissAll.disabled = false;
+  node.innerHTML = pendingReviews.map(event => `
+    <article class="pending-review-card" data-event-id="${escapeHtml(event.event_id)}">
+      <div class="pending-review-main">
+        <strong>${escapeHtml(event.product_name || event.barcode || "Unknown product")}</strong>
+        <em>${escapeHtml(reviewKindLabel(event))}</em>
+        <small>${escapeHtml([event.barcode, event.device_id, event.created_at].filter(Boolean).join(" · "))}</small>
+      </div>
+      <button type="button" class="dismiss-pending-review" data-event-id="${escapeHtml(event.event_id)}">Dismiss</button>
+    </article>
+  `).join("");
+}
+
+async function loadPendingReviews() {
+  const eventPage = await api("/scan-events?limit=200");
+  const events = Array.isArray(eventPage) ? eventPage : eventPage.items || [];
+  pendingReviews = events.filter(needsDashboardReview);
+  renderPendingReviews();
+}
+
+async function dismissPendingReview(eventId, { confirmAll = false } = {}) {
+  if (!eventId && !confirmAll) return;
+  if (confirmAll && !confirm(`Dismiss all ${pendingReviews.length} pending review(s)?`)) return;
+  if (!confirmAll && !confirm("Remove this item from the review queue?")) return;
+  const targets = confirmAll ? pendingReviews.map(event => event.event_id) : [eventId];
+  for (const id of targets) {
+    await api(`/scan-events/${id}`, { method: "DELETE" });
+  }
+  await loadPendingReviews();
+  toast(confirmAll ? "All pending reviews dismissed." : "Review dismissed.");
+}
+
 function formData() {
   const form = $("#community-catalog-form");
   return {
@@ -83,6 +137,7 @@ function formData() {
     auto_push: form.auto_push.checked,
     auto_push_ai_results: form.auto_push_ai_results.checked,
     auto_push_modified_products: form.auto_push_modified_products.checked,
+    auto_push_manual_items: form.auto_push_manual_items.checked,
     author_name: form.author_name.value.trim() || null,
     author_email: form.author_email.value.trim() || null
   };
@@ -142,6 +197,7 @@ function fillForm(settings) {
   form.auto_push.checked = settings.auto_push;
   form.auto_push_ai_results.checked = settings.auto_push_ai_results;
   form.auto_push_modified_products.checked = settings.auto_push_modified_products;
+  form.auto_push_manual_items.checked = settings.auto_push_manual_items;
   form.author_name.value = settings.author_name || "";
   form.author_email.value = settings.author_email || "";
   updateCatalogConfigState();
@@ -194,6 +250,8 @@ function updateCatalogConfigState() {
   form.auto_push_ai_results.closest(".switch-row").classList.toggle("is-dimmed", !form.auto_push.checked);
   form.auto_push_modified_products.disabled = !form.auto_push.checked;
   form.auto_push_modified_products.closest(".switch-row").classList.toggle("is-dimmed", !form.auto_push.checked);
+  form.auto_push_manual_items.disabled = !form.auto_push.checked;
+  form.auto_push_manual_items.closest(".switch-row").classList.toggle("is-dimmed", !form.auto_push.checked);
   const reviewActions = $("#pending-review-actions");
   reviewActions.classList.toggle("is-dimmed", form.auto_push.checked);
   reviewActions.querySelectorAll("button").forEach(button => {
@@ -513,6 +571,7 @@ async function load() {
   renderAgentSearchAvailability(agentSearchStatus);
   await loadCatalogSources();
   renderStatus(await api("/settings/community-catalog/test", { method: "POST" }));
+  await loadPendingReviews();
 }
 
 $("#community-catalog-form").addEventListener("submit", async event => {
@@ -729,6 +788,41 @@ $("#save-catalog-sources").addEventListener("click", async event => {
   }
   catch (error) { toast(error.message); }
   finally { setButtonBusy(event.target, false); }
+});
+
+$("#pending-review-section")?.addEventListener("toggle", event => {
+  if (event.target.open) loadPendingReviews().catch(error => toast(error.message));
+});
+
+$("#refresh-pending-reviews")?.addEventListener("click", async event => {
+  setButtonBusy(event.target, true, "Refreshing...");
+  try {
+    await loadPendingReviews();
+    toast("Pending review list refreshed.");
+  }
+  catch (error) { toast(error.message); }
+  finally { setButtonBusy(event.target, false); }
+});
+
+$("#dismiss-all-pending-reviews")?.addEventListener("click", async event => {
+  if (!pendingReviews.length) return;
+  setButtonBusy(event.target, true, "Dismissing...");
+  try {
+    await dismissPendingReview(null, { confirmAll: true });
+  }
+  catch (error) { toast(error.message); }
+  finally { setButtonBusy(event.target, false); }
+});
+
+$("#pending-review-list")?.addEventListener("click", async event => {
+  const button = event.target.closest(".dismiss-pending-review");
+  if (!button) return;
+  setButtonBusy(button, true, "Dismissing...");
+  try {
+    await dismissPendingReview(button.dataset.eventId);
+  }
+  catch (error) { toast(error.message); }
+  finally { setButtonBusy(button, false); }
 });
 
 load().catch(error => toast(error.message));

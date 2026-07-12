@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     agent_search_trigger_confidence: float = Field(default=0.45, alias="AGENT_SEARCH_TRIGGER_CONFIDENCE")
     auto_create_min_confidence: float = Field(default=0.8, alias="AUTO_CREATE_MIN_CONFIDENCE")
     scan_events_path: str = Field(default="/data/scan-events.sqlite3", alias="SCAN_EVENTS_PATH")
+    manual_categories_path: str = Field(default="/data/manual-categories.sqlite3", alias="MANUAL_CATEGORIES_PATH")
     app_settings_path: str = Field(default="/data/app-settings.sqlite3", alias="APP_SETTINGS_PATH")
     uploaded_images_path: str = Field(default="/data/uploaded-images", alias="UPLOADED_IMAGES_PATH")
     uploaded_images_base_url: str = Field(

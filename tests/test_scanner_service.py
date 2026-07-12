@@ -314,6 +314,69 @@ def test_request_image_review_reuses_existing_open_review(tmp_path) -> None:
     assert len(scanner.store.list(status="pending")) == 1
 
 
+def test_request_catalog_image_review_creates_pending_event_without_product_id(tmp_path) -> None:
+    grocy = EditableGrocy(editable_details())
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup)
+
+    event = scanner.request_catalog_image_review(
+        barcode="GULAPPLEFUJI",
+        product_name="Fuji Apple",
+        variant_id="apple-fuji",
+        location_id=2,
+    )
+
+    assert event["status"] == "pending"
+    assert event["product_id"] is None
+    assert event["review_kind"] == "catalog_image"
+    assert event["device_id"] == "items-page"
+    assert event["lookup_payload"]["variant_id"] == "apple-fuji"
+
+
+def test_request_catalog_image_review_reuses_existing_open_review(tmp_path) -> None:
+    grocy = EditableGrocy(editable_details())
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup)
+
+    first = scanner.request_catalog_image_review(
+        barcode="GULAPPLEFUJI",
+        product_name="Fuji Apple",
+        variant_id="apple-fuji",
+    )
+    second = scanner.request_catalog_image_review(
+        barcode="GULAPPLEFUJI",
+        product_name="Fuji Apple",
+        variant_id="apple-fuji",
+    )
+
+    assert second["event_id"] == first["event_id"]
+    assert len(scanner.store.list(status="pending")) == 1
+
+
+def test_attach_catalog_image_review_does_not_update_grocy(tmp_path) -> None:
+    grocy = EditableGrocy(editable_details())
+    lookup = FakeLookup(LookupResponse(barcode="123456", found=False))
+    scanner = service(tmp_path, grocy, lookup)
+
+    event = scanner.request_catalog_image_review(
+        barcode="GULAPPLEFUJI",
+        product_name="Fuji Apple",
+        variant_id="apple-fuji",
+    )
+    updated = run(
+        scanner.attach_image_to_event(
+            event["event_id"],
+            "http://lookup.test/uploaded-images/catalog.jpg",
+        )
+    )
+
+    assert updated["status"] == "dismissed"
+    assert updated["image_url"] == "http://lookup.test/uploaded-images/catalog.jpg"
+    assert updated["lookup_payload"]["catalog_image_ready"] is True
+    assert updated["review_dismissed"] is True
+    assert grocy.updated == []
+
+
 def test_attach_image_to_existing_product_review_updates_product_and_history(tmp_path) -> None:
     grocy = EditableGrocy(editable_details(image_url="https://old.example/product.jpg"))
     lookup = FakeLookup(LookupResponse(barcode="123456", found=False))

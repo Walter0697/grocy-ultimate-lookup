@@ -32,6 +32,7 @@ CATALOG_README = """# Grocy Community Catalog
 Welcome. This repository is a product catalog created by Grocy Ultimate Lookup.
 
 Products are stored by barcode under the `products/` directory. Each product folder can contain a `product.json` file and, when image export is enabled, an `image.jpg` file.
+Manual custom items can also be stored under the `items/` directory. Each item folder can contain an `item.json` file and, when image export is enabled, an `image.jpg` file.
 
 This catalog can be produced by connecting your own product scanning workflow to Grocy Ultimate Lookup and confirming products as you scan them.
 
@@ -67,11 +68,32 @@ def catalog_product_dir(barcode: str) -> Path:
     return Path("products") / safe_barcode[:3] / safe_barcode[3:6] / safe_barcode
 
 
+def catalog_item_dir(category_id: str, item_id: str) -> Path:
+    safe_category_id = sanitize_barcode(category_id)
+    safe_item_id = sanitize_barcode(item_id)
+    return Path("items") / safe_category_id / safe_item_id
+
+
 def sanitize_barcode(barcode: str) -> str:
     safe = "".join(char for char in barcode.strip() if char.isalnum() or char in {"-", "_"})
     if not safe:
         raise ValueError("barcode must contain at least one path-safe character")
     return safe
+
+
+def sanitize_catalog_slug(value: str) -> str:
+    slug = "".join(char.lower() if char.isalnum() else "-" for char in value.strip())
+    slug = "-".join(part for part in slug.split("-") if part)
+    if not slug:
+        raise ValueError("catalog slug must contain at least one path-safe character")
+    return slug
+
+
+def catalog_item_slug(item: dict) -> str:
+    name = str(item.get("name") or "").strip()
+    if name:
+        return sanitize_catalog_slug(name)
+    return sanitize_catalog_slug(str(item["id"]))
 
 
 class CommunityCatalogExporter:
@@ -157,6 +179,50 @@ class CommunityCatalogExporter:
         return CommunityCatalogExportResult(
             exported=True,
             product_json_path=product_json_path,
+            warnings=tuple(warnings),
+        )
+
+    def export_manual_item(
+        self,
+        item: dict,
+        *,
+        category: dict | None = None,
+        local_image_path: str | Path | None = None,
+        sync_checkout: bool = True,
+    ) -> CommunityCatalogExportResult:
+        if not self.enabled:
+            return CommunityCatalogExportResult(exported=False)
+
+        warnings: list[str] = []
+        if self.repository_url and sync_checkout:
+            warnings.extend(self._sync_checkout())
+            if warnings:
+                return CommunityCatalogExportResult(exported=False, warnings=tuple(warnings))
+
+        item_dir = self.path / catalog_item_dir(str(item["category_id"]), catalog_item_slug(item))
+        item_dir.mkdir(parents=True, exist_ok=True)
+        item_json_path = item_dir / "item.json"
+        payload = self._item_payload(item, category=category, local_image_path=local_image_path)
+        item_json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+        image_url = item.get("image_url")
+        if self.export_images and (image_url is not None or local_image_path is not None):
+            try:
+                self._write_product_image(
+                    str(image_url) if image_url is not None else None,
+                    item_dir / "image.jpg",
+                    local_image_path=local_image_path,
+                )
+            except Exception as exc:
+                warnings.append(f"image export failed: {exc}")
+                logger.warning("Community catalog image export failed for manual item %s: %s", item.get("id"), exc)
+
+        if self.auto_commit or (self.repository_url and self.auto_push):
+            warnings.extend(self._commit_and_maybe_push(item_json_path, str(item["id"]), subject="item"))
+
+        return CommunityCatalogExportResult(
+            exported=True,
+            product_json_path=item_json_path,
             warnings=tuple(warnings),
         )
 
@@ -259,6 +325,35 @@ class CommunityCatalogExporter:
             payload["image_url"] = str(product.image_url)
         return payload
 
+    @staticmethod
+    def _item_payload(
+        item: dict,
+        *,
+        category: dict | None = None,
+        local_image_path: str | Path | None = None,
+    ) -> dict:
+        payload = {
+            "schema_version": 1,
+            "id": item["id"],
+            "category_id": item["category_id"],
+            "name": str(item["name"]).strip(),
+            "quantity": item["quantity"],
+            "unit": item["unit"],
+            "note": item.get("note"),
+            "source": "user_created_manual_item",
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        if category:
+            payload["category"] = {
+                "id": category.get("id"),
+                "name": category.get("name"),
+                "group": category.get("group"),
+            }
+        image_url = item.get("image_url")
+        if local_image_path is None and image_url:
+            payload["image_url"] = image_url
+        return payload
+
     def _write_product_image(
         self,
         image_url: str | None,
@@ -290,6 +385,11 @@ class CommunityCatalogExporter:
     def _is_uploaded_image_url(self, image_url: str) -> bool:
         if not (self.uploaded_images_path and self.uploaded_images_base_url):
             return False
+        if image_url.startswith("/uploaded-images/"):
+            relative_name = unquote(image_url.removeprefix("/uploaded-images/"))
+            if "/" in relative_name or "\\" in relative_name or not relative_name:
+                raise ValueError("uploaded image URL must reference a single uploaded file")
+            return True
         base = urlparse(self.uploaded_images_base_url.rstrip("/") + "/")
         source = urlparse(image_url)
         if (source.scheme, source.netloc) != (base.scheme, base.netloc):
@@ -302,6 +402,8 @@ class CommunityCatalogExporter:
         return True
 
     def _uploaded_image_name(self, image_url: str) -> str:
+        if image_url.startswith("/uploaded-images/"):
+            return unquote(image_url.removeprefix("/uploaded-images/"))
         base = urlparse(self.uploaded_images_base_url.rstrip("/") + "/") if self.uploaded_images_base_url else None
         if base is None:
             raise ValueError("uploaded image base URL is not configured")
@@ -313,7 +415,7 @@ class CommunityCatalogExporter:
         with urllib.request.urlopen(request, timeout=20) as response:
             image_path.write_bytes(response.read())
 
-    def _commit_and_maybe_push(self, product_json_path: Path, barcode: str) -> list[str]:
+    def _commit_and_maybe_push(self, product_json_path: Path, identifier: str, *, subject: str = "product") -> list[str]:
         warnings: list[str] = []
         relative_product_dir = product_json_path.parent.relative_to(self.path)
         commit_paths: list[Path | str] = [relative_product_dir]
@@ -321,7 +423,7 @@ class CommunityCatalogExporter:
             commit_paths.append("README.md")
         if self.repository_url and self._ensure_catalog_manifest_exists():
             commit_paths.append(CATALOG_MANIFEST)
-        commit_message = f"Add product {barcode}"
+        commit_message = f"Add {subject} {identifier}"
         env = self._git_env(self._git_author_env())
         warnings.extend(self._commit_paths(commit_paths, commit_message, env=env))
         if warnings:
@@ -736,6 +838,17 @@ class RuntimeCommunityCatalogExporter:
             )
         return result
 
+    def export_manual_item(self, item: dict, *, category: dict | None = None) -> CommunityCatalogExportResult:
+        current = self.settings_store.get_community_catalog()
+        if not current.enabled or not current.auto_push or not current.auto_push_manual_items:
+            return CommunityCatalogExportResult(exported=False)
+        exporter = self._exporter(current)
+        return exporter.export_manual_item(
+            item,
+            category=category,
+            local_image_path=self._local_uploaded_image_path_from_url(item.get("image_url")),
+        )
+
     def pending_products(self) -> list[dict]:
         return [self._public_pending_item(item) for item in self._queue().list()]
 
@@ -801,8 +914,12 @@ class RuntimeCommunityCatalogExporter:
     def _local_uploaded_image_path(self, product: ConfirmedProductRequest) -> Path | None:
         if product.image_url is None:
             return None
+        return self._local_uploaded_image_path_from_url(str(product.image_url))
+
+    def _local_uploaded_image_path_from_url(self, image_url: str | None) -> Path | None:
+        if not image_url:
+            return None
         exporter = self._exporter(self.settings_store.get_community_catalog())
-        image_url = str(product.image_url)
         if not exporter._is_uploaded_image_url(image_url):
             return None
         return Path(settings.uploaded_images_path) / exporter._uploaded_image_name(image_url)

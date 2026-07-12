@@ -100,6 +100,13 @@ class DeviceScanResponse(BaseModel):
     message: str
 
 
+class CatalogImageReviewRequest(BaseModel):
+    barcode: str = Field(min_length=1, max_length=120)
+    product_name: str = Field(min_length=1, max_length=120)
+    variant_id: str = Field(min_length=1, max_length=120)
+    location_id: int | None = Field(default=None, gt=0)
+
+
 class DashboardScanConfirmation(BaseModel):
     event_id: str = Field(min_length=1, max_length=120)
     device_id: str = Field(min_length=1, max_length=120)
@@ -235,9 +242,76 @@ class ProductEditHistoryBarcodeListResponse(BaseModel):
     query: str = ""
 
 
+class ScanEventListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[dict[str, object | None]]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1)
+    offset: int = Field(ge=0)
+    filter: Literal["all", "review", "applied", "failed"] = "all"
+    counts: dict[str, int] = Field(default_factory=dict)
+
+
 class DashboardProductEditResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     product: DashboardProductEditProductSummary
     updated_event_count: int = 0
     history_entry: ProductEditHistoryEntry | None = None
+
+
+class ManualCategoryCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    group: Literal["produce", "fridge", "dry", "bakery", "other"] = "other"
+    emoji: str | None = Field(default=None, max_length=16)
+    image_url: str | None = None
+
+    @model_validator(mode="after")
+    def validate_icon(self) -> "ManualCategoryCreate":
+        emoji = (self.emoji or "").strip() or None
+        image_url = (self.image_url or "").strip() or None
+        self.emoji = emoji
+        self.image_url = image_url
+        if not emoji and not image_url:
+            raise ValueError("Choose an emoji or upload an image for the category icon")
+        if emoji and image_url:
+            raise ValueError("Use either an emoji or an image, not both")
+        return self
+
+
+class ManualCategory(ManualCategoryCreate):
+    id: str
+    custom: bool = True
+    variants: list[dict] = Field(default_factory=list)
+
+
+class ManualCategoryItemCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    quantity: str = Field(min_length=1, max_length=80)
+    unit: str = Field(min_length=1, max_length=40)
+    default_location: str = Field(min_length=1, max_length=80)
+    note: str | None = Field(default=None, max_length=240)
+    emoji: str | None = Field(default=None, max_length=16)
+    image_url: str | None = None
+    favorite: bool = False
+
+    @model_validator(mode="after")
+    def validate_icon(self) -> "ManualCategoryItemCreate":
+        emoji = (self.emoji or "").strip() or None
+        image_url = (self.image_url or "").strip() or None
+        note = (self.note or "").strip() or None
+        self.emoji = emoji
+        self.image_url = image_url
+        self.note = note
+        if emoji and image_url:
+            raise ValueError("Use either an emoji or a lookup photo for the item, not both")
+        if image_url and not image_url.startswith("/uploaded-images/"):
+            raise ValueError("Item photos must be uploaded through lookup")
+        return self
+
+
+class ManualCategoryItem(ManualCategoryItemCreate):
+    id: str
+    category_id: str
+    custom: bool = True

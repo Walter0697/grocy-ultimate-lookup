@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pantry Signal Items</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600;9..144,800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/scan-dialog.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="identity">
+      <p>MANUAL CATALOG</p>
+      <h1>Quick add items</h1>
+    </div>
+    <nav class="filters page-tabs">
+      <a href="/">Dashboard</a>
+      <a class="active" href="/items">Items</a>
+      <a href="/logs">Logs</a>
+      <a href="/settings">Settings</a>
+    </nav>
+    <div class="header-actions">
+      <span class="online"><i></i> Manual catalog</span>
+    </div>
+  </header>
+
+  <main class="items-main">
+    <section class="items-toolbar">
+      <label class="items-search">
+        <span>Search</span>
+        <input id="items-search-input" type="text" placeholder="Find produce, eggs, rice, bread...">
+      </label>
+      <div class="items-toolbar-actions">
+        <button type="button" id="open-add-category" class="secondary items-add-category">Add category</button>
+        <span id="items-external-catalog-status" class="items-external-catalog-status hidden" aria-live="polite">
+          <i></i>
+          Loading external catalog...
+        </span>
+      </div>
+    </section>
+    <div id="items-grid" class="event-grid items-category-grid" aria-live="polite"></div>
+  </main>
+
+  <dialog id="items-dialog" class="scan-dialog scan-dialog--sheet items-variant-dialog">
+    <div class="scan-dialog-topbar">
+      <button type="button" id="close-items-dialog" class="close">Close</button>
+    </div>
+    <div id="items-dialog-content" class="scan-dialog-content"></div>
+  </dialog>
+
+  <dialog id="add-category-dialog" class="scan-dialog scan-dialog--sheet">
+    <div class="scan-dialog-topbar">
+      <button type="button" id="close-add-category-dialog" class="close">Close</button>
+    </div>
+    <form id="add-category-form" class="scan-dialog-content product-edit-fields items-category-form">
+      <p class="drawer-kicker">CUSTOM CATEGORY</p>
+      <h2>Add category</h2>
+      <label>Name<input name="name" type="text" required maxlength="80" placeholder="Mango, Tofu, Herbs..."></label>
+      <label>Group
+        <select name="group">
+          <option value="produce">Produce</option>
+          <option value="fridge">Fridge</option>
+          <option value="dry">Dry</option>
+          <option value="bakery">Bakery</option>
+          <option value="other">Other</option>
+        </select>
+      </label>
+      <fieldset class="items-icon-fieldset">
+        <legend>Icon</legend>
+        <div class="choice-group items-icon-mode">
+          <button type="button" class="choice selected" data-icon-mode="emoji">Emoji</button>
+          <button type="button" class="choice" data-icon-mode="image">Image</button>
+        </div>
+        <div id="category-emoji-panel" class="items-emoji-panel"></div>
+        <div id="category-image-panel" class="items-image-panel hidden">
+          <label>Upload image<input type="file" id="category-image-upload" accept="image/*"></label>
+          <div id="category-image-preview" class="items-image-preview" aria-live="polite"></div>
+        </div>
+        <input type="hidden" name="emoji" id="category-emoji-input">
+        <input type="hidden" name="image_url" id="category-image-url-input">
+      </fieldset>
+      <button type="submit" id="save-category-button" class="confirm-scan">Save category</button>
+    </form>
+  </dialog>
+
+  <dialog id="add-item-dialog" class="scan-dialog scan-dialog--sheet items-form-dialog">
+    <div class="scan-dialog-topbar">
+      <button type="button" id="close-add-item-dialog" class="close">Close</button>
+    </div>
+    <form id="add-item-form" class="scan-dialog-content product-edit-fields items-category-form">
+      <p class="drawer-kicker" id="add-item-kicker">CUSTOM ITEM</p>
+      <h2 id="add-item-title">Add item</h2>
+      <fieldset class="items-photo-fieldset">
+        <legend>Item photo</legend>
+        <p class="items-photo-help">Stored in lookup only — not linked to Grocy. Leave empty to use the category icon.</p>
+        <div id="item-image-preview" class="items-item-photo-preview" aria-live="polite"></div>
+        <label class="items-upload-label">Upload image<input type="file" id="item-image-upload" accept="image/*"></label>
+        <button type="button" id="clear-item-image-button" class="secondary items-clear-photo-button">Remove photo</button>
+        <input type="hidden" name="image_url" id="item-image-url-input">
+      </fieldset>
+      <label>Name<input name="name" type="text" required maxlength="120" placeholder="Fuji Apple, Jasmine Rice..."></label>
+      <label>Description<textarea name="note" rows="3" maxlength="240" placeholder="Optional detail for this item"></textarea></label>
+      <label>Quantity label<input name="quantity" type="text" required maxlength="80" placeholder="per apple, per scoop, per bundle..."></label>
+      <label>Stock unit
+        <select name="unit" required>
+          <option value="piece">piece</option>
+          <option value="cup">cup</option>
+          <option value="lb">lb</option>
+          <option value="oz">oz</option>
+          <option value="bundle">bundle</option>
+          <option value="head">head</option>
+          <option value="pint">pint</option>
+          <option value="bag">bag</option>
+          <option value="loaf">loaf</option>
+          <option value="egg">egg</option>
+          <option value="stick">stick</option>
+          <option value="tub">tub</option>
+          <option value="carton">carton</option>
+          <option value="bunch">bunch</option>
+          <option value="pack">pack</option>
+          <option value="bottle">bottle</option>
+          <option value="can">can</option>
+          <option value="jar">jar</option>
+          <option value="kg">kg</option>
+          <option value="g">g</option>
+        </select>
+      </label>
+      <label>Default location
+        <select name="default_location" required id="add-item-location-select"></select>
+      </label>
+      <label class="inline-option"><input type="checkbox" name="favorite"> Mark as favorite</label>
+      <button type="submit" id="save-item-button" class="confirm-scan">Save item</button>
+    </form>
+  </dialog>
+
+  <div id="toast"></div>
+  {{APP_VERSION_BADGE}}
+  <script>window.__ITEMS_CATALOG_URL = "/static/items-reference.json";</script>
+  <script src="/static/stock-confirm.js"></script>
+  <script src="/static/items.js"></script>
+</body>
+</html>

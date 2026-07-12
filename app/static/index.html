@@ -13,11 +13,12 @@
 <body>
   <header class="topbar">
     <div class="identity">
-      <p>SCANNER ACTIVITY</p>
-      <h1>Kitchen scans</h1>
+      <p>PANTRY SIGNAL</p>
+      <h1>Dashboard</h1>
     </div>
     <nav class="filters page-tabs">
-      <a class="active" href="/">Scan</a>
+      <a class="active" href="/">Dashboard</a>
+      <a href="/items">Items</a>
       <a href="/logs">Logs</a>
       <a href="/settings">Settings</a>
     </nav>
@@ -37,6 +38,11 @@
       <button data-filter="applied">Applied</button>
       <button data-filter="failed">Failed</button>
     </nav>
+    <div class="dashboard-pagination">
+      <button type="button" id="dashboard-prev" class="secondary">Previous</button>
+      <span id="dashboard-page-status" class="log-page-status">0 results</span>
+      <button type="button" id="dashboard-next" class="secondary">Next</button>
+    </div>
     <section id="scanner-status" class="scanner-status" aria-live="polite"></section>
     <div id="event-grid" class="event-grid"></div>
   </main>
@@ -55,6 +61,7 @@
   </dialog>
   <div id="toast"></div>
   {{APP_VERSION_BADGE}}
+  <script src="/static/stock-confirm.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

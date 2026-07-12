@@ -68,3 +68,33 @@ def test_store_migrates_existing_database_with_location_column(tmp_path) -> None
     with sqlite3.connect(path) as db:
         columns = {row[1] for row in db.execute("PRAGMA table_info(scan_events)")}
     assert "location_id" in columns
+
+
+def test_dashboard_page_applies_filter_pagination_and_counts(tmp_path) -> None:
+    store = ScanEventStore(str(tmp_path / "events.sqlite3"))
+    for event_id, status, review_kind in (
+        ("event-1", "applied", None),
+        ("event-2", "failed", None),
+        ("event-3", "pending", "catalog_image"),
+        ("event-4", "applied", "catalog_image"),
+        ("event-5", "dismissed", None),
+    ):
+        store.create(
+            ScanEventRequest(
+                event_id=event_id,
+                device_id="kitchen-pi",
+                barcode=event_id,
+                mode="add",
+                quantity=1,
+            )
+        )
+        store.update(event_id, status=status, review_kind=review_kind)
+
+    page = store.dashboard_page(event_filter="review", limit=1, offset=0)
+
+    assert page.total == 2
+    assert page.limit == 1
+    assert page.offset == 0
+    assert len(page.items) == 1
+    assert page.items[0]["event_id"] in {"event-2", "event-3"}
+    assert page.counts == {"all": 3, "review": 2, "applied": 1, "failed": 1}
