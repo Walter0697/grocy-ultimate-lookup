@@ -70,7 +70,7 @@ class CommunityCatalogAdapter(LookupAdapter):
         configured = self.settings_store.get_community_catalog()
         sources = list(self.settings_store.get_community_catalog_sources().sources)
         configured_repo = (configured.repository_url or "").strip()
-        if configured.enabled and configured_repo:
+        if configured.enabled and configured_repo and not sources:
             known_urls = {source.repository_url.strip().lower() for source in sources}
             if configured_repo.lower() not in known_urls:
                 sources.append(
@@ -79,7 +79,7 @@ class CommunityCatalogAdapter(LookupAdapter):
                         name="Configured community catalog",
                         repository_url=configured_repo,
                         enabled=True,
-                        priority=-1,
+                        priority=len(sources),
                         validation_status="valid",
                     )
                 )
